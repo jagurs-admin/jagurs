@@ -18,4 +18,5 @@ Technical References
 
 - Baba, T., N. Takahashi, Y. Kaneda, Y. Inazawa and M. Kikkojin, “Tsunami Inundation Modeling of the 2011 Tohoku Earthquake using Three-Dimensional Building Data for Sendai, Miyagi Prefecture, Japan”, Tsunami Events and Lessons Learned, Advances in Natural and Technological Hazards Research, 35, pp.89-98, DOI 10. 1007/978-94-007-7269-4_3, 2014.
 
-- Imato et al., High-resolution, Quantitative Tsunami simulation on New Earth Simulator. HPCS2016, accepted, 2016.
+- Imato, Y., M. Ishibashi, T. Baba, K. Ando, H. Uehara, T. Kato, “High-resolution, Quantitative Tsunami simulation on New Earth Simulator”, HPCS2016, pp.1-8, 2016.
+(in Japanese with English abstract)
