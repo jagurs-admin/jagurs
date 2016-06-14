@@ -5,6 +5,8 @@ JAGURS is a tsunami simulation code solving linear/nonlinear long-wave/Boussines
 
 JAGURS was developed under a collaboration among Japan Agency for Marine-Earth Science and Technology, Tokushima University, Australia National University, Geoscience Australia, URS cooperation and Prof. Kenji Satake. A part of the development was financially supported by Strategic Programs for Innovative Research: Advanced Prediction Researches for Natural Disaster Prevention and Reduction (Field 3).
 
+We made the source code open without any restrictions for modifications and distributions for scientific use and public benefit. Commercial use is not also prohibited except for selling it. But we would be glad if you contact us (jagurs-admin@jamstec.go.jp) when you want to use it commercially.
+
 Technical References
 --------------------
 
