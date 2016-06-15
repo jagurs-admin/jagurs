@@ -3,7 +3,7 @@ JAGURS
 
 JAGURS is a tsunami simulation code solving linear/nonlinear long-wave/Boussinesq equations with/without effects of elastic deformation of the Earth due to tsunami load and vertical profile of seawater density stratification. A nested algorithm is available on a staggered, leap-frog finite differential scheme. This code was paralleled by using OpenMP and MPI.
 
-JAGURS was developed under a collaboration among Japan Agency for Marine-Earth Science and Technology, Tokushima University, Australia National University, Geoscience Australia, URS cooperation and Prof. Kenji Satake. A part of the development was financially supported by Strategic Programs for Innovative Research: Advanced Prediction Researches for Natural Disaster Prevention and Reduction (Field 3).
+JAGURS was developed under a collaboration among Japan Agency for Marine-Earth Science and Technology, Tokushima University, Australian National University, Geoscience Australia, URS cooperation and Prof. Kenji Satake. A part of the development was financially supported by Strategic Programs for Innovative Research: Advanced Prediction Researches for Natural Disaster Prevention and Reduction (Field 3).
 
 We made the source code open without any restrictions for modifications and distributions for scientific use and public benefit. Commercial use is not also prohibited except for selling it. But we would be glad if you contact us (jagurs-admin@jamstec.go.jp) when you want to use it commercially.
 
