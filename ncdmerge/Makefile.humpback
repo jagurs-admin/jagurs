@@ -1,0 +1,19 @@
+NETCDF=/home/t-katou/local
+
+FC=ifort
+DEBUG=#-check all -warn all -O0 -g -traceback -fpe0
+FFLAGS=$(DEBUG) -I$(NETCDF)/include
+LIBS=-L$(NETCDF)/lib -lnetcdff -lnetcdf
+
+OBJS=mod_read.o mod_write.o ncdmerge.o
+
+EXEC=ncdmerge
+
+$(EXEC): $(OBJS)
+	$(FC) -o $@ $(FFLAGS) $^ $(LIBS)
+
+%.o: %.f90
+	$(FC) -c $(FFLAGS) $^
+
+clean:
+	rm -f $(EXEC) *.o *.mod

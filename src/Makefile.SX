@@ -1,0 +1,212 @@
+# FC: Specify Fortran90 compiler command.
+FC=sxmpif90
+
+# Added for displacement.
+# PRJ4_DIR: Specify PROJ.4 install directory.
+# CC&CFLAGS: Specify C compiler command and flags.
+PROJ4_DIR=/S/home00/G8500/z8501/local
+CC=sxcc
+CFLAGS=-size_t64 -I${PROJ4_DIR}/include
+
+# BASE: Specify basic compiler options.
+BASE=-Ep -f2003 -size_t64 -Wf,"-L fmtlist,summary,transform" -Wf,"-pvctl fullmsg" \
+-D__SX__ -DNO_SYSTEM_CLOCK -pi rexp=srectf,srectg expin=okada.sub.SX.f90
+
+# OPT: Specify compiler options about optimization level.
+OPT=-Wf,"-init stack=nan heap=nan" # for DEBUG!
+OPT=-Chopt -Wf,-pvctl chgpwr # NOTE: "-Chopt" and "-Wf,-pvctl chgpwr" are NOT recommended from arithmetic precision viewpoint.
+OPT=
+
+# NETCDF: Specify the path to NetCDF library.
+NETCDF=/SX/usr/local/netcdf-4.1.3
+
+# LIBS: Specify linker options.
+LIBS=-L$(NETCDF)/lib -lnetcdff -lnetcdf -lhdf5_hl -lhdf5 -lz -lasl -L${PROJ4_DIR}/lib -lproj # for NetCDF4!
+
+# EXEC: Specify the name of executable.
+EXEC=jagurs
+
+################################################################################
+### Set parameters here!                                                     ###
+################################################################################
+# PREC=REAL_DBLE: All calc. (except file I/O) is performed with double precision.
+#      DBLE_MATH: Only intrinsic math functions are performed with double precision.
+# Else, all calc. is performed with single precision.
+#PREC=DBLE_MATH
+PREC=REAL_DBLE
+
+# MPI=ON: MPI version is made.
+# Else, serial version is made.
+MPI=ON
+
+# USE_ALLTOALLV=ON: Use MPI_Alltoallv for inter-nest communications.
+# Else, MPI_Allreduce is used.
+USE_ALLTOALLV=ON
+
+# A2A3D=ON: Use A2A3D for inter-nest communications.
+# This is valid only if USE_ALLTOALLV=ON.
+#A2A3D=ON
+
+# SINGLE_A2A=ON: Use SINGLE_A2A for inter-nest communications.
+# This is valid only if USE_ALLTOALLV=ON.
+#SINGLE_A2A=ON
+
+# TIMER=ON:      Built-in timer is available.
+#       DETAIL:  More detail.
+# Else, built-in timer is disabled.
+#TIMER=ON
+#TIMER=DETAIL
+
+# CONV_CHECK=ON: Convergence check is available on dispersive calc.
+# Else, convergence check is disabled.
+CONV_CHECK=ON
+
+# OUTPUT=NCDIO:  Output is put into single NetCDF file for each domain/MPI processes.
+#        DIROUT: GMT snapshot files are written into directories.
+# Else, original GMT output.
+#OUTPUT=DIROUT
+#OUTPUT=NCDIO
+
+# MULTI=ON: Multi-members on a job is supported.
+#MULTI=ON
+
+# SINGLE_TGS=ON: Station (tgs) output is written into single file per process.
+# This file can be split into files for each station by "splittgs.sh".
+#SINGLE_TGS=ON
+
+# CARTESIAN=ON: Cartesian axis is utilized.
+#CARTESIAN=ON
+
+# UPWIND3=ON: Difference scheme for advective term is changed into 3rd-order upwind
+# from original 1st-order upwind.
+#UPWIND3=ON
+
+# REAL_FFT=ON: Utilize real FFT for elastic loading calc.
+REAL_FFT=ON
+
+################################################################################
+################################################################################
+### DON'T CHANGE THE FOLLOWINGS!!!!                                          ###
+################################################################################
+################################################################################
+
+################################################################################
+### Parameters are processed here.                                           ###
+################################################################################
+FFLAGS=$(BASE) $(OPT) -I$(NETCDF)/include
+
+# Precision
+ifeq ($(PREC),REAL_DBLE)
+   FFLAGS+=-DREAL_DBLE
+else
+ifeq ($(PREC),DBLE_MATH)
+   FFLAGS+=-DDBLE_MATH
+endif
+endif
+
+# MPI
+ifeq ($(MPI),ON)
+   FFLAGS+=-DMPI -lmpi
+ifeq ($(CARTESIAN),ON)
+   OBJS=mapproject.o okada.sub.SX.o \
+        mod_multi.o \
+        mod_a2a3d.o mod_truncation.o mod_timer.o mod_mpi_fatal.o mod_grid.o mod_params.o mod_mpi.o mod_mygmt_gridio.o \
+        mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o \
+                      mod_displacement.o               mod_rwg.o \
+        mod_tgs.o mod_newsubs.o mod_restart.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o JAGURS.o
+else
+   OBJS=mapproject.o okada.sub.SX.o \
+        mod_multi.o \
+        mod_a2a3d.o mod_truncation.o mod_timer.o mod_mpi_fatal.o mod_grid.o mod_params.o mod_mpi.o mod_mygmt_gridio.o \
+        mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o \
+        mod_fxy_linear_Coriolis.o mod_fxy_linear_Coriolis_disp.o \
+        mod_density.o mod_displacement.o mod_loading.o mod_rwg.o \
+        mod_tgs.o mod_newsubs.o mod_restart.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o JAGURS.o
+endif
+ifeq ($(USE_ALLTOALLV),ON)
+   FFLAGS+=-DUSE_ALLTOALLV
+ifeq ($(A2A3D),ON)
+   FFLAGS+=-DA2A3D
+endif
+ifeq ($(SINGLE_A2A),ON)
+   FFLAGS+=-DSINGLE_A2A
+endif
+endif
+else
+ifeq ($(CARTESIAN),ON)
+   OBJS=mapproject.o okada.sub.SX.o \
+        mod_multi.o \
+        mod_truncation.o mod_timer.o                 mod_grid.o mod_params.o           mod_mygmt_gridio.o \
+        mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o \
+                      mod_displacement.o               mod_rwg.o \
+        mod_tgs.o mod_newsubs.o mod_restart.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o JAGURS.o
+else
+   OBJS=mapproject.o okada.sub.SX.o \
+        mod_multi.o \
+        mod_truncation.o mod_timer.o                 mod_grid.o mod_params.o           mod_mygmt_gridio.o \
+        mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o \
+        mod_fxy_linear_Coriolis.o mod_fxy_linear_Coriolis_disp.o \
+        mod_density.o mod_displacement.o mod_loading.o mod_rwg.o \
+        mod_tgs.o mod_newsubs.o mod_restart.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o JAGURS.o
+endif
+endif
+
+# Timer
+ifeq ($(TIMER),DETAIL)
+   FFLAGS+=-DTIMER -DTIMER_DETAIL
+else
+ifeq ($(TIMER),ON)
+   FFLAGS+=-DTIMER
+endif
+endif
+
+# Convergence check
+ifeq ($(CONV_CHECK),ON)
+   FFLAGS+=-DCONV_CHECK
+endif
+
+# File output
+ifeq ($(OUTPUT),NCDIO)
+   FFLAGS+=-DNCDIO
+else
+ifeq ($(OUTPUT),DIROUT)
+   FFLAGS+=-DDIROUT
+endif
+endif
+
+# Multi-members
+ifeq ($(MULTI),ON)
+   FFLAGS+=-DMULTI
+endif
+
+# Single tgs output
+ifeq ($(SINGLE_TGS),ON)
+   FFLAGS+=-DSINGLE_TGS
+endif
+
+# Cartesian axis
+ifeq ($(CARTESIAN),ON)
+   FFLAGS+=-DCARTESIAN
+endif
+
+# 3rd-order upwind
+ifeq ($(UPWIND3),ON)
+   FFLAGS+=-DUPWIND3
+endif
+
+# Real FFT for elastic loading
+ifeq ($(REAL_FFT),ON)
+   FFLAGS+=-DREAL_FFT
+endif
+
+################################################################################
+### Make rules                                                               ###
+################################################################################
+$(EXEC): $(OBJS)
+	$(FC) -o $@ $(FFLAGS) $^ $(LIBS)
+
+%.o: %.f90
+	$(FC) -c $(FFLAGS) $^
+
+clean:
+	rm -f *.o *.mod i.*.L $(EXEC)

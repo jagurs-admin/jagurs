@@ -1,0 +1,12 @@
+&params
+basename='whole'
+!netcdf4=1
+!only_step=1800 ! Specifiy a step you need.
+                !  0: All steps
+                ! -1: Only initial_displacement
+                ! -2: Only max_height
+                ! -3: Only max_velocity
+!root_proc = 0
+!xnum = 2
+!ynum = 2 
+/

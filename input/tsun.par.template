@@ -1,0 +1,41 @@
+!==For JAGURS-D_V0150 ~ ==========================
+&params
+gridfile="gridfile.dat"
+maxgrdfn="zmax.grd"
+vmaxgrdfn="vmax.grd"
+tgstafn="test_tgs.txt"
+!tgstxtoutfile="tgsV-8-"
+!--(Model parameters)-----------------------------
+dt=0.05			! Time step[sec.]
+tend=120		! Number of steps[steps=sec.] 2min for test
+itmap=1200		! Snapshot interval[steps] (->dt*itmap=dump_interval)
+!itmap_start=0		! From [step]
+!itmap_end=21600 	! To [step]
+tau=60			! Time step between ruptures[seconds]
+cf=-0.025		! For sea: Non-dimensional coeff. (positive val.) or Manning's roughtness coeff. (negative val)
+cfl=-0.025		! For land: Non-dimensional coeff. (positive val.) or Manning's roughtness coeff. (negative val)
+coriolis=0		! Coriolis force (1:ON/0:OFF)
+smooth_edges=1		! Smooth edges (1:ON/0:OFF)
+c2p_all=1		! All grids are copiedy to coarse (1:ON/0:OFF)
+multrupt=0		! Multiple ruptures (1:ON/0:OFF)
+def_bathy=1		! Deform bathymetry based on crustal movement (1:ON/0:OFF)
+plotgrd=-1		! Grid number (counting from 1) to output as a grd file (If plotgrid is <0 or >n-grid then plot all of them.)
+velgrd=0		! Outputting velocity grids files (1:ON/0:OFF)
+!--(Dispersive)-----------------------------------
+!with_disp=0		! Dispersive (1:ON/0:OFF/2:ex.whole_layer)
+!max_step=9999		! Max. steps (def.:9999)
+!conv_val=1.0d-8	! Truncation error[m/s] (def.:1.0d-8)
+!min_depth=10		! Minimum depth of sea[m] (def.:5.0d0)
+!--(Absorbing boundary condition)-----------------
+!with_abc=1		! Absorbing boundary condition (1:ON/0:OFF)
+!nxa=4			! Num. of target grids on East/West boundary (def.:20)
+!nya=4			! Num. of target grids on North/South boundary (def.:20)
+!apara=0.018		! Absorbing parameter (def.:0.055d0)
+!--(Restart)--------------------------------------
+!restart=		! Restart step [step] (0:OFF)
+!restart_interval=0	! Restart file interval [steps] (0:OFF)
+!max_time=23:40:00	!
+!--(MPI parallelization)--------------------------
+procx=4			! East-West direction (procx)
+procy=2			! North-South direction (procy)
+/

@@ -1,0 +1,20 @@
+&params
+gridfile="gridfile.dat"
+maxgrdfn="zmax.grd"
+vmaxgrdfn="vmax.grd"
+tgstafn="test_tgs.txt"
+dt=0.05
+tend=120      !2min. for TEST
+itmap=1200
+tau=60
+cf=-0.025
+cfl=-0.025
+coriolis=0
+smooth_edges=0
+c2p_all=1
+def_bathy=1
+plotgrd=-1
+velgrd=0
+procx=4      !for Parallel version
+procy=4      !for Parallel version
+/

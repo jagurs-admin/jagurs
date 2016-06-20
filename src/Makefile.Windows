@@ -1,0 +1,67 @@
+# FC: Specify Fortran90 compiler command.
+FC=ifort
+
+# NETCDFC: Specify the path to NetCDF C library.
+NETCDFC="C:\Program Files (x86)\netCDF 4.3.3.1"
+
+# NETCDFF: Specify the path to NetCDF Fortran library.
+NETCDFF="C:\JAGURS\local"
+
+# PRJ4_DIR: Specify PROJ.4 install directory.
+PROJ4_DIR="C:\JAGURS\local"
+
+# FFTW3_INCLUDE_DIR: Specify FFTW3 include directory.
+FFTW3_INCLUDE_DIR="$(MKLROOT)\include\fftw"
+
+# Added for displacement.
+# CC&CFLAGS: Specify C compiler command and flags.
+CC=icl
+
+CFLAGS=/nologo /Zi /traceback /I:$(PROJ4_DIR)\include
+
+# BASE: Specify basic compiler options.
+BASE=/nologo /fpp /assume:byterecl /Qmkl=sequential
+
+# OPT: Specify compiler options about optimization level.
+OPT=/O2 /Qopenmp /I:$(FFTW3_INCLUDE_DIR)
+
+FFLAGS=$(BASE) $(OPT) /I:$(NETCDFF)/include /DREAL_DBLE /DREAL_FFT
+
+# LIBS: Specify linker options.
+LIBS=/link /NODEFAULTLIB:MSVCRT /LIBPATH:$(NETCDFF)\lib netcdff.lib \
+/LIBPATH:$(NETCDFC)\lib netcdf.lib /LIBPATH:$(PROJ4_DIR)\lib proj_i.lib
+
+# EXEC: Specify the name of executable.
+EXEC=jagurs.exe
+
+################################################################################
+################################################################################
+### DON'T CHANGE THE FOLLOWINGS!!!!                                          ###
+################################################################################
+################################################################################
+OBJS=mapproject.obj okada.sub.obj \
+     mod_multi.obj \
+     mod_truncation.obj mod_timer.obj                 mod_grid.obj mod_params.obj           mod_mygmt_gridio.obj \
+     mod_fxy.obj mod_fxy_cartesian.obj mod_nest.obj mod_interpolation.obj mod_fxy_disp.obj mod_fxy_disp_cartesian.obj mod_hxy.obj mod_hxy_cartesian.obj \
+     mod_fxy_linear_Coriolis.obj mod_fxy_linear_Coriolis_disp.obj \
+     mod_density.obj mod_displacement.obj mod_loading.obj mod_rwg.obj \
+     mod_tgs.obj mod_newsubs.obj mod_restart.obj mod_ncdio.obj mod_init_disp_gaussian.obj mod_init_disp_sinwave.obj JAGURS.obj
+
+################################################################################
+### Make rules                                                               ###
+################################################################################
+$(EXEC): $(OBJS)
+	$(FC) /exe:$@ $(FFLAGS) $? $(LIBS)
+
+.f90.obj:
+	$(FC) /c $(FFLAGS) $<
+
+.f.obj:
+	$(FC) /c $(FFLAGS) $<
+
+.c.obj:
+	$(CC) /c $(CFLAGS) $<
+
+clean:
+	del *.obj *.mod *__genmod.f90 $(EXEC)
+

@@ -1,0 +1,19 @@
+NETCDF=/opt/atlocal/netcdf/4.1.3
+
+FC=ifort
+DEBUG=#-check all -warn all -O0 -g -traceback -fpe0
+FFLAGS=$(DEBUG) -I$(NETCDF)/include
+LIBS=-L$(NETCDF)/lib -lnetcdff -lnetcdf -L/opt/atlocal/supplibs/lib -lhdf5_hl -lhdf5 -lcurl -lsz
+
+OBJS=mod_read.o mod_write.o ncdmerge.o
+
+EXEC=ncdmerge
+
+$(EXEC): $(OBJS)
+	$(FC) -o $@ $(FFLAGS) $^ $(LIBS)
+
+%.o: %.f90
+	$(FC) -c $(FFLAGS) $^
+
+clean:
+	rm -f $(EXEC) *.o *.mod

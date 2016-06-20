@@ -1,0 +1,130 @@
+How to install JAGURS-D
+June 24, 2015
+
+[TOC]
+1. Requirements
+2. How to install
+3. Special instructions for each platform
+   3.1. The Earth simulator and NEC SX
+   3.2. K computer
+4. Troubleshooting
+
+================================================================================
+1. Requirements
+
+JAGURS-D requires the followings.
+
+   - Fortran compiler supports Fortran 2003 standards
+
+   - C compiler
+
+   - GNU make
+
+   - NetCDF library (URL: http://www.unidata.ucar.edu/software/netcdf/)
+     If you need NetCDF4 functions (i.e. single record over 4 GByte),
+     more libraries (HDF5, cURL, etc...) may be required to link.
+
+   - FFT library
+      - ASL for the Earth simulator and NEC SX
+      - FFW3 (URL: http://www.fftw.org/) for others
+        (MKL FFTW3 interface is also okay)
+
+   - PROJ.4 library (URL: https://trac.osgeo.org/proj/)
+     Currently, only proj-4.9.1 is confirmed.
+
+   - [optional] MPI library
+     If MPI parallelization is required. (MPI=ON)
+
+Note that GMT (URL: https://www.soest.hawaii.edu/gmt/) tools are actually
+essential in front-end server (not necessary in computational server) to handle
+input/output files.
+
+================================================================================
+2. How to install
+
+About the following platforms, sample makefiles "Makefile.[platform]" exist.
+In other platforms, you need to make makefile for your platform based on
+existing samples.
+
+   SC_ICE: SGI Altix ICE X system
+           Intel Fortran/C++ compilers, SGI MPT and MKL FFTW3 interface are
+           utilized.
+
+   SX: Cross environment for the Earth simulator and NEC SX
+
+   K: Cross environment for K computer
+
+Typically, you need to modify install path of each libraries.
+
+   NETCDF: Install path of NetCDF library
+
+   FFTW3_INCLUDE_DIR: FFTW3 include file path
+
+   FFTW3_LIB: Arguments to link FFTW3 library
+              (Typically, "-L${FFTW3_INSTALL_DIR}/lib -lfftw3")
+
+   PROJ4_DIR: Install path of PROJ.4 library
+
+After necessary modifications are applied, type "make -f Makefile.[platform]"
+in JAGURS-D_V???? directory.
+
+================================================================================
+3. Special instructions for each platform
+--------------------------------------------------------------------------------
+3.1. The Earth simulator and NEC SX
+
+(1) How to install PROJ.4 library
+
+Invoke the following commands on cross environment.
+Here, PROJ.4 install path is ${PROJ4_DIR}.
+
+   $ tar -zxvf proj-4.9.1.tar.gz
+   $ cd proj-4.9.1
+   $ ./configure CC=sxcc CFLAGS=-size_t64 AR=sxar RANLIB=touch \
+   --host=x86_64-unknown-linux-gnu --target=sx8r-nec-superux \
+   --without-mutex --disable-shared --prefix=${PROJ4_DIR}
+   $ make
+   $ make install
+
+--------------------------------------------------------------------------------
+3.2. K computer
+
+(1) How to install PROJ.4 library
+
+Installation on own environment (computational node) with interactive mode is
+highly recommended.
+For example, invoke the following commands on cross/own environment.
+Here, PROJ.4 install path is ${PROJ4_DIR}.
+
+   [fornt end]$ tar -zxvf proj-4.9.1.tar.gz
+   [fornt end]$ cd proj-4.9.1
+   [fornt end]$ pjsub --interact --rsc-list "node=1" --rsc-list "elapse=1:0:0" \
+   --sparam "wait-time=3600"
+   [computational node]$ . /work/system/Env_base
+   [computational node]$ ./configure --build=sparc64 --prefix=${PROJ4_DIR}
+   [computational node]$ make
+   [computational node]$ make install
+   [computational node]$ exit
+
+================================================================================
+4. Troubleshooting
+--------------------------------------------------------------------------------
+4.1. Undefined references to "nf_*_" (i.e. nf_create_, nf_def_dim_, etc...)
+     occurs and it fails in link.
+
+Add "-lnetcdff" before "-lnetcdf" to LIBS variable in Makefile.
+If you are trying to link NetCDF4, not only libnetcdf.so but also libnetcdff.so
+(Fortran lapper library) have to be liked.
+
+--------------------------------------------------------------------------------
+4.2. PROJ.4 library is not found and it fails in execution with the message
+     like "./jagurs: error while loading shared libraries: libproj.so.9:
+     cannot open shared object file: No such file or directory".
+
+Add the path to "${PROJ4_DIR}/lib" to the environment variable LD_LIBRARY_PATH.
+In sh/bash, add the following line into your execution script.
+
+   export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${PROJ4_DIR}/lib"
+
+================================================================================
+

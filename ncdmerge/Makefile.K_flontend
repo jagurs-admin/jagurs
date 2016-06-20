@@ -1,0 +1,24 @@
+NETCDF=/home/hp120312/k01249/local
+
+FC=gfortran
+DEBUG=
+FFLAGS=$(DEBUG) -I$(NETCDF)/include
+LIBS=-L$(NETCDF)/lib -lnetcdff -lnetcdf
+
+OBJS=mod_read.o mod_write.o ncdmerge.o
+
+EXEC=ncdmerge
+
+$(EXEC): $(OBJS)
+	$(FC) -o $@ $(FFLAGS) $^ $(LIBS)
+	@echo "============================================================"
+	@echo "============================================================"
+	@echo "[NOTE] Add ${NETCDF}/lib into LD_LIBRARY_PATH!"
+	@echo "============================================================"
+	@echo "============================================================"
+
+%.o: %.f90
+	$(FC) -c $(FFLAGS) $^
+
+clean:
+	rm -f $(EXEC) *.o *.mod

@@ -1,0 +1,3 @@
+SD01 SD01 1 bathy.SD01.grd disp.SD01.grd
+SD02 SD01 0 bathy.SD02.grd disp.SD02.grd
+SD03 SD02 0 bathy.SD03.grd disp.SD03.grd
