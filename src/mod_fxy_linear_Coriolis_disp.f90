@@ -96,6 +96,9 @@ contains
 #ifdef __FUJITSU
       real(kind=REAL_BYTE), allocatable, dimension(:) :: ta0, ta1
 #endif
+#ifdef LESS_CC
+      integer(kind=4), parameter :: check = 10
+#endif
 
       fx => wfld%fx
       fy => wfld%fy
@@ -563,6 +566,9 @@ contains
 !$omp end single
 #endif
 #ifdef CONV_CHECK
+#ifdef LESS_CC
+         if(mod(conv,check) == 0) then
+#endif
 !$omp single
          diffxy = 0.0d0
 !$omp end single
@@ -591,6 +597,9 @@ contains
          if(diffxy < conv_val) then
             exit
          endif
+#ifdef LESS_CC
+         end if
+#endif
 #endif
 !$omp single
          p => fx_old

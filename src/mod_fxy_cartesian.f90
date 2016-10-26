@@ -987,7 +987,6 @@ contains
             end do
          end if
 #endif
-      end if
 #ifdef UPWIND3
 #ifndef MPI
 !$omp do
@@ -1039,6 +1038,7 @@ contains
          end if
 #endif
 #endif
+      end if
 !$omp end parallel
 
       return

@@ -9,6 +9,9 @@ use mod_grid
 use mod_params, only : with_elastic_loading
 ! ==============================================================================
 #endif
+! === DEBUG for restart with sinwave/file-input 2016/02/18 =====================
+use mod_init_disp_sinwave, only : ccount
+! ==============================================================================
 implicit none
 
 contains
@@ -31,6 +34,9 @@ contains
 
       open(1,file=trim(fname),action='read',status='old',form='unformatted')
 
+! === DEBUG for restart with sinwave/file-input 2016/02/18 =====================
+      read(1) ccount
+! ==============================================================================
       do ig = 1, ngrid
          dg => dgrid(ig)
 
@@ -108,6 +114,9 @@ contains
 
       open(1,file=trim(fname),action='write',status='replace',form='unformatted')
 
+! === DEBUG for restart with sinwave/file-input 2016/02/18 =====================
+      write(1) ccount
+! ==============================================================================
       do ig = 1, ngrid
          dg => dgrid(ig)
 

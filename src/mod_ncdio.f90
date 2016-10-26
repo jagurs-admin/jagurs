@@ -29,7 +29,11 @@ contains
       integer(kind=4) :: nx, ny
 ! === Speed output. ============================================================
 !     integer(kind=4), pointer :: ncid, idid, mhid, mvid, hzid, vxid, vyid
+#ifndef SKIP_MAX_VEL
       integer(kind=4), pointer :: ncid, idid, mhid, mvid, hzid, vxid, vyid, speedid
+#else
+      integer(kind=4), pointer :: ncid, idid, mhid, hzid, vxid, vyid, speedid
+#endif
 ! ==============================================================================
       integer(kind=4), pointer, dimension(:) :: start, count
 
@@ -93,7 +97,9 @@ contains
 
       idid => dgrid%my%ncdio%idid
       mhid => dgrid%my%ncdio%mhid
+#ifndef SKIP_MAX_VEL
       mvid => dgrid%my%ncdio%mvid
+#endif
 
       hzid => dgrid%my%ncdio%hzid
       vxid => dgrid%my%ncdio%vxid
@@ -199,12 +205,14 @@ contains
                              real(missing_value))
 ! ==============================================================================
 
+#ifndef SKIP_MAX_VEL
       stat = nf_def_var(ncid, 'max_velocity', NF_REAL, 2, vdims, mvid)
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
       att = 'Maximum flow speed'
       stat = nf_put_att_text(ncid, mvid, 'long_name', len(trim(att)), att)
       att = 'Meters/Second'
       stat = nf_put_att_text(ncid, mvid, 'units', len(trim(att)), att)
+#endif
 
       stat = nf_def_var(ncid, 'wave_height', NF_REAL, 3, vdims, hzid)
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
@@ -630,6 +638,7 @@ contains
       return
    end subroutine write_max_height
 
+#ifndef SKIP_MAX_VEL
    subroutine write_max_velocity(dgrid)
       type(data_grids), target, intent(inout) :: dgrid
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: vmax
@@ -642,6 +651,7 @@ contains
 
       return
    end subroutine write_max_velocity
+#endif
 
    ! NOTE: write_array cannot be used for fx, fy.
    !       Because they are NOT 1-origin.

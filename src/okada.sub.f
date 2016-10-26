@@ -226,7 +226,14 @@ C*****
       IF(RET.EQ.F0)  RE = F0
       IF(RET.NE.F0)  DLE= DLOG(RET)
       IF(RET.EQ.F0)  DLE=-DLOG(R-ET)
-      RRX=F1/(R*(R+XI))
+! === Modification to prevent zero-division. ===================================
+!     RRX=F1/(R*(R+XI))
+      IF(ABS(R*(R+XI)).LT.1.0D-6) THEN
+         RRX=1.0D6
+      ELSE
+         RRX=F1/(R*(R+XI))
+      ENDIF
+! ==============================================================================
       RRE=RE/R
       AXI=(F2*R+XI)*RRX*RRX/R
       AET=(F2*R+ET)*RRE*RRE/R

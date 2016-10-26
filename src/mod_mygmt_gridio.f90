@@ -151,10 +151,10 @@ contains
       !*** open the file and inquire about the dimensions ***
       err = nf_open(infilename, NF_NOWRITE, ncid)
       if(err /= NF_NOERR) then
-         write(0,'(a,i,a,a)') 'netcdf err=', err, ' nonexistent file=', trim(infilename)
+         write(0,'(a,i0,a,a)') 'netcdf err=', err, ' nonexistent file=', trim(infilename)
          stop
       else if(err == NF_ENOTNC) then
-         write(0,'(a,i,a,a)') 'netcdf err=', err, ' non-netCDF file=', trim(infilename)
+         write(0,'(a,i0,a,a)') 'netcdf err=', err, ' non-netCDF file=', trim(infilename)
          stop
       end if
 
@@ -242,10 +242,10 @@ contains
       !*** open file again ***
       err = nf_open(infilename, NF_NOWRITE, ncid)
       if(err /= NF_NOERR) then
-         write(0,'(a,i,a,a)') 'netcdf err=', err, ' nonexistent file=', trim(infilename)
+         write(0,'(a,i0,a,a)') 'netcdf err=', err, ' nonexistent file=', trim(infilename)
          stop
       else if(err == NF_ENOTNC) then
-         write(0,'(a,i,a,a)') 'netcdf err=', err, ' non-netCDF file=', trim(infilename)
+         write(0,'(a,i0,a,a)') 'netcdf err=', err, ' non-netCDF file=', trim(infilename)
          stop
       end if
 

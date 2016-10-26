@@ -78,6 +78,9 @@ contains
 #ifdef __FUJITSU
       real(kind=REAL_BYTE), allocatable, dimension(:) :: ta0, ta1
 #endif
+#ifdef LESS_CC
+      integer(kind=4), parameter :: check = 10
+#endif
 ! ==============================================================================
 
       fx => wfld%fx
@@ -389,6 +392,9 @@ contains
 !$omp end single
 #endif
 #ifdef CONV_CHECK
+#ifdef LESS_CC
+         if(mod(conv,check) == 0) then
+#endif
 !$omp single
          diffxy = 0.0d0
 !$omp end single
@@ -413,6 +419,9 @@ contains
          if(diffxy < conv_val) then
             exit
          endif
+#ifdef LESS_CC
+         end if
+#endif
 #endif
 !$omp single
          p => fx_old
@@ -539,6 +548,9 @@ contains
       real(kind=REAL_BYTE) :: c0, c1, c2, c3, c4
 #ifdef __FUJITSU
       real(kind=REAL_BYTE), allocatable, dimension(:) :: ta0, ta1
+#endif
+#ifdef LESS_CC
+      integer(kind=4), parameter :: check = 10
 #endif
 ! ==============================================================================
 ! === Limiter with max Froude number. ==========================================
@@ -1445,6 +1457,9 @@ contains
 !$omp end single
 #endif
 #ifdef CONV_CHECK
+#ifdef LESS_CC
+         if(mod(conv,check) == 0) then
+#endif
 !$omp single
          diffxy = 0.0d0
 !$omp end single
@@ -1469,6 +1484,9 @@ contains
          if(diffxy < conv_val) then
             exit
          endif
+#ifdef LESS_CC
+         end if
+#endif
 #endif
 !$omp single
          p => fx_old
@@ -1794,7 +1812,6 @@ contains
             end do
          end if
 #endif
-      end if
 #ifdef UPWIND3
 #ifndef MPI
 !$omp do private(theta, sint, gdtdss)
@@ -1854,6 +1871,7 @@ contains
          end if
 #endif
 #endif
+      end if
 !$omp end parallel
 
       return

@@ -33,17 +33,17 @@ contains
       if(l /= 0) then
          c1 = index(max_time(1:l),':')
          if(c1 == 0) then
-            read(max_time(1:l),'(i)') seconds
+            read(max_time(1:l),'(i20)') seconds
          else
             c2 = index(max_time(c1+1:l),':')
             if(c2 == 0) then
-               read(max_time(1:c1-1),'(i)') minutes
-               read(max_time(c1+1:l),'(i)') seconds
+               read(max_time(1:c1-1),'(i20)') minutes
+               read(max_time(c1+1:l),'(i20)') seconds
             else
                c2 = c1 + c2
-               read(max_time(1:c1-1),'(i)') hours
-               read(max_time(c1+1:c2-1),'(i)') minutes
-               read(max_time(c2+1:l),'(i)') seconds
+               read(max_time(1:c1-1),'(i20)') hours
+               read(max_time(c1+1:c2-1),'(i20)') minutes
+               read(max_time(c2+1:l),'(i20)') seconds
             end if
          end if
       end if

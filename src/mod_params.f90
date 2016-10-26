@@ -360,7 +360,7 @@ contains
       if(dt <= 0.0d0) then
          write(0,'(a)') 'Error in tsun.par file:'
          write(0,'(a)') 'Timestep is not positive!'
-         write(0,'(a,f)') 'dt=', dt
+         write(0,'(a,f18.6)') 'dt=', dt
 #ifndef MPI
          stop
 #else
@@ -371,7 +371,7 @@ contains
       if(dt > tau) then
          write(0,'(a)') 'Error in tsun.par file:'
          write(0,'(a)') 'Timestep is greater than uplift time!'
-         write(0,'(a,f,a,f)') 'dt=', dt, ' tau=', tau
+         write(0,'(a,f18.6,a,f18.6)') 'dt=', dt, ' tau=', tau
 #ifndef MPI
          stop
 #else
@@ -383,7 +383,7 @@ contains
       !          otherwise the full rise will not be achieved
       if(abs(tau/dt - anint(tau/dt)) > 0.001d0) then
          write(0,'(a)') 'Error in tsun.par file:'
-         write(0,'(a,f,a,f)') 'Uplift time=', tau, ' is not a multiple of time step=', dt
+         write(0,'(a,f18.6,a,f18.6)') 'Uplift time=', tau, ' is not a multiple of time step=', dt
 #ifndef MPI
          stop
 #else
@@ -394,7 +394,7 @@ contains
       if(dt > tend) then
          write(0,'(a)') 'Error in tsun.par file:'
          write(0,'(a)') 'Timestep is greater than final time!'
-         write(0,'(a,f,a,f)') 'dt=', dt, ' tend=', tend
+         write(0,'(a,f18.6,a,f18.6)') 'dt=', dt, ' tend=', tend
 #ifndef MPI
          stop
 #else

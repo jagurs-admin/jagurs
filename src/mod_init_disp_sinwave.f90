@@ -11,7 +11,11 @@ integer(kind=4), private :: y_index = 0
 ! === FILE INPUT ===============================================================
 character(len=64), private :: input_file = ''
 real(kind=REAL_BYTE), private, allocatable, dimension(:) :: tlist, hlist
-integer(kind=4), private :: lcount = 0, ccount = 0
+! === DEBUG for restart with sinwave/file-input 2016/02/18 =====================
+!integer(kind=4), private :: lcount = 0, ccount = 0
+integer(kind=4), private :: lcount = 0
+integer(kind=4) :: ccount = 0
+! ==============================================================================
 ! ==============================================================================
 
 real(kind=8), private :: pi

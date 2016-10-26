@@ -45,7 +45,7 @@ OBJS=mapproject.obj okada.sub.obj \
      mod_fxy.obj mod_fxy_cartesian.obj mod_nest.obj mod_interpolation.obj mod_fxy_disp.obj mod_fxy_disp_cartesian.obj mod_hxy.obj mod_hxy_cartesian.obj \
      mod_fxy_linear_Coriolis.obj mod_fxy_linear_Coriolis_disp.obj \
      mod_density.obj mod_displacement.obj mod_loading.obj mod_rwg.obj \
-     mod_tgs.obj mod_newsubs.obj mod_restart.obj mod_ncdio.obj mod_init_disp_gaussian.obj mod_init_disp_sinwave.obj JAGURS.obj
+     mod_tgs.obj mod_newsubs.obj mod_ncdio.obj mod_init_disp_gaussian.obj mod_init_disp_sinwave.obj mod_restart.obj JAGURS.obj
 
 ################################################################################
 ### Make rules                                                               ###

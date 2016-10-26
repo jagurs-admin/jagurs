@@ -37,7 +37,7 @@ contains
       ista = 0
 
       read(fp,'(a)',err=101) str
-      read(str,'(i)',err=101) nsta
+      read(str,'(i20)',err=101) nsta
       if(nsta <= 0) goto 101
 
       allocate(mytgs(nsta))
@@ -106,7 +106,7 @@ contains
                   ! outside of that then exit
                   write(0,'(a,i0,a)') 'Tide Gauge Point ', ista, ' appears to be outside the box.'
                   ! DB added some more information here
-                  write(0,'(a,f,a,f)') 'Station geolon=', mytgs(ista)%geolon, ' geolat=', mytgs(ista)%geolat
+                  write(0,'(a,f18.6,a,f18.6)') 'Station geolon=', mytgs(ista)%geolon, ' geolat=', mytgs(ista)%geolat
                   write(0,'(a,i0,a,i0,a,i0,a,i0)') 'ilon=', ilon, ' ilat=', ilat, ' nx=', dg(ig)%my%nx, ' ny=', dg(ig)%my%ny
                   stop
                else
@@ -139,7 +139,7 @@ contains
          if(kg < 0) then
             write(0,'(a,i0,a)') 'Tide Gauge Point ', ksta, ' appears to be outside the box.'
             ! DB added some more information here
-            write(0,'(a,f,a,f)') 'Station geolon=', mytgs(ista)%geolon, ' geolat=', mytgs(ista)%geolat
+            write(0,'(a,f18.6,a,f18.6)') 'Station geolon=', mytgs(ista)%geolon, ' geolat=', mytgs(ista)%geolat
             write(0,'(a,i0,a,i0,a,i0,a,i0)') 'ilon=', ilon, ' ilat=', ilat, &
                ' nx=', dg(1)%my%totalNx, ' ny=', dg(1)%my%totalNy
             call fatal_error(303)

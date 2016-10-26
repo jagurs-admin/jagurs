@@ -88,6 +88,13 @@ CONV_CHECK=ON
 # REAL_FFT=ON: Utilize real FFT for elastic loading calc.
 REAL_FFT=ON
 
+# SKIP_MAX_VEL=ON: Do not compute max velocity (saves time, most noticeably for
+# linear computation)
+#SKIP_MAX_VEL=ON
+
+# LESS_CC=ON: Convergence check on dispersive calc. is done only every 10 steps.
+#LESS_CC=ON
+
 ################################################################################
 ################################################################################
 ### DON'T CHANGE THE FOLLOWINGS!!!!                                          ###
@@ -117,7 +124,7 @@ ifeq ($(CARTESIAN),ON)
         mod_a2a3d.o mod_truncation.o mod_timer.o mod_mpi_fatal.o mod_grid.o mod_params.o mod_mpi.o mod_mygmt_gridio.o \
         mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o \
                       mod_displacement.o               mod_rwg.o \
-        mod_tgs.o mod_newsubs.o mod_restart.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o JAGURS.o
+        mod_tgs.o mod_newsubs.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o mod_restart.o JAGURS.o
 else
    OBJS=mapproject.o okada.sub.o \
         mod_multi.o \
@@ -125,7 +132,7 @@ else
         mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o \
         mod_fxy_linear_Coriolis.o mod_fxy_linear_Coriolis_disp.o \
         mod_density.o mod_displacement.o mod_loading.o mod_rwg.o \
-        mod_tgs.o mod_newsubs.o mod_restart.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o JAGURS.o
+        mod_tgs.o mod_newsubs.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o mod_restart.o JAGURS.o
 endif
 ifeq ($(USE_ALLTOALLV),ON)
    FFLAGS+=-DUSE_ALLTOALLV
@@ -143,7 +150,7 @@ ifeq ($(CARTESIAN),ON)
         mod_truncation.o mod_timer.o                 mod_grid.o mod_params.o           mod_mygmt_gridio.o \
         mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o \
                       mod_displacement.o               mod_rwg.o \
-        mod_tgs.o mod_newsubs.o mod_restart.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o JAGURS.o
+        mod_tgs.o mod_newsubs.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o mod_restart.o JAGURS.o
 else
    OBJS=mapproject.o okada.sub.o \
         mod_multi.o \
@@ -151,7 +158,7 @@ else
         mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o \
         mod_fxy_linear_Coriolis.o mod_fxy_linear_Coriolis_disp.o \
         mod_density.o mod_displacement.o mod_loading.o mod_rwg.o \
-        mod_tgs.o mod_newsubs.o mod_restart.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o JAGURS.o
+        mod_tgs.o mod_newsubs.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o mod_restart.o JAGURS.o
 endif
 endif
 
@@ -201,6 +208,16 @@ endif
 # Real FFT for elastic loading
 ifeq ($(REAL_FFT),ON)
    FFLAGS+=-DREAL_FFT
+endif
+
+# Skip max velocity computation
+ifeq ($(SKIP_MAX_VEL),ON)
+   FFLAGS+=-DSKIP_MAX_VEL
+endif
+
+# Convergence check on dispersive calc. is done only every 10 steps.
+ifeq ($(LESS_CC),ON)
+   FFLAGS+=-DLESS_CC
 endif
 
 ################################################################################

@@ -826,7 +826,7 @@ contains
       N = N_X*N_Y
 
       write(6,'(a,2i6)') '[displacement] m_nxg, m_nyg: ', m_nxg, m_nyg
-      write(6,'(a,3i8)') '[displacement] N_X, N_Y, N: ', N_X, N_Y, N
+      write(6,'(a,2i6,i12)') '[displacement] N_X, N_Y, N: ', N_X, N_Y, N
 #ifdef MPI
       ix = dg%my%ix
       iy = dg%my%iy
@@ -1048,9 +1048,9 @@ contains
       allocate(xfftbuf(N_X/2+1,N_Y))
       allocate(yfftbuf(N_Y+1,N_X/2+1))
 #else
-      allocate(realbuf(N_X+2,ny1))
+      allocate(realbuf(N_X+16,ny1))
       allocate(xfftbuf(N_X/2+1,ny1))
-      allocate(yfftbuf(N_Y+1,nx2))
+      allocate(yfftbuf(N_Y+16,nx2))
 #endif
 #endif
 #endif
@@ -1130,9 +1130,9 @@ contains
 #ifndef REAL_FFT
          call ZFCMFB(N_X,jtn1(it),xfftbuf(1,jts1(it)),1,N_X+1,0,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
 #else
-         call DFRMFB(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+2,0,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
+         call DFRMFB(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+16,0,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
 #endif
-         call ZFCMFB(N_Y,itn2(it),yfftbuf(1,its2(it)),1,N_Y+1,0,ifax_y(1,it),trigs_y(1,it),work_y(1,its2(it)),ierr)
+         call ZFCMFB(N_Y,itn2(it),yfftbuf(1,its2(it)),1,N_Y+16,0,ifax_y(1,it),trigs_y(1,it),work_y(1,its2(it)),ierr)
 #endif
       end do
 ! ==============================================================================
@@ -1391,7 +1391,7 @@ contains
 #ifndef __SX__
          do i = 1, N_X
 #else
-         do i = 1, N_X+2
+         do i = 1, N_X+16
 #endif
             realbuf(i,j) = 0.0d0
 #endif
@@ -1434,7 +1434,7 @@ contains
 #else
 !$omp do private(ierr)
       do it = 0, nthreads-1
-         call DFRMBF(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+2,1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
+         call DFRMBF(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+16,1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
 #endif
 #endif
@@ -1486,7 +1486,7 @@ contains
 #ifndef __SX__
          do j = 1, N_Y
 #else
-         do j = 1, N_Y+1
+         do j = 1, N_Y+16
 #endif
             yfftbuf(j,i) = dcmplx(0.0d0,0.0d0)
          end do
@@ -1514,7 +1514,7 @@ contains
 #else
 !$omp do private(ierr)
       do it = 0, nthreads-1
-         call ZFCMBF(N_Y,itn2(it),yfftbuf(1,its2(it)),1,N_Y+1,1,ifax_y(1,it),trigs_y(1,it),work_y(1,its2(it)),ierr)
+         call ZFCMBF(N_Y,itn2(it),yfftbuf(1,its2(it)),1,N_Y+16,1,ifax_y(1,it),trigs_y(1,it),work_y(1,its2(it)),ierr)
       end do
 #endif
 
@@ -1556,7 +1556,7 @@ contains
 #else
 !$omp do private(ierr)
       do it = 0, nthreads-1
-         call ZFCMBF(N_Y,itn2(it),yfftbuf(1,its2(it)),1,N_Y+1,-1,ifax_y(1,it),trigs_y(1,it),work_y(1,its2(it)),ierr)
+         call ZFCMBF(N_Y,itn2(it),yfftbuf(1,its2(it)),1,N_Y+16,-1,ifax_y(1,it),trigs_y(1,it),work_y(1,its2(it)),ierr)
       end do
 #endif
 
@@ -1634,7 +1634,7 @@ contains
 #else
 !$omp do private(ierr)
       do it = 0, nthreads-1
-         call DFRMBF(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+2,-1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
+         call DFRMBF(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+16,-1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
 #endif
 #endif
@@ -1747,9 +1747,9 @@ contains
       real(kind=8), dimension(nlon,nlat), intent(inout) :: zz
       integer(kind=4), intent(in) :: nlon, nlat
 #ifndef CARTESIAN
-      real(kind=8), intent(out) :: h0, lat1
+      real(kind=8), intent(inout) :: h0, lat1
 #else
-      real(kind=8), intent(out) :: h0
+      real(kind=8), intent(inout) :: h0
 #endif
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: dz

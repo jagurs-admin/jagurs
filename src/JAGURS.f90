@@ -106,7 +106,9 @@ program JAGURS
    type(boundary_arrays), pointer :: ubnd, hbnd
    real(kind=REAL_BYTE), pointer, dimension(:,:) :: wod_field, bcf_field, ts_field, zz, hzmax
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
+#ifndef SKIP_MAX_VEL
    real(kind=REAL_BYTE), pointer, dimension(:,:) :: vmax
+#endif
 ! ==============================================================================
    integer(kind=4), pointer, dimension(:,:) :: wod_flags
    character(len=256), pointer :: base, file_name_bathymetry, displacement_file_name, wod_file_name, bcf_file_name
@@ -944,7 +946,9 @@ program JAGURS
       allocate(dgrid(ig)%zz(niz,njz))
       allocate(dgrid(ig)%hzmax(niz,njz))
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
+#ifndef SKIP_MAX_VEL
       allocate(dgrid(ig)%vmax(niz,njz))
+#endif
 ! ==============================================================================
 ! === Conversion from flux to velocity should be done right after calc. ========
 !     allocate(dgrid(ig)%wod_flags(niz,njz))
@@ -1012,7 +1016,9 @@ program JAGURS
       hbnd                   => dgrid(ig)%hbnd
       hzmax                  => dgrid(ig)%hzmax
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
+#ifndef SKIP_MAX_VEL
       vmax                   => dgrid(ig)%vmax
+#endif
 ! ==============================================================================
       wod_flags              => dgrid(ig)%wod_flags
       wod_file_name          => dgrid(ig)%wod_file
@@ -1088,9 +1094,11 @@ program JAGURS
       call maxgrd_init_rwg(hzmax,niz,njz)
       TIMER_STOP('maxgrd_init_rwg')
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
+#ifndef SKIP_MAX_VEL
       TIMER_START('maxgrd_v_init_rwg')
       call maxgrd_v_init_rwg(vmax,niz,njz)
       TIMER_STOP('maxgrd_v_init_rwg')
+#endif
 ! ==============================================================================
    end do
 
@@ -1160,7 +1168,7 @@ program JAGURS
 #ifndef CARTESIAN
       write(6,'(7x,a,i0,a,i0,a,f0.3,a,f0.3,a,i0)') 'niz=', dgrid(ig)%my%nx, ' njz=', dgrid(ig)%my%ny, &
          ' tend=', tend, '(sec) dt=', dt,'(sec) nstep=', nstep
-      write(6,'(7x,a,f0.6,a,f0.6,a,e)') 'th0=', dgrid(ig)%my%th0, '(rad) dxdy=', dgrid(ig)%my%dh, &
+      write(6,'(7x,a,f0.6,a,f0.6,a,e23.15e3)') 'th0=', dgrid(ig)%my%th0, '(rad) dxdy=', dgrid(ig)%my%dh, &
          '(deg) dth=',  dgrid(ig)%my%dth
       write(6,'(7x,a,f0.3,a,f0.3,a,f0.3,a,f0.3,a)') 'mlon0=', dgrid(ig)%my%mlon0, &
          ' (', dgrid(ig)%my%mlon0/60.0d0, ') mlat0=', dgrid(ig)%my%mlat0, ' (', dgrid(ig)%my%mlat0/60.0d0, ')'
@@ -1179,7 +1187,7 @@ program JAGURS
 #else
       write(6,'(7x,a,i0,a,i0,a,f0.3,a,f0.3,a,i0)') 'niz=', dgrid(ig)%my%nx, ' njz=', dgrid(ig)%my%ny, &
          ' tend=', tend, '(sec) dt=', dt,'(sec) nstep=', nstep
-      write(6,'(7x,a,f0.6,a,f0.6,a,e)') 'th0=', dgrid(ig)%my%th0, '(m) dxdy=', dgrid(ig)%my%dh, &
+      write(6,'(7x,a,f0.6,a,f0.6,a,e23.15e3)') 'th0=', dgrid(ig)%my%th0, '(m) dxdy=', dgrid(ig)%my%dh, &
          '(m) dth=',  dgrid(ig)%my%dth
       write(6,'(7x,a,f0.3,a,f0.3)') 'mlon0=', dgrid(ig)%my%mlon0, &
          ' mlat0=', dgrid(ig)%my%mlat0
@@ -1676,9 +1684,9 @@ program JAGURS
 #else
       write(restart_file_name, '(a,i8.8,a,i6.6)') 'restart.', restart, '.', myrank
 #endif
-      write(6,'(a,i)') '[RESTART] Restart from step ', restart
+      write(6,'(a,i0)') '[RESTART] Restart from step ', restart
       write(6,'(a,a)') '[RESTART] Restart file read: ', trim(restart_file_name)
-      write(6,'(a,i)') '[RESTART] Next step is ', istart
+      write(6,'(a,i0)') '[RESTART] Next step is ', istart
       call read_restart_file(ngrid, dgrid, restart_file_name)
    end if
    do istep = istart, nstep
@@ -1953,12 +1961,15 @@ program JAGURS
          ubnd                   => dgrid(ig)%ubnd
          hbnd                   => dgrid(ig)%hbnd
          hzmax                  => dgrid(ig)%hzmax
+#ifndef SKIP_MAX_VEL
          vmax                   => dgrid(ig)%vmax
+#endif
          wod_flags              => dgrid(ig)%wod_flags
 #ifdef MPI
          has_boundary          =  dgrid(ig)%my%has_boundary
 #endif
 
+#ifndef SKIP_MAX_VEL
          TIMER_START('maxgrd_v_check_nl')
 #ifndef MPI
          call maxgrd_v_check_nl(vmax,wave_field,depth_field,wod_flags,niz,njz)
@@ -1966,6 +1977,7 @@ program JAGURS
          call maxgrd_v_check_nl(vmax,wave_field,depth_field,wod_flags,niz,njz,has_boundary)
 #endif
          TIMER_STOP('maxgrd_v_check_nl')
+#endif
 
          if(plotgrd(1) < 0 .or. plotgrd_num(ig)) then
             if(mod(istep,itmap) == 0 .and. istep >= itmap_start .and. istep <= itmap_end) then
@@ -2050,7 +2062,9 @@ program JAGURS
          hbnd                   => dgrid(ig)%hbnd
          hzmax                  => dgrid(ig)%hzmax
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
+#ifndef SKIP_MAX_VEL
          vmax                   => dgrid(ig)%vmax
+#endif
 ! ==============================================================================
          wod_flags              => dgrid(ig)%wod_flags
 ! === Conversion from flux to velocity should be done right after calc. ========
@@ -2148,6 +2162,9 @@ program JAGURS
 ! ==============================================================================
 
       ! tgs text output
+! === To decimate outputs by tkato. 2016/10/24 =================================
+      if(mod(istep,itgrn) == 0) then
+! ==============================================================================
 #ifndef SINGLE_TGS
       do j = 1, nsta
          inquire(tgsfp(j), opened=tgs_opened)
@@ -2172,10 +2189,12 @@ program JAGURS
             end if
 ! === DEBUG for tgs text output by tkato. 2012/10/11 ===========================
 #ifndef __FUJITSU
-            write(tgsfp(j), '(a,i0,a,e,a,e,a,e,a,e)') 'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+            write(tgsfp(j), '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
+               'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
 #else
 #ifndef REAL_DBLE
-            write(tgsfp(j), '(a,i0,a,e,a,e,a,e,a,e)') 'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+            write(tgsfp(j), '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
+               'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
 #else
             write(tgsfp(j), '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
                'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
@@ -2205,12 +2224,12 @@ program JAGURS
                   ' lat=', tgs_lat, ' lon=', tgs_lon, ' depth=', tgs_z, ' grid_id=', mytgs(j)%ig
             end if
 #ifndef __FUJITSU
-            write(tgsfp, '(a,i0,a,e,a,e,a,e,a,e)') trim(tgsnum) // 'step=', istep, ' t=', t, &
-               ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+            write(tgsfp, '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
+               trim(tgsnum) // 'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
 #else
 #ifndef REAL_DBLE
-            write(tgsfp, '(a,i0,a,e,a,e,a,e,a,e)') trim(tgsnum) // 'step=', istep, ' t=', t, &
-               ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+            write(tgsfp, '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
+               trim(tgsnum) // 'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
 #else
             write(tgsfp, '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
                trim(tgsnum) // 'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
@@ -2219,6 +2238,9 @@ program JAGURS
          end if
       end do
 #endif
+! === To decimate outputs by tkato. 2016/10/24 =================================
+      end if
+! ==============================================================================
 
       !*** Burbidge - print a message to stdout every 100 time steps ***
       if(mod(istep,100) == 0) then
@@ -2295,6 +2317,7 @@ program JAGURS
       end if
    end do
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
+#ifndef SKIP_MAX_VEL
    !*** dump max velocity grid ***
    do ig = 1, ngrid
 ! === Multi-grids can be specified! ============================================
@@ -2332,6 +2355,7 @@ program JAGURS
 #endif
       end if
    end do
+#endif
 ! ==============================================================================
 #ifndef CARTESIAN
 ! === Elastic Loading ==========================================================
