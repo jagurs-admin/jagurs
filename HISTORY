@@ -371,4 +371,36 @@ Use ncdmerge.V0180 or later.
 - DEBUG for A2A3D & MULTI on K-computer has been applied.
 
 --------------------------------------------------------------------------------
+2016.10.24 V0400
+
+- Modifications to avoid zero-division on Okada function has been applied.
+
+- DEBUG for offshore boundary conditions with 3rd order upwind difference method has been applied.
+
+- DEBUG for MPI standard violation in displacement_calc_h0_lat1 @ mod_displacement.f90.
+When MPI_IN_PLACE is utilized, the value of receive buffer must not be intent(out).
+
+- DEBUG for lack of display digit in loading_initialize @ mod_loading.f90 and
+displacement_apply_kj_filter @ mod_displacement.f90 has been applied.
+
+- DEBUG for the problem that the lack of neighbor exchange layer on the North edge
+of child domain has been applied.
+
+- Output interval of tgs output can be specified with the parameter "itgrn" in "tsun.par".
+
+- GNU Fortran (gfortran) has been supported.
+Note that, the format of ASCII output is affected slightly.
+
+- To compute/output max velocity can be skipped to save time
+(most noticeably for linear computation).
+This become effective if "SKIP_MAX_VEL=ON" is specified in Makefile.
+
+- Performance optimization for FFT on NEC SX series (padding) has been applied.
+
+- Convergence check on dispersive calc. is done only every 10 steps to save time
+if "LESS_CC=ON" is specified in Makefile.
+
+- DEBUG for restart with sinwave/file-input has been applied.
+
+--------------------------------------------------------------------------------
 
