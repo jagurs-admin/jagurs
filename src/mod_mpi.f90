@@ -533,15 +533,15 @@ contains
       south_buf  => grid%edges%fsb_d
 
       if(iand(has_boundary, NORTH_BOUND) == 0) then
-! === DEBUG by tkato 2016/10/12 ================================================
-!        north_edge(1:nx,1) = zz(1:nx,2)
-         north_edge(0:nx,1) = zz(0:nx,2)
+! === DEBUG by tkato 2017/07/18 ================================================
+!        north_edge(0:nx,1) = zz(0:nx,2)
+         north_edge(1:nx,1) = zz(1:nx,2)
 ! ==============================================================================
       end if
       if(iand(has_boundary, SOUTH_BOUND) == 0) then
-! === DEBUG by tkato 2016/10/12 ================================================
-!        south_edge(1:nx,1) = zz(1:nx,ny-1)
-         south_edge(0:nx,1) = zz(0:nx,ny-1)
+! === DEBUG by tkato 2017/07/18 ================================================
+!        south_edge(0:nx,1) = zz(0:nx,ny-1)
+         south_edge(1:nx,1) = zz(1:nx,ny-1)
 ! ==============================================================================
       end if
 
@@ -572,15 +572,15 @@ contains
       call MPI_Waitall(2, rreqs, rstat, ierr)
 
       if(iand(has_boundary, NORTH_BOUND) == 0) then
-! === DEBUG by tkato 2016/10/12 ================================================
-!        zz(1:nx,1) = north_buf(1:nx,1)
-         zz(0:nx,1) = north_buf(0:nx,1)
+! === DEBUG by tkato 2017/07/18 ================================================
+!        zz(0:nx,1) = north_buf(0:nx,1)
+         zz(1:nx,1) = north_buf(1:nx,1)
 ! ==============================================================================
       end if
       if(iand(has_boundary, SOUTH_BOUND) == 0) then
-! === DEBUG by tkato 2016/10/12 ================================================
-!        zz(1:nx,ny  ) = south_buf(1:nx,1)
-         zz(0:nx,ny  ) = south_buf(0:nx,1)
+! === DEBUG by tkato 2017/07/18 ================================================
+!        zz(0:nx,ny  ) = south_buf(0:nx,1)
+         zz(1:nx,ny  ) = south_buf(1:nx,1)
 ! ==============================================================================
       end if
 
@@ -595,15 +595,15 @@ contains
       west_buf  => grid%edges%fwb_d
 
       if(iand(has_boundary, EAST_BOUND) == 0) then
-! === DEBUG by tkato 2016/10/12 ================================================
-!        east_edge(1:ny,1) = zz(nx-1,1:ny)
-         east_edge(0:ny,1) = zz(nx-1,0:ny)
+! === DEBUG by tkato 2017/07/18 ================================================
+!        east_edge(0:ny,1) = zz(nx-1,0:ny)
+         east_edge(1:ny,1) = zz(nx-1,1:ny)
 ! ==============================================================================
       end if
       if(iand(has_boundary, WEST_BOUND) == 0) then
-! === DEBUG by tkato 2016/10/12 ================================================
-!        west_edge(1:ny,1) = zz(2,1:ny)
-         west_edge(0:ny,1) = zz(2,0:ny)
+! === DEBUG by tkato 2017/07/18 ================================================
+!        west_edge(0:ny,1) = zz(2,0:ny)
+         west_edge(1:ny,1) = zz(2,1:ny)
 ! ==============================================================================
       end if
 
@@ -634,15 +634,15 @@ contains
       call MPI_Waitall(2, rreqs, rstat, ierr)
 
       if(iand(has_boundary, EAST_BOUND) == 0) then
-! === DEBUG by tkato 2016/10/12 ================================================
-!        zz(nx,1:ny) = east_buf(1:ny,1)
-         zz(nx,0:ny) = east_buf(0:ny,1)
+! === DEBUG by tkato 2017/07/18 ================================================
+!        zz(nx,0:ny) = east_buf(0:ny,1)
+         zz(nx,1:ny) = east_buf(1:ny,1)
 ! ==============================================================================
       end if
       if(iand(has_boundary, WEST_BOUND) == 0) then
-! === DEBUG by tkato 2016/10/12 ================================================
-!        zz(1,1:ny) = west_buf(1:ny,1)
-         zz(1,0:ny) = west_buf(0:ny,1)
+! === DEBUG by tkato 2017/07/18 ================================================
+!        zz(1,0:ny) = west_buf(0:ny,1)
+         zz(1,1:ny) = west_buf(1:ny,1)
 ! ==============================================================================
       end if
 

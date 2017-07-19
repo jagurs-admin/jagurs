@@ -61,7 +61,10 @@ integer(kind=4), dimension(ngrid_max) :: plotgrd = -1
 logical, dimension(ngrid_max) :: plotgrd_num = .false.
 integer(kind=4), private :: i
 ! ==============================================================================
-integer(kind=4) :: itmap_start = 1 ! Output grd files after itmap_start steps
+! === Write snapshot on step 0 =================================================
+!integer(kind=4) :: itmap_start = 1 ! Output grd files after itmap_start steps
+integer(kind=4) :: itmap_start = 0 ! Output grd files after itmap_start steps
+! ==============================================================================
 integer(kind=4) :: itmap_end = 99999999 ! steps at Output grd files end
 integer(kind=4) :: def_bathy = 1, defbathy_flag ! If 1 then deform bathy, otherwise skip that step
 ! === Flood Change =============================================================
@@ -369,14 +372,19 @@ contains
       end if
 
       if(dt > tau) then
-         write(0,'(a)') 'Error in tsun.par file:'
-         write(0,'(a)') 'Timestep is greater than uplift time!'
-         write(0,'(a,f18.6,a,f18.6)') 'dt=', dt, ' tau=', tau
-#ifndef MPI
-         stop
-#else
-         call fatal_error(104)
-#endif
+! === tau < dt is okay now =====================================================
+!         write(0,'(a)') 'Error in tsun.par file:'
+!         write(0,'(a)') 'Timestep is greater than uplift time!'
+!         write(0,'(a,f18.6,a,f18.6)') 'dt=', dt, ' tau=', tau
+!#ifndef MPI
+!         stop
+!#else
+!         call fatal_error(104)
+!#endif
+         write(6,'(a)') '[NOTE] Specified uplift time "tau" is less than timestep "dt".'
+         write(6,'(a)') '       So, "tau" is reset to "dt"!'
+         tau = dt
+! ==============================================================================
       end if
 
       ! thomas - check that tau is (close to) an integer multiple of dt,
@@ -542,6 +550,7 @@ contains
       write(6,'(a,e15.6)') '- Max. Froude number (froude_lim): ', froude_lim
 ! ==============================================================================
       write(6,'(a,i3)') '- Coriolis force (coriolis=1:ON/0:OFF): ', coriolis
+      write(6,'(a,i3)') '- Deformation bathymetry (def_bathy=1:ON/0:OFF): ', def_bathy
       write(6,'(a,i3)') '- Smooth edges (smooth_edges=1:ON/0:OFF): ', smooth_edges
       write(6,'(a,i3)') '- All grids are copiedy to coarse (c2p_all=1:ON/0:OFF): ', c2p_all
 ! === 1-way nest ===============================================================

@@ -394,7 +394,7 @@ program JAGURS
 
    do ig = 1, ngrid
       read(1,'(a)') buf
-      read(buf,*,end=305) dgrid(ig)%my%base_name, dgrid(ig)%parent%base_name, dgrid(ig)%my%linear_flag, dgrid(ig)%my%bath_file, &
+      read(buf,*,end=304) dgrid(ig)%my%base_name, dgrid(ig)%parent%base_name, dgrid(ig)%my%linear_flag, dgrid(ig)%my%bath_file, &
                           dgrid(ig)%my%disp_file
       read(buf,*,end=305) dgrid(ig)%my%base_name, dgrid(ig)%parent%base_name, dgrid(ig)%my%linear_flag, dgrid(ig)%my%bath_file, &
                           dgrid(ig)%my%disp_file, dgrid(ig)%wod_file
@@ -944,6 +944,9 @@ program JAGURS
       allocate(dgrid(ig)%bcf_field(niz,njz))
       allocate(dgrid(ig)%ts_field(niz,njz))
       allocate(dgrid(ig)%zz(niz,njz))
+#ifndef REAL_DBLE
+      allocate(dgrid(ig)%zz_dp(niz,njz))
+#endif
       allocate(dgrid(ig)%hzmax(niz,njz))
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 #ifndef SKIP_MAX_VEL
@@ -1771,16 +1774,38 @@ program JAGURS
                end if
 ! ==============================================================================
 ! === Displacement =============================================================
-               if(apply_kj_filter == 1) then
+! === DEBUG: Kajiura filter is applied 2 times when "init_disp_fault == 0". ====
+!              if(apply_kj_filter == 1) then
+               if((apply_kj_filter == 1) .and. (init_disp_fault == 0)) then
+! ==============================================================================
+#ifndef REAL_DBLE
+                  dgrid(ig)%zz_dp = dgrid(ig)%zz
+#endif
 #ifndef CARTESIAN
+#ifndef REAL_DBLE
+                  if(ig == 1) call displacement_calc_h0_lat1(dgrid(ig), dgrid(ig)%zz_dp, &
+#else
                   if(ig == 1) call displacement_calc_h0_lat1(dgrid(ig), dgrid(ig)%zz, &
+#endif
                      dgrid(ig)%my%nx, dgrid(ig)%my%ny, h0, lat1)
+#ifndef REAL_DBLE
+                  call displacement_apply_kj_filter(dgrid(ig), dgrid(ig)%zz_dp, &
+#else
                   call displacement_apply_kj_filter(dgrid(ig), dgrid(ig)%zz, &
+#endif
                      dgrid(ig)%my%nx, dgrid(ig)%my%ny, h0, lat1)
 #else
+#ifndef REAL_DBLE
+                  if(ig == 1) call displacement_calc_h0(dgrid(ig), dgrid(ig)%zz_dp, &
+#else
                   if(ig == 1) call displacement_calc_h0(dgrid(ig), dgrid(ig)%zz, &
+#endif
                      dgrid(ig)%my%nx, dgrid(ig)%my%ny, h0)
+#ifndef REAL_DBLE
+                  call displacement_apply_kj_filter(dgrid(ig), dgrid(ig)%zz_dp, &
+#else
                   call displacement_apply_kj_filter(dgrid(ig), dgrid(ig)%zz, &
+#endif
                      dgrid(ig)%my%nx, dgrid(ig)%my%ny, h0)
 #endif
 #ifdef MPI
@@ -1880,7 +1905,11 @@ program JAGURS
 ! === SINWAVE ==================================================================
             if(init_disp_sinwave == 0) then
 ! ==============================================================================
-            call hrise_rwg(dgrid(ig)%wave_field,dgrid(ig)%zz,dt,tau,dgrid(ig)%my%nx,dgrid(ig)%my%ny)
+! === When "def_bathy=0", hz is changed on dry cell and it can become wet. =====
+!           call hrise_rwg(dgrid(ig)%wave_field,dgrid(ig)%zz,dt,tau,dgrid(ig)%my%nx,dgrid(ig)%my%ny)
+            call hrise_rwg(dgrid(ig)%wave_field,dgrid(ig)%zz,dt,tau,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+                           dgrid(ig)%wod_flags,defbathy_flag)
+! ==============================================================================
 ! === SINWAVE ==================================================================
             else
                if(ig == 1) then
@@ -1909,6 +1938,54 @@ program JAGURS
             call exchange_edges_dz(dgrid(ig))
 #endif
          end if
+! === Write snapshot on step 0 =================================================
+         if(plotgrd(1) < 0 .or. plotgrd_num(ig)) then
+            if(istep == 1 .and. istep >= itmap_start .and. istep <= itmap_end) then
+               ! set pointers for function calls
+               wave_field             => dgrid(ig)%wave_field
+               depth_field            => dgrid(ig)%depth_field
+               ts_field               => dgrid(ig)%ts_field
+               niz                    =  dgrid(ig)%my%nx
+               njz                    =  dgrid(ig)%my%ny
+               wod_flags              => dgrid(ig)%wod_flags
+               mlat0                  =  dgrid(ig)%my%mlat0
+               mlon0                  =  dgrid(ig)%my%mlon0
+               dxdy                   =  dgrid(ig)%my%dh
+               base                   => dgrid(ig)%my%base_name
+#ifdef MPI
+               has_boundary          =  dgrid(ig)%my%has_boundary
+#endif
+#ifndef NCDIO
+               TIMER_START('dump_gmt_nl_vel')
+#ifndef MPI
+               call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,VEL)
+#else
+               call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,VEL,has_boundary)
+#endif
+               TIMER_STOP('dump_gmt_nl_vel')
+               TIMER_START('dump_gmt_nl_hgt')
+#ifndef MPI
+               call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,HGT)
+#else
+               call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,HGT,has_boundary)
+#endif
+               TIMER_STOP('dump_gmt_nl_hgt')
+#else
+#ifndef MPI
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL)
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT)
+#else
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL,has_boundary)
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT,has_boundary)
+#endif
+#endif
+            end if
+         end if
+! ==============================================================================
          pid = dgrid(ig)%parent%id
          TIMER_START('tstep_grid_vel')
 #ifndef CONV_CHECK

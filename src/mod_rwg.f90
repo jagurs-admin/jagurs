@@ -789,11 +789,22 @@ contains
       return
    end subroutine drise_rwg
 
-   subroutine hrise_rwg(wfld,zz,dt,tau,nlon,nlat)
+! === When "def_bathy=0", hz is changed on dry cell and it can become wet. =====
+!  subroutine hrise_rwg(wfld,zz,dt,tau,nlon,nlat)
+   subroutine hrise_rwg(wfld,zz,dt,tau,nlon,nlat,wod,defbathy_flag)
+! ==============================================================================
       type(wave_arrays), target, intent(inout) :: wfld
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(in) :: zz
       real(kind=REAL_BYTE), intent(in) :: dt, tau
       integer(kind=4), intent(in) :: nlon, nlat
+! === When "def_bathy=0", hz is changed on dry cell and it can become wet. =====
+#ifndef MPI
+      integer(kind=4), dimension(nlon,nlat), intent(in) :: wod
+#else
+      integer(kind=4), dimension(0:nlon+1,0:nlat+1), intent(in) :: wod
+#endif
+      integer(kind=4), intent(in) :: defbathy_flag
+! ==============================================================================
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz
       integer(kind=4) :: i, j
@@ -807,12 +818,25 @@ contains
          dev = 1.0d0
       end if
 
+! === When "def_bathy=0", hz is changed on dry cell and it can become wet. =====
+      if(defbathy_flag == 1) then
+! ==============================================================================
 !$omp parallel do private(i)
       do j = 1, nlat
          do i = 1, nlon
             hz(i,j) = hz(i,j) + dev*zz(i,j)
          end do
       end do
+! === When "def_bathy=0", hz is changed on dry cell and it can become wet. =====
+      else
+!$omp parallel do private(i)
+         do j = 1, nlat
+            do i = 1, nlon
+               if(wod(i,j) == 1) hz(i,j) = hz(i,j) + dev*zz(i,j)
+            end do
+         end do
+      end if
+! ==============================================================================
 
       return
    end subroutine hrise_rwg

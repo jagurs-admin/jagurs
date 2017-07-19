@@ -111,7 +111,10 @@ contains
       start => dgrid%my%ncdio%start
       count => dgrid%my%ncdio%count
 
-      stat = nf_create(trim(fname), ior(NF_CLOBBER, NF_64BIT_OFFSET), ncid)
+! === For EXTREMELY numerous initial_displacement. =============================
+!     stat = nf_create(trim(fname), ior(NF_CLOBBER, NF_64BIT_OFFSET), ncid)
+      stat = nf_create(trim(fname), ior(NF_CLOBBER, NF_NETCDF4), ncid)
+! ==============================================================================
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
 
       stat = nf_def_dim(ncid, 'lon', nx, xid)
@@ -220,6 +223,10 @@ contains
       stat = nf_put_att_text(ncid, hzid, 'long_name', len(trim(att)), att)
       att = 'Meters'
       stat = nf_put_att_text(ncid, hzid, 'units', len(trim(att)), att)
+! === Wave height should be missing value on dry cell. =========================
+      stat = nf_put_att_real(ncid, hzid, '_FillValue', NF_REAL, 1, &
+                             real(missing_value))
+! ==============================================================================
 
       if(velgrd_flag == 1) then
          stat = nf_def_var(ncid, 'velocity_x', NF_REAL, 3, vdims, vxid)
@@ -465,7 +472,10 @@ contains
             if(wod(i_, j_) == 1) then
                tmp(i, jsize-j+1) = hz(i_, j_)
             else
-               tmp(i, jsize-j+1) = 0.0d0
+! === Wave height should be missing value on dry cell. =========================
+!              tmp(i, jsize-j+1) = 0.0d0
+               tmp(i, jsize-j+1) = missing_value
+! ==============================================================================
             end if
          end do
       end do

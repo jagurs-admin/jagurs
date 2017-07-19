@@ -58,7 +58,7 @@ contains
       type(interp_info), pointer :: fxo, fyo, fxi, fyi, hzi
       integer(kind=4) :: bigIX, bigIY, ix, iy, k
       real(kind=REAL_BYTE) :: lfac
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
       integer(kind=4) :: fxi_np0, fxi_np1
       integer(kind=4) :: fyi_np0, fyi_np1
 #ifdef USE_ALLTOALLV
@@ -84,7 +84,7 @@ contains
       if(c2p_all == 1) then
          write(6,'(a)') '*** NOTE: c2p_all is defined!'
 ! ==============================================================================
-! === DEBUG for wave hight gap on nest boundary. 2012/10/31 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/31 ===================
 !     dg%fxo%np = 2*(my%bigNY - 2)
       dg%fxo%np = (my%bigNX - 1)*(my%bigNY - 2)
 ! ==============================================================================
@@ -104,7 +104,7 @@ contains
 ! === Config of copy from child to perent. by tkato 2012/11/15 =================
       if(c2p_all == 1) then
 ! ==============================================================================
-! === DEBUG for wave hight gap on nest boundary. 2012/10/31 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/31 ===================
 !     dg%fyo%np = 2*(my%bigNX - 2)
       dg%fyo%np = (my%bigNY - 1)*(my%bigNX - 2)
 ! ==============================================================================
@@ -162,7 +162,7 @@ contains
 ! === Config of copy from child to perent. by tkato 2012/11/15 =================
       if(c2p_all == 1) then
 ! ==============================================================================
-! === DEBUG for wave hight gap on nest boundary. 2012/10/31 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/31 ===================
       bigIX = my%zeroIX + 1
 #ifndef MPI
       do ix = int(my%nr/2) + 1 + my%nr, (my%nx-2) - my%nr/2 + 1 - my%nr, my%nr
@@ -309,7 +309,7 @@ contains
 ! === Config of copy from child to perent. by tkato 2012/11/15 =================
       if(c2p_all == 1) then
 ! ==============================================================================
-! === DEBUG for wave hight gap on nest boundary. 2012/10/31 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/31 ===================
       bigIY = my%zeroIY + 1
 #ifndef MPI
       do iy = int(my%nr/2) + 1 + my%nr, (my%ny-2) - my%nr/2 + 1 - my%nr, my%nr
@@ -510,7 +510,7 @@ contains
       lfac = 1.0/REAL_FUNC(my%nr)
 
 #ifndef MPI
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !     dg%fxi%np = 2*(my%nx - 1)
       fxi_np0 = (my%ny - 1)/my%nr + 1 ! for i = 0
       fxi_np1 = (my%ny - 1)/my%nr + 1 ! for i = nx
@@ -521,7 +521,7 @@ contains
 ! ==============================================================================
 ! ==============================================================================
 #else
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !     dg%fxi%np = 2*(my%totalNx - 1)
       fxi_np0 = (my%totalNy - 1)/my%nr + 1 ! for i = 0
       fxi_np1 = (my%totalNy - 1)/my%nr + 1 ! for i = nx
@@ -539,7 +539,7 @@ contains
       allocate(dg%fxi%wt1(dg%fxi%np))
 
 #ifndef MPI
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !     dg%fyi%np = 2*(my%ny - 1)
       fyi_np0 = (my%nx - 1)/my%nr + 1 ! for j = 0
       fyi_np1 = (my%nx - 1)/my%nr + 1 ! for j = ny
@@ -550,7 +550,7 @@ contains
 ! ==============================================================================
 ! ==============================================================================
 #else
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !     dg%fyi%np = 2*(my%totalNy - 1)
       fyi_np0 = (my%totalNx - 1)/my%nr + 1 ! for j = 0
       fyi_np1 = (my%totalNx - 1)/my%nr + 1 ! for j = ny
@@ -1815,6 +1815,7 @@ contains
 #ifndef MPI
 !$omp parallel
 !$omp do private(i, j, ic, jc, tmp, i_, j_)
+!cdir nodep
             do k = 1, hzo%np
                i = hzo%fndx(k,1)
                j = hzo%fndx(k,2)
@@ -1822,7 +1823,9 @@ contains
                jc = hzo%cndx0(k,2)
                if(wodc(ic,jc) == 1) then ! Only coarse domain is wet
                   tmp = 0.0d0
+!cdir unroll=3
                   do j_ = -1, 1
+!cdir expand=3
                      do i_ = -1, 1
                         if(wodf(i+i_, j+j_) == 1) then ! Only fine domain is wet
                            tmp = tmp + hzf(i+i_, j+j_)
@@ -1931,7 +1934,9 @@ contains
                i = hzo%fndx0_l(k,1)
                j = hzo%fndx0_l(k,2)
                tmp = 0.0d0
+!cdir unroll=3
                do j_ = -1, 1
+!cdir expand=3
                   do i_ = -1, 1
                      if(wodf(i+i_, j+j_) == 1) then ! Only fine domain is wet
                         tmp = tmp + hzf(i+i_, j+j_)
@@ -1957,6 +1962,7 @@ contains
             !*==============*
             !*  buf2coarce  * must write to edges.
             !*==============*
+!cdir nodep
             do k = 1, hzo%rnp0
                i = hzo%cndx0_l(k,1)
                j = hzo%cndx0_l(k,2)
@@ -2011,7 +2017,7 @@ contains
       integer(kind=4), dimension(2) :: ireq11, ireq12, ireq13, ireq14
       integer(kind=4), dimension(2) :: ireq21, ireq22, ireq23, ireq24
 #endif
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 #ifndef MPI
       integer(kind=4) :: i, j, imod, ind0, ind1
 #else
@@ -2074,7 +2080,7 @@ contains
                fyc(fyi%cndx1(k,1),fyi%cndx1(k,2))*fyi%wt1(k)
          end do
 !$omp end parallel
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
          lfac = 1.0d0/REAL_FUNC(fg%my%nr)
 
          do j = 1, fg%my%ny-1
@@ -2436,7 +2442,7 @@ contains
          end do
 ! === USE_MPI_ALLTOALLV ========================================================
 #endif
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
          lfac = 1.0d0/REAL_FUNC(fg%my%nr)
 
          nx = fg%my%nx
@@ -3624,7 +3630,7 @@ contains
       type(data_grids), target, intent(inout) :: dg
       type(interp_info), target, intent(inout) :: fxi
       integer(kind=4), intent(in) :: nprocs
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
       integer(kind=4), intent(in) :: ixst, iyst
 ! ==============================================================================
       integer(kind=4), intent(in) :: ixen, iyen
@@ -3680,7 +3686,7 @@ contains
       do k = 1, fxi%np
          ix = fxi%fndx(k,1)
          iy = fxi%fndx(k,2)
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !        if(my%kx <= ix .and. ix <= my%kxend .and. my%ky <= iy .and. iy <= my%kyend) then
          if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
 ! ==============================================================================
@@ -3713,7 +3719,7 @@ contains
       do k = 1, fxi%np
          ix = fxi%fndx(k,1)
          iy = fxi%fndx(k,2)
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !        if(my%kx <= ix .and. ix <= my%kxend .and. my%ky <= iy .and. iy <= my%kyend) then
          if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
 ! ==============================================================================
@@ -3804,7 +3810,7 @@ contains
             k = table_all(ind)
             ix = fxi%fndx(k,1)
             iy = fxi%fndx(k,2)
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !           if(my%kx <= ix .and. ix <= my%kxend .and. my%ky <= iy .and. iy <= my%kyend) then
             if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
 ! ==============================================================================
@@ -3827,7 +3833,7 @@ contains
             k = table_all(ind)
             ix = fxi%fndx(k,1)
             iy = fxi%fndx(k,2)
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !           if(my%kx <= ix .and. ix <= my%kxend .and. my%ky <= iy .and. iy <= my%kyend) then
             if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
 ! ==============================================================================
@@ -3884,7 +3890,7 @@ contains
       do k = 1, fxi%np
          ix = fxi%fndx(k,1)
          iy = fxi%fndx(k,2)
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !        if(my%kx <= ix .and. ix <= my%kxend .and. my%ky <= iy .and. iy <= my%kyend) then
          if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
 ! ==============================================================================
@@ -3917,7 +3923,7 @@ contains
       do k = 1, fxi%np
          ix = fxi%fndx(k,1)
          iy = fxi%fndx(k,2)
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !        if(my%kx <= ix .and. ix <= my%kxend .and. my%ky <= iy .and. iy <= my%kyend) then
          if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
 ! ==============================================================================
@@ -4008,7 +4014,7 @@ contains
             k = table_all(ind)
             ix = fxi%fndx(k,1)
             iy = fxi%fndx(k,2)
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !           if(my%kx <= ix .and. ix <= my%kxend .and. my%ky <= iy .and. iy <= my%kyend) then
             if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
 ! ==============================================================================
@@ -4031,7 +4037,7 @@ contains
             k = table_all(ind)
             ix = fxi%fndx(k,1)
             iy = fxi%fndx(k,2)
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !           if(my%kx <= ix .and. ix <= my%kxend .and. my%ky <= iy .and. iy <= my%kyend) then
             if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
 ! ==============================================================================

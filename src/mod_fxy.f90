@@ -261,9 +261,9 @@ contains
          theta = th0 + (j+joff-1)*dth
 #endif
          sint = sin(theta)
-         invst = 1.0/sint
+         invst = 1.0d0/sint
          gdtdss = gdtds*invst
-         crls = 2.0*cflag*cfreq*cos(theta)*dt
+         crls = 2.0d0*cflag*cfreq*cos(theta)*dt
 
          do i = ist, ind
             fybar = quart*(fy_old(i,j) + fy_old(i+1,j) + fy_old(i,j-1) + fy_old(i+1,j-1))
@@ -420,7 +420,7 @@ contains
          theta = th0 + (j+joff-1)*dth
 #endif
          sint = sin(theta)
-         invst = 1.0/sint
+         invst = 1.0d0/sint
          gdtdss = gdtds*invst
 
          do i = ist, ind
@@ -452,7 +452,7 @@ contains
          theta = th0 + (j+joff-1)*dth
 #endif
          sint = sin(theta)
-         invst = 1.0/sint
+         invst = 1.0d0/sint
          gdtdss = gdtds*invst
 
          do i = ist, ind
@@ -492,8 +492,8 @@ contains
          theta = th0 + (j+joff-1)*dth
 #endif
          sint = sin(theta)
-         invst = 1.0/sint
-         crls = 2.0*cflag*cfreq*cos(theta)*dt
+         invst = 1.0d0/sint
+         crls = 2.0d0*cflag*cfreq*cos(theta)*dt
 
          do i = ist, ind
             fxbar = quart*(fx_old(i,j) + fx_old(i-1,j) + fx_old(i-1,j+1) + fx_old(i,j+1))

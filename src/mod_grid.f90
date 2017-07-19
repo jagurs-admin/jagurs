@@ -127,11 +127,11 @@ type wave_arrays
 ! === Flood Change =============================================================
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hz_old
 ! ==============================================================================
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !  real(kind=REAL_BYTE), allocatable, dimension(:) :: fx_old
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fx_old
 ! ==============================================================================
-! === DEBUG for wave hight gap on nest boundary. 2012/10/30 ====================
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
 !  real(kind=REAL_BYTE), allocatable, dimension(:) :: fy_old
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fy_old
 ! ==============================================================================
@@ -243,6 +243,9 @@ type data_grids
    type(depth_arrays) :: depth_field
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: ts_field
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: zz
+#ifndef REAL_DBLE
+   real(kind=8), allocatable, dimension(:,:) :: zz_dp
+#endif
    type(boundary_arrays) :: ubnd
    type(boundary_arrays) :: hbnd
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzmax

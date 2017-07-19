@@ -140,7 +140,7 @@ contains
          cfc = gts/sint
 ! === Coriolis force is supported on linear calc. ==============================
 !        do i = 1, nlon-1
-         crls = 2.0*cflag*cfreq*cos(theta)*dt
+         crls = 2.0d0*cflag*cfreq*cos(theta)*dt
          do i = ist, ind
 ! ==============================================================================
             if(dz(i,j) > zap) then

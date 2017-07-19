@@ -310,7 +310,7 @@ contains
       dx = dxdy
       dy = dx
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
-      write(6,'(a)') 'Max wave hight'
+      write(6,'(a)') 'Max wave height'
 ! ==============================================================================
 #ifndef CARTESIAN
       write(6,'(a,f9.3,a,f9.3,a,f5.1,a,f5.1,a,f5.1,a,f5.1,a,i0,a,i0,a,a)') &
@@ -547,16 +547,25 @@ contains
             if(wod(i,j) == 1) then
                tp(i,j) = hz(i,j)
             else
-               tp(i,j) = zap
+! === Wave height should be missing value on dry cell. =========================
+!              tp(i,j) = zap
+               tp(i,j) = missing_value
+! ==============================================================================
             end if
          end do
       end do
 
       !*** GMT -R{west}/{east}/{south}/{west} corners -I{dx}/{dy} -N{nlon}/{nlat} ***
 #ifndef MPI
-      call minmax_rwg(nlon,nlat,tp,zmax,zmin,imin,jmin,imax,jmax)
+! === Wave height should be missing value on dry cell. =========================
+!     call minmax_rwg(nlon,nlat,tp,zmax,zmin,imin,jmin,imax,jmax)
+      call minmax_rwg(nlon,nlat,tp,zmax,zmin,imin,jmin,imax,jmax,.true.)
+! ==============================================================================
 #else
-      call minmax_rwg(nlon,nlat,tp,zmax,zmin)
+! === Wave height should be missing value on dry cell. =========================
+!     call minmax_rwg(nlon,nlat,tp,zmax,zmin)
+      call minmax_rwg(nlon,nlat,tp,zmax,zmin,.true.)
+! ==============================================================================
 #endif
 ! === Conversion from flux to velocity should be done right after calc. ========
 !#ifndef CARTESIAN
@@ -592,7 +601,10 @@ contains
       fname = trim(dirname) // '/' // trim(fname)
 #endif
       call mygmt_grdio_d(tp,lon_west,lon_east,lat_south,lat_north, &
-                         dx,dy,zmin,zmax,nlon,nlat,fname)
+! === Wave height should be missing value on dry cell. =========================
+!                        dx,dy,zmin,zmax,nlon,nlat,fname)
+                         dx,dy,zmin,zmax,nlon,nlat,fname,.true.)
+! ==============================================================================
 
 ! === Conversion from flux to velocity should be done right after calc. ========
       else if(mode == VEL) then

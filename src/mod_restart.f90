@@ -58,8 +58,10 @@ contains
          read(1) rarray
          rarray => dg%hzmax
          read(1) rarray
+#ifndef SKIP_MAX_VEL
          rarray => dg%vmax
          read(1) rarray
+#endif
          iarray => dg%wod_flags
          read(1) iarray
 
@@ -138,8 +140,10 @@ contains
          write(1) rarray
          rarray => dg%hzmax
          write(1) rarray
+#ifndef SKIP_MAX_VEL
          rarray => dg%vmax
          write(1) rarray
+#endif
          iarray => dg%wod_flags
          write(1) iarray
 
