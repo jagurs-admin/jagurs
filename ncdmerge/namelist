@@ -1,6 +1,6 @@
 &params
 basename='whole'
-!netcdf4=1
+!netcdf4=0
 !only_step=1800 ! Specifiy a step you need.
                 !  0: All steps
                 ! -1: Only initial_displacement

@@ -9,7 +9,10 @@ use mod_read, only : multrupt, nrupt
 ! ==============================================================================
 implicit none
 include 'netcdf.inc'
-integer(kind=4) :: netcdf4 = 0 ! NetCDF-4 Fortmat for > 4GiB records.
+! === NetCDF4 becomes the default version for V0182! ===========================
+!integer(kind=4) :: netcdf4 = 0 ! NetCDF-4 Fortmat for > 4GiB records.
+integer(kind=4) :: netcdf4 = 1 ! NetCDF-4 Fortmat for > 4GiB records.
+! ==============================================================================
 
 integer(kind=4), private :: stat
 ! === Speed output. ============================================================
@@ -131,8 +134,8 @@ contains
             att = 'Meters'
             stat = nf_put_att_text(ncid, mhid, 'units', len(trim(att)), att)
             if(flag_missing_value) then
-                stat = nf_put_att_real(ncid, mhid, '_FillValue', NF_REAL, 1, &
-                                       missing_value)
+               stat = nf_put_att_real(ncid, mhid, '_FillValue', NF_REAL, 1, &
+                                      missing_value)
             end if
          end if
          if(only_step == 0 .or. only_step == -3) then
@@ -152,6 +155,12 @@ contains
          stat = nf_put_att_text(ncid, hzid, 'long_name', len(trim(att)), att)
          att = 'Meters'
          stat = nf_put_att_text(ncid, hzid, 'units', len(trim(att)), att)
+! === Wave height should be missing value on dry cell. =========================
+         if(flag_missing_value) then
+            stat = nf_put_att_real(ncid, hzid, '_FillValue', NF_REAL, 1, &
+                                   missing_value)
+         end if
+! ==============================================================================
 
          if(vel_exists) then
             stat = nf_def_var(ncid, 'velocity_x', NF_REAL, 3, vdims, vxid)
