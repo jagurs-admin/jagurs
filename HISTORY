@@ -403,4 +403,65 @@ if "LESS_CC=ON" is specified in Makefile.
 - DEBUG for restart with sinwave/file-input has been applied.
 
 --------------------------------------------------------------------------------
+2016.12.20 V0401
+
+Snapshot output on time-step 0 is performed.
+
+--------------------------------------------------------------------------------
+2017.02.13 V0402
+
+- Support single-precision calculation except FFT related part again.
+
+- Uplift time "tau" can be specified as less than timestep "dt" (i.e. "tau=0.0d0").
+Then, "tau" is reset to "dt".
+
+--------------------------------------------------------------------------------
+2017.06.19 V0403
+
+- DEBUG for DOUBLED Kajiura filter when "init_disp_fault=1" and "apply_kj_filter=1"
+has been applied.
+
+- Performance optimization for c2p_all on NEC SX has been applied.
+
+--------------------------------------------------------------------------------
+2017.06.19 V0404
+
+- VERY MINOR: Missing precision specifier (i.e. "d0" of "1.0d0") is redeemed.
+
+--------------------------------------------------------------------------------
+2017.07.11 V0405
+
+- Wave height of dry cell in snapshot file has been changed from zero to
+"missing value" (=-1.0d10) on dry cell.
+
+NOTE: Use "ncdmerge.V0181" in case "NCDIO" for this version!
+
+- DEBUG for failing restart with SKIP_MAX_VEL has been applied.
+
+- DEBUG: When "def_bathy=0", hz is changed on dry cell and it can become wet.
+It's not good. So, hz is changed only when it's wet cell.
+
+--------------------------------------------------------------------------------
+2017.07.12 V0406
+
+- When extremely numerous initial displacements are specified with NCDIO,
+one entry can exceed 4 GByte. So, default format is changed into NetCDF4.
+
+NOTE: Use "ncdmerge.V0182" in case "NCDIO" for this version!
+
+--------------------------------------------------------------------------------
+2017.07.18 V0407
+
+CRITICAL!!!: DEBUG for exchange_edges_zz on mod_mpi.f90 has been applied.
+The form of the array zz is zz(nlon,nlat). But, operation on exchange_edges_zz is
+for the array its form is zz(0:nlon,0:nlat).
+This bug affect calc. results and can cause SIGSEGV. Affected cases are as follows.
+
+- V0400 or later, "MPI=ON" and,
+
+- "init_disp_fault=1" or "apply_kj_filter=1" or "init_disp_interpolation=1".
+
+Please use this version henceforward!
+
+--------------------------------------------------------------------------------
 
