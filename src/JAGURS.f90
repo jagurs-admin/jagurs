@@ -1825,6 +1825,16 @@ program JAGURS
 ! === Displacement =============================================================
                if((init_disp_fault == 1) .and. (ig == ngrid)) call displacement_finalize()
 ! ==============================================================================
+! === For MRI ==================================================================
+               else
+                  write(6,'(a,i0,a,f0.6,a,f0.6,a,f0.6,a,i0,a,i0,a,i0,a,a)') &
+                     'New rupture step: istep=', istep, ' dt=', dt, ' t=', t, ' tau=', tau, ' ig=', ig, &
+                     ' irupt=', irupt, ' nrupt=', nrupt, ' file=', trim(ruptgrd(irupt))
+                  TIMER_START('make_gaussian_rupture')
+                  call make_gaussian_rupture(dgrid(ig))
+                  TIMER_STOP('make_gaussian_rupture')
+               end if
+! ==============================================================================
 ! === Multiple rupture =========================================================
 #ifndef NCDIO
 #ifndef MPI
@@ -1851,17 +1861,6 @@ program JAGURS
 #else
                call write_initial_displacement(dgrid(ig), irupt)
 #endif
-! ==============================================================================
-! === For MRI ==================================================================
-               else
-                  write(6,'(a,i0,a,f0.6,a,f0.6,a,f0.6,a,i0,a,i0,a,i0,a,a)') &
-                     'New rupture step: istep=', istep, ' dt=', dt, ' t=', t, ' tau=', tau, ' ig=', ig, &
-                     ' irupt=', irupt, ' nrupt=', nrupt, ' file=', trim(ruptgrd(irupt))
-                  TIMER_START('make_gaussian_rupture')
-                  call make_gaussian_rupture(dgrid(ig))
-                  TIMER_STOP('make_gaussian_rupture')
-               end if
-! ==============================================================================
                jrupt = irupt
             end if
          end if
