@@ -464,4 +464,57 @@ This bug affect calc. results and can cause SIGSEGV. Affected cases are as follo
 Please use this version henceforward!
 
 --------------------------------------------------------------------------------
+2017.10.31 V0408
+
+Miner change to the format of tgs output files has been applied.
+
+--------------------------------------------------------------------------------
+2018.06.20 V0500
+
+- Pre-decomposition with grd2dsplit.sh for input GMT files and
+  post-mergence with split2dgrd.sh or ncdmerge for output GMT or NetCDF files
+  become unnecessarily when ONEFILE=ON is specified in Makefile.
+  Note that this function is under the verification.
+
+- Sea wall as line-data with water overflow calculation with Hom-ma formula
+  is available when BANKFILE=ON is specified in Makefile.
+  Specify xyz-format line-data file to 8 th column in gridfile.
+  Wall breaking caused by water overflow can be simulated.
+  Specify "broken_rate=[real number]" in "tsun.par".
+  Then, the height of sea wall becomes [real number]-times when the first overflow occurs.
+
+- Minimum wave height on each grid point during the simulation is output
+  when HZMINOUT=ON is specified in Makefile. Use ncdmerge.V0200 or later.
+
+- Tsunami arrival time on each grid point is output
+  when "check_arrival_time=1" is specified in "tsun.par".
+  The threshold can be specified with "check_arrival_height=[real number]"
+  in "tsun.par" (default value is 0.01d0, 1 cm). Use ncdmerge.V0200 or later.
+
+- To specify "maxgrdfn", "mingrdfn" and "vmaxgrdfn" in "tsun.par" becomes optional.
+
+- Debug and enhancement about initial displacement with Gaussian function
+  are applied (contributed by N.Yamamoto @ NIED. Thanks!).
+  - Initial displacement file becomes available.
+  - Amplitude (h0) can be specified on polar coordination case, too.
+
+- In default, elastic loading is calculated only on the root domain and ones on
+  child domains are given by interpolation.
+  In default, 3rd order spline interpolation is utilized.
+  If "use_linear=1" is specified in "tsun.par", linear interpolation is utilized.
+  If "elastic_loading_interpolation=0" is specified in "tsun.par", elastic loading
+  is calculated on each domain.
+
+- On flux calculation, the argument of sqrt on limiter operations can sometimes
+  be negative. To prevent this, 
+
+     d = half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
+     d = half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
+
+  are modified into,
+
+     d = max(0.0d0, half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j)))
+     d = max(0.0d0, half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j)))
+
+--------------------------------------------------------------------------------
 
