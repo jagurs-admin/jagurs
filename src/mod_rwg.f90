@@ -13,7 +13,10 @@ module mod_rwg
 use mod_grid
 ! === For negative max. height =================================================
 !use mod_params, only : VEL, HGT
-use mod_params, only : VEL, HGT, missing_value
+! === Arrival time =============================================================
+!use mod_params, only : VEL, HGT, missing_value
+use mod_params, only : VEL, HGT, missing_value, check_arrival_time, check_arrival_height
+! ==============================================================================
 ! ==============================================================================
 use mod_mygmt_gridio, only : read_gmt_grd
 #ifdef MPI
@@ -36,13 +39,24 @@ use mod_nest
 #ifndef CARTESIAN
 ! === Elastic Loading ==========================================================
 use mod_loading, only : loading_run
-use mod_params, only : with_elastic_loading
+! === Elastic loading with interpolation =======================================
+!use mod_params, only : with_elastic_loading
+use mod_params, only : with_elastic_loading, elastic_loading_interpolation
+! ==============================================================================
 ! ==============================================================================
 ! === Coriolis force is supported on linear calc. ==============================
 use mod_fxy_Coriolis
 use mod_fxy_Coriolis_disp
 ! ==============================================================================
 #endif
+#if defined(MPI) && defined(ONEFILE)
+use mod_onefile, only : onefile_scatter_array
+#endif
+! === Elastic loading with interpolation =======================================
+#ifndef CARTESIAN
+use mod_interpolation, only : interp2fine_elastic_loading
+#endif
+! ==============================================================================
 implicit none
 
 contains
@@ -62,6 +76,23 @@ contains
       end do
       return
    end subroutine maxgrd_init_rwg
+#ifdef HZMINOUT
+   subroutine mingrd_init_rwg(hzmin,nlon,nlat)
+      real(kind=REAL_BYTE), dimension(nlon,nlat), intent(out) :: hzmin
+      integer(kind=4), intent(in) :: nlon, nlat
+      integer :: i, j
+!$omp parallel do private(i)
+      do j = 1, nlat
+         do i = 1, nlon
+! === For negative min. height =================================================
+!           hzmin(i,j) = 0.0d0
+            hzmin(i,j) = missing_value
+! ==============================================================================
+         end do
+      end do
+      return
+   end subroutine mingrd_init_rwg
+#endif
 
    subroutine maxgrd_check_nl(hzmax,wfld,wod,nlon,nlat)
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(inout) :: hzmax
@@ -93,6 +124,40 @@ contains
 
       return
    end subroutine maxgrd_check_nl
+#ifdef HZMINOUT
+   subroutine mingrd_check_nl(hzmin,wfld,wod,nlon,nlat)
+      real(kind=REAL_BYTE), dimension(nlon,nlat), intent(inout) :: hzmin
+      type(wave_arrays), target, intent(in) :: wfld
+! === Conversion from flux to velocity should be done right after calc. ========
+!     integer(kind=4), dimension(nlon,nlat), intent(in) :: wod
+#ifndef MPI
+      integer(kind=4), dimension(nlon,nlat), intent(in) :: wod
+#else
+      integer(kind=4), dimension(0:nlon+1,0:nlat+1), intent(in) :: wod
+#endif
+! ==============================================================================
+      integer(kind=4), intent(in) :: nlon, nlat
+
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz
+      integer(kind=4) :: i, j
+
+      hz => wfld%hz
+
+      !** if wet check for hzmin **
+!$omp parallel do private(i)
+      do j = 1, nlat
+         do i = 1, nlon
+            if(wod(i,j) == 1) then
+               if((hzmin(i,j) < missing_value*0.9d0) .or. (hz(i,j) < hzmin(i,j))) then
+                  hzmin(i,j) = hz(i,j)
+               end if
+            end if
+         end do
+      end do
+
+      return
+   end subroutine mingrd_check_nl
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
    subroutine maxgrd_v_init_rwg(vmax,nlon,nlat)
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(out) :: vmax
@@ -549,7 +614,9 @@ contains
          call exchange_edges(mode,fg)
          TIMER_STOP('- exch_edges_vel')
 ! === Modification to fit pointer version! =====================================
+         TIMER_START('- exch_edges_wod')
          call exchange_edges_wod(fg)
+         TIMER_STOP('- exch_edges_wod')
 ! ==============================================================================
 #endif
       else if(mode == HGT) then
@@ -585,9 +652,25 @@ contains
 #ifndef CARTESIAN
 ! === Elastic Loading ==========================================================
          if(with_elastic_loading == 1) then
+! === Elastic loading with interpolation =======================================
+         if(elastic_loading_interpolation == 0) then
+! ==============================================================================
             TIMER_START('- loading_run')
             call loading_run(fg)
             TIMER_STOP('- loading_run')
+! === Elastic loading with interpolation =======================================
+         else
+            if(ig == 1) then
+               TIMER_START('- loading_run')
+               call loading_run(fg)
+               TIMER_STOP('- loading_run')
+            else
+               TIMER_START('- interp2fine_elastic_loading')
+               call interp2fine_elastic_loading(cg,fg)
+               TIMER_STOP('- interp2fine_elastic_loading')
+            end if
+         end if
+! ==============================================================================
          end if
 ! ==============================================================================
 #endif
@@ -1127,7 +1210,11 @@ contains
    end subroutine boundary_rwg
 #endif
 
+#if !defined(MPI) || !defined(ONEFILE)
    subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld)
+#else
+   subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,dg,myrank)
+#endif
       type(wave_arrays), target, intent(inout) :: wfld
       type(depth_arrays), target, intent(in) :: dfld
 ! === Conversion from flux to velocity should be done right after calc. ========
@@ -1143,17 +1230,34 @@ contains
       real(kind=REAL_BYTE), target, dimension(nlon,nlat), intent(inout) :: wodfld
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz, dz, wod
+! === Arrival time =============================================================
+      integer(kind=4), pointer, dimension(:,:) :: arrivedat
+! ==============================================================================
       real(kind=REAL_BYTE) :: zap = 0.0d0
       integer(kind=4) :: i, j
+#if defined(MPI) && defined(ONEFILE)
+      type(data_grids), target, intent(inout) :: dg
+      integer(kind=4), intent(in) :: myrank
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: wod_all
+#endif
 
       hz => wfld%hz
       dz => dfld%dz
       wod => wodfld
+! === Arrival time =============================================================
+      arrivedat => wfld%arrivedat
+! ==============================================================================
 
 !$omp parallel
       if(trim(fname) == 'NO_WETORDRY_FILE_GIVEN') then
 !$omp single
+#if defined(MPI) && defined(ONEFILE)
+         if(myrank == 0) then
+#endif
          write(6,'(8x,a)') trim(fname)
+#if defined(MPI) && defined(ONEFILE)
+         end if
+#endif
 !$omp end single
 !$omp do private(i)
          do j = 1, nlat
@@ -1169,8 +1273,20 @@ contains
          end do
       else
 !$omp single
+#if !defined(MPI) || !defined(ONEFILE)
          write(6,'(8x,a,a)') 'WETORDRY_FILE_GIVEN:', trim(fname)
          call read_gmt_grd(fname, wod, nlon, nlat)
+#else
+         if(myrank == 0) then
+            allocate(wod_all(dg%my%totalNx,dg%my%totalNy))
+            write(6,'(8x,a,a)') 'WETORDRY_FILE_GIVEN:', trim(fname)
+            call read_gmt_grd(fname, wod_all, dg%my%totalNx,dg%my%totalNy)
+         else
+            allocate(wod_all(1,1))
+         end if
+         call onefile_scatter_array(wod_all,wod,dg)
+         deallocate(wod_all)
+#endif
 !$omp end single
 !$omp do private(i)
          do j = 1, nlat
@@ -1194,6 +1310,20 @@ contains
             end do
          end do
       end if
+! === Arrival time =============================================================
+      if(check_arrival_time == 1) then
+!$omp do private(i)
+         do j = 1, nlat
+            do i = 1, nlon
+               if(ifz(i,j) == 1) then ! wet first
+                  arrivedat(i,j) = -1
+               else ! dry first
+                  arrivedat(i,j) = -2
+               end if
+            end do
+         end do
+      end if
+! ==============================================================================
 !$omp end parallel
 
       return
@@ -1293,21 +1423,17 @@ contains
       zmin = min
       zmax = max
 #else
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       call MPI_Allreduce(min, zmin, 1, REAL_MPI, MPI_MIN, MPI_COMM_WORLD, ierr)
       if(ierr /= 0) write(0,'(a)') 'MPI Error : MPI_Allreduce in minmax_rwg'
       call MPI_Allreduce(max, zmax, 1, REAL_MPI, MPI_MAX, MPI_COMM_WORLD, ierr)
       if(ierr /= 0) write(0,'(a)') 'MPI Error : MPI_Allreduce in minmax_rwg'
-! === For ensemble =============================================================
 #else
       call MPI_Allreduce(min, zmin, 1, REAL_MPI, MPI_MIN, MPI_MEMBER_WORLD, ierr)
       if(ierr /= 0) write(0,'(a)') 'MPI Error : MPI_Allreduce in minmax_rwg'
       call MPI_Allreduce(max, zmax, 1, REAL_MPI, MPI_MAX, MPI_MEMBER_WORLD, ierr)
       if(ierr /= 0) write(0,'(a)') 'MPI Error : MPI_Allreduce in minmax_rwg'
 #endif
-! ==============================================================================
 #endif
 
       return
@@ -1694,110 +1820,17 @@ contains
       !*==============*
       !*  allreduce   *
       !*==============*
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       call MPI_Allreduce(cbuf0, fbuf0, ldx*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
-#else
-      call MPI_Allreduce(cbuf0, fbuf0, ldx*4*3, REAL_MPI, MPI_SUM, MPI_MEMBER_WORLD, ierr)
-#endif
-! ==============================================================================
-      if(ierr /= 0) then
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
-! === For ensemble =============================================================
-#ifndef MULTI
-! ==============================================================================
       call MPI_Allreduce(cbuf1, fbuf1, ldy*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
+      call MPI_Allreduce(cbuf2, fbuf2, ldy*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
+      call MPI_Allreduce(cbuf3, fbuf3, ldx*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
 #else
       call MPI_Allreduce(cbuf1, fbuf1, ldy*4*3, REAL_MPI, MPI_SUM, MPI_MEMBER_WORLD, ierr)
-#endif
-! ==============================================================================
-      if(ierr /= 0) then
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-                write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-                write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-                write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-                write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-                write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
-! === For ensemble =============================================================
-#ifndef MULTI
-! ==============================================================================
-      call MPI_Allreduce(cbuf2, fbuf2, ldy*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
-#else
+      call MPI_Allreduce(cbuf0, fbuf0, ldx*4*3, REAL_MPI, MPI_SUM, MPI_MEMBER_WORLD, ierr)
       call MPI_Allreduce(cbuf2, fbuf2, ldy*4*3, REAL_MPI, MPI_SUM, MPI_MEMBER_WORLD, ierr)
-#endif
-! ==============================================================================
-      if(ierr /= 0) then
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
-! === For ensemble =============================================================
-#ifndef MULTI
-! ==============================================================================
-      call MPI_Allreduce(cbuf3, fbuf3, ldx*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
-#else
       call MPI_Allreduce(cbuf3, fbuf3, ldx*4*3, REAL_MPI, MPI_SUM, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
-      if(ierr /= 0) then
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
       !*==============*
       !*  copy2dx     *
       !*==============*
@@ -1943,110 +1976,17 @@ contains
       !*==============*
       !*  allreduce   *
       !*==============*
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       call MPI_Allreduce(cbuf0, fbuf0, ldx*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
+      call MPI_Allreduce(cbuf1, fbuf1, ldy*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
+      call MPI_Allreduce(cbuf2, fbuf2, ldy*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
+      call MPI_Allreduce(cbuf3, fbuf3, ldx*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
 #else
       call MPI_Allreduce(cbuf0, fbuf0, ldx*4*3, REAL_MPI, MPI_SUM, MPI_MEMBER_WORLD, ierr)
-#endif
-! ==============================================================================
-      if(ierr /= 0) then
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
-! === For ensemble =============================================================
-#ifndef MULTI
-! ==============================================================================
-      call MPI_Allreduce(cbuf1, fbuf1, ldy*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
-#else
       call MPI_Allreduce(cbuf1, fbuf1, ldy*4*3, REAL_MPI, MPI_SUM, MPI_MEMBER_WORLD, ierr)
-#endif
-! ==============================================================================
-      if(ierr /= 0) then
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
-! === For ensemble =============================================================
-#ifndef MULTI
-! ==============================================================================
-      call MPI_Allreduce(cbuf2, fbuf2, ldy*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
-#else
       call MPI_Allreduce(cbuf2, fbuf2, ldy*4*3, REAL_MPI, MPI_SUM, MPI_MEMBER_WORLD, ierr)
-#endif
-! ==============================================================================
-      if(ierr /= 0) then
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
-! === For ensemble =============================================================
-#ifndef MULTI
-! ==============================================================================
-      call MPI_Allreduce(cbuf3, fbuf3, ldx*4*3, REAL_MPI, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
-#else
       call MPI_Allreduce(cbuf3, fbuf3, ldx*4*3, REAL_MPI, MPI_SUM, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
-      if(ierr /= 0) then
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
       !*==============*
       !*  buf2fine    *
       !*==============*
@@ -2305,6 +2245,62 @@ contains
 
       return
    end subroutine apply_abc
+! ==============================================================================
+! === Arrival time =============================================================
+   subroutine check_arrival(wfld,dfld,nlon,nlat,istep)
+      type(wave_arrays), target, intent(inout) :: wfld
+      type(depth_arrays), target, intent(in) :: dfld
+      integer(kind=4), intent(in) :: nlon, nlat, istep
+
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz, dz
+      real(kind=REAL_BYTE) :: td
+      integer(kind=4), pointer, dimension(:,:) :: arrivedat
+      integer(kind=4) :: i, j
+
+      hz        => wfld%hz
+      dz        => dfld%dz
+      arrivedat => wfld%arrivedat
+
+!$omp parallel do private(i, td)
+      do j = 1, nlat
+         do i = 1, nlon
+            if(arrivedat(i,j) == -1) then ! wet first
+               if(hz(i,j) > check_arrival_height) arrivedat(i,j) = istep
+            else if(arrivedat(i,j) == -2) then ! dry first
+               td = dz(i,j) + hz(i,j)
+               if(td > check_arrival_height) arrivedat(i,j) = istep
+            end if
+         end do
+      end do
+
+      return
+   end subroutine check_arrival
+
+   subroutine calc_arrival_time(wfld,nlon,nlat,dt)
+      type(wave_arrays), target, intent(inout) :: wfld
+      integer(kind=4), intent(in) :: nlon, nlat
+      real(kind=REAL_BYTE), intent(in) :: dt
+
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: arrival_time
+      integer(kind=4), pointer, dimension(:,:) :: arrivedat
+      integer(kind=4) :: i, j
+
+      arrival_time => wfld%arrival_time
+      arrivedat    => wfld%arrivedat
+
+!$omp parallel do private(i)
+      do j = 1, nlat
+         do i = 1, nlon
+            if(arrivedat(i,j) < 0) then
+               arrival_time(i,j) = missing_value
+            else
+               arrival_time(i,j) = dt*arrivedat(i,j)
+            end if
+         end do
+      end do
+
+      return
+   end subroutine calc_arrival_time
 ! ==============================================================================
 
 end module mod_rwg

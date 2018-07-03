@@ -12,18 +12,14 @@
 program JAGURS
 #ifdef MPI
    use mpi
-! === For ensemble =============================================================
 #else
 #ifdef MULTI
    use mpi
 #endif
-! ==============================================================================
 #endif
-! === For ensemble =============================================================
 #ifdef MULTI
    use mod_multi
 #endif
-! ==============================================================================
    use mod_grid
    use mod_params
    use mod_tgs
@@ -96,6 +92,16 @@ program JAGURS
    use mod_interpolation, only : interpolation_mpi_initialize
 #endif
 ! ==============================================================================
+#if defined(MPI) && defined(ONEFILE)
+   use mod_onefile, only : onefile_initialize, onefile_setparams
+#endif
+#ifdef BANKFILE
+   use mod_bank, only : read_bank_file, update_bathymetory, &
+                        save_dxdy_old, update_btxbty
+#endif
+#ifdef DUMP1D
+   use mod_dump1d, only : dump1d_initialize, dump1d, dump1d_finalize
+#endif
    implicit none
 
    type(data_grids), allocatable, target, dimension(:) :: dgrid
@@ -105,6 +111,9 @@ program JAGURS
    type(depth_arrays), pointer :: depth_field
    type(boundary_arrays), pointer :: ubnd, hbnd
    real(kind=REAL_BYTE), pointer, dimension(:,:) :: wod_field, bcf_field, ts_field, zz, hzmax
+#ifdef HZMINOUT
+   real(kind=REAL_BYTE), pointer, dimension(:,:) :: hzmin
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 #ifndef SKIP_MAX_VEL
    real(kind=REAL_BYTE), pointer, dimension(:,:) :: vmax
@@ -117,9 +126,6 @@ program JAGURS
    real(kind=REAL_BYTE) :: dxdy, mlon0, mlat0, th0, dth
    integer(kind=4) :: linear_flag ! do linear calculation for any nonzero number else 0 gives nonlinear
 
-! === Not be precise anymore. ==================================================
-!  real(kind=REAL_BYTE) :: tmem
-! ==============================================================================
    integer(kind=4) :: istep, nstep
    integer(kind=4) :: nsta ! total number of tide gauge stations
    type(tgsrwg), allocatable, dimension(:) :: mytgs ! tide gauge data structure see "mod_grid.f90"
@@ -259,7 +265,8 @@ program JAGURS
    real(kind=8) :: h0
 #endif
 ! ==============================================================================
-! === For ensemble =============================================================
+   TIMER_START('All')
+
 #ifdef MULTI
    call MPI_Init(ierr)
    call MPI_Comm_size(MPI_COMM_WORLD, g_nprocs, ierr)
@@ -291,21 +298,11 @@ program JAGURS
    open(6,file=stdout,action='write',status='replace',form='formatted')
 #endif
 #endif
-! ==============================================================================
 
-   TIMER_START('All')
 #ifdef MPI
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
    call MPI_Init(ierr)
-   if(ierr == MPI_ERR_OTHER) then
-      write(0,'(a)') 'MPI_Init error'
-      stop
-   end if
-! === For ensemble =============================================================
 #endif
-! ==============================================================================
 #endif
    TIMER_START('getpar')
    call getpar()
@@ -314,45 +311,18 @@ program JAGURS
    if(max_time_i /= 0) call start_trunc()
 ! ==============================================================================
 #ifdef MPI
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
    call MPI_Comm_size(MPI_COMM_WORLD, nprocs, ierr)
-! === For ensemble =============================================================
+   call MPI_Comm_rank(MPI_COMM_WORLD, myrank, ierr)
 #else
    call MPI_Comm_size(MPI_MEMBER_WORLD, nprocs, ierr)
-#endif
-! ==============================================================================
-   if(ierr /= MPI_SUCCESS) then
-      select case (ierr)
-         case(MPI_ERR_COMM)
-            write(0,'(a)') 'Error: Invalid communicator in MPI_Comm_size.'
-         case(MPI_ERR_ARG)
-            write(0,'(a)') 'Error: Invalid argument in MPI_Comm_size.'
-         case default
-            write(0,'(a)') 'Error: Unknown error.'
-      end select
-      call fatal_error(ierr)
-   end if
-
-! === For ensemble =============================================================
-#ifndef MULTI
-! ==============================================================================
-   call MPI_Comm_rank(MPI_COMM_WORLD, myrank, ierr)
-! === For ensemble =============================================================
-#else
    call MPI_Comm_rank(MPI_MEMBER_WORLD, myrank, ierr)
 #endif
-! ==============================================================================
-   if(ierr /= MPI_SUCCESS) then
-      select case (ierr)
-         case(MPI_ERR_COMM)
-            write(0,'(a)') 'Error: Invalid communicator in MPI_Comm_rank.'
-         case default
-            write(0,'(a)') 'Error: Unknown error.'
-      end select
-      call fatal_error(ierr)
-   end if
+#endif
+#if defined(MPI) && defined(ONEFILE)
+   TIMER_START('onefile_initialize')
+   call onefile_initialize(nprocs, myrank)
+   TIMER_STOP('onefile_initialize')
 #endif
 
    nstep = nint(tend/dt) + 1
@@ -400,10 +370,17 @@ program JAGURS
                           dgrid(ig)%my%disp_file, dgrid(ig)%wod_file
       read(buf,*,end=306) dgrid(ig)%my%base_name, dgrid(ig)%parent%base_name, dgrid(ig)%my%linear_flag, dgrid(ig)%my%bath_file, &
                           dgrid(ig)%my%disp_file, dgrid(ig)%wod_file, dgrid(ig)%bcf_file
+#ifdef BANKFILE
+      read(buf,*,end=307) dgrid(ig)%my%base_name, dgrid(ig)%parent%base_name, dgrid(ig)%my%linear_flag, dgrid(ig)%my%bath_file, &
+                          dgrid(ig)%my%disp_file, dgrid(ig)%wod_file, dgrid(ig)%bcf_file, dgrid(ig)%bank_file
+#endif
       cycle
 304   dgrid(ig)%my%disp_file = 'NO_DISPLACEMENT_FILE_GIVEN'
 305   dgrid(ig)%wod_file     = 'NO_WETORDRY_FILE_GIVEN'
 306   dgrid(ig)%bcf_file     = 'NO_FRICTION_FILE_GIVEN'
+#ifdef BANKFILE
+307   dgrid(ig)%bank_file    = 'NO_BANK_FILE_GIVEN'
+#endif
    end do
 #ifdef MULTI
 ! === Split Dir ================================================================
@@ -418,6 +395,11 @@ program JAGURS
       if(dgrid(ig)%bcf_file /= 'NO_FRICTION_FILE_GIVEN') then
          dgrid(ig)%bcf_file = trim(input_dirname) // trim(dgrid(ig)%bcf_file)
       end if
+#ifdef BANKFILE
+      if(dgrid(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+         dgrid(ig)%bank_file = trim(input_dirname) // trim(dgrid(ig)%bank_file)
+      end if
+#endif
    end do
 ! ==============================================================================
 #endif
@@ -474,20 +456,22 @@ program JAGURS
    end if
 #endif
    if(myrank == 0) write(0,'(a,3i6)') 'NOTE: A2A3D decomposition: ', decomp
+   TIMER_START('A2A3D_init')
    call A2A3D_init(nprocs, myrank, decomp, a2a3d_num_handler)
+   TIMER_STOP('A2A3D_init')
 #endif
 #endif
    write(suffix,'(a,i6.6)') '.', myrank
 ! === Separate stdout into for each process. ===================================
    stdout = trim(stdout) // trim(suffix)
-! === For ensemble =============================================================
 #ifdef MULTI
    stdout = trim(members_dir) // trim(stdout)
 #endif
-!===============================================================================
    open(6,file=stdout,action='write',status='replace',form='formatted')
 ! ==============================================================================
+#ifndef ONEFILE
    call add_suffix_to_grid_filenames(dgrid, ngrid, suffix)
+#endif
 
    if(nprocs /= npx*npy) then
       write(0,'(a,i0,a,i0,a,i0,a,i0,a)') 'FATAL Error : Number of MPI processes (nprocs=', nprocs, &
@@ -498,32 +482,57 @@ program JAGURS
    ranky = myrank/npx
 #endif
 ! === For MRI ==================================================================
-   if(init_disp_gaussian == 1) call specify_gaussian_params(gaussian_file_name)
+   if(init_disp_gaussian == 1) then
+      TIMER_START('specify_gaussian_params')
+      call specify_gaussian_params(gaussian_file_name)
+      TIMER_STOP('specify_gaussian_params')
+   end if
 ! ==============================================================================
 ! === SINWAVE ==================================================================
 #ifndef MULTI
-   if(init_disp_sinwave == 1) call specify_sinwave_params(sinwave_file_name)
+   if(init_disp_sinwave == 1) then
+      TIMER_START('specify_sinwave_params')
+      call specify_sinwave_params(sinwave_file_name)
+      TIMER_STOP('specify_sinwave_params')
+   end if
 #else
-   if(init_disp_sinwave == 1) call specify_sinwave_params(input_dirname, sinwave_file_name)
+   if(init_disp_sinwave == 1) then
+      TIMER_START('specify_sinwave_params')
+      call specify_sinwave_params(input_dirname, sinwave_file_name)
+      TIMER_STOP('specify_sinwave_params')
+   end if
 #endif
 ! ==============================================================================
 ! === Displacement =============================================================
 #ifdef MPI
-   if(apply_kj_filter == 1) call displacement_mpi_initialize(nprocs, myrank, npx, npy, rankx, ranky)
+   if(apply_kj_filter == 1) then
+      TIMER_START('displacement_mpi_initialize')
+      call displacement_mpi_initialize(nprocs, myrank, npx, npy, rankx, ranky)
+      TIMER_STOP('displacement_mpi_initialize')
+   end if
 #endif
 ! ==============================================================================
 ! === Initial displacement of child domains is given by interpolation. =========
 #ifdef MPI
-   if(init_disp_interpolation == 1) call interpolation_mpi_initialize(nprocs, myrank, npx, npy, rankx, ranky)
+! === Elastic loading with interpolation =======================================
+!  if(init_disp_interpolation == 1) then
+   if((init_disp_interpolation == 1) .or. (elastic_loading_interpolation == 1)) then
+! ==============================================================================
+      TIMER_START('interpolation_mpi_initialize')
+      call interpolation_mpi_initialize(nprocs, myrank, npx, npy, rankx, ranky)
+      TIMER_STOP('interpolation_mpi_initialize')
+   end if
 #endif
 ! ==============================================================================
 #ifndef _WIN32
 ! === Output config! ===========================================================
+   TIMER_START('putpar')
 #ifndef MPI
    call putpar(gridfile, ngrid, dgrid)
 #else
    call putpar(nprocs, gridfile, ngrid, dgrid)
 #endif
+   TIMER_STOP('putpar')
 ! ==============================================================================
 #endif
 
@@ -579,6 +588,7 @@ program JAGURS
             do irupt = 1, nrupt
                read(1,'(a)',err=100) ruptgrd(irupt)
 #ifdef MPI
+#ifndef ONEFILE
 ! === Displacement =============================================================
 ! === DEBUG for MPI & multiple rupture & interpolation! ========================
 !              if(init_disp_interpolation == 0) then
@@ -589,6 +599,7 @@ program JAGURS
 ! === Displacement =============================================================
                end if
 ! ==============================================================================
+#endif
 #endif
                write(6,'(a,i0,a,a)') 'grid: ', ig, ' rupture file: ', trim(ruptgrd(irupt))
             end do
@@ -610,12 +621,18 @@ program JAGURS
 110 if(ierr > 0) call fatal_error(108)
 #endif
 
+#if defined(MPI) && defined(ONEFILE)
+   if(myrank == 0) then
+#endif
    write(6,'(a,a)') trim(program_name), ': Reading grid data...'
+#if defined(MPI) && defined(ONEFILE)
+   end if
+#endif
 
-! === Not be precise anymore. ==================================================
-!  tmem = 0.0d0
-! ==============================================================================
    do ig = 1, ngrid
+#if defined(MPI) && defined(ONEFILE)
+      if(myrank == 0) then
+#endif
       write(6,'(/,2x,a,i0)') '*** grid ', ig
 
       !*** read in bathymetry GMT netcdf grid file ***
@@ -623,6 +640,37 @@ program JAGURS
       TIMER_START('read_bathymetry_gmt_grdhdr')
       call read_bathymetry_gmt_grdhdr(dgrid(ig)%my%bath_file,niz,njz,dxdy,mlon0,mlat0)
       TIMER_STOP('read_bathymetry_gmt_grdhdr')
+#if defined(MPI) && defined(ONEFILE)
+      end if
+
+#ifndef MULTI
+      call MPI_Bcast(niz,   1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(njz,   1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(dxdy,  1, REAL_MPI,    0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(mlon0, 1, REAL_MPI,    0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(mlat0, 1, REAL_MPI,    0, MPI_COMM_WORLD, ierr)
+#else
+      call MPI_Bcast(niz,   1, MPI_INTEGER, 0, MPI_MEMBER_WORLD, ierr)
+      call MPI_Bcast(njz,   1, MPI_INTEGER, 0, MPI_MEMBER_WORLD, ierr)
+      call MPI_Bcast(dxdy,  1, REAL_MPI,    0, MPI_MEMBER_WORLD, ierr)
+      call MPI_Bcast(mlon0, 1, REAL_MPI,    0, MPI_MEMBER_WORLD, ierr)
+      call MPI_Bcast(mlat0, 1, REAL_MPI,    0, MPI_MEMBER_WORLD, ierr)
+#endif
+
+      totalNx = niz
+      nbx = totalNx / npx + min(1, mod(totalNx, npx))
+      niz = nbx
+      if(rankx == npx - 1) niz = totalNx - nbx*(npx - 1)
+      if(rankx <  npx - 1) niz = niz + 1
+      if(rankx >  0)       niz = niz + 1
+
+      totalNy = njz
+      nby = totalNy / npy + min(1, mod(totalNy, npy))
+      njz = nby
+      if(ranky == npy - 1) njz = totalNy - nby*(npy - 1)
+      if(ranky <  npy - 1) njz = njz + 1
+      if(ranky >  0)       njz = njz + 1
+#endif
 
       dgrid(ig)%my%nx = niz
       dgrid(ig)%my%ny = njz
@@ -630,8 +678,6 @@ program JAGURS
       dgrid(ig)%my%mlon0 = mlon0
       dgrid(ig)%my%mlat0 = mlat0
  
-!     write(6,'(a,f0.3,a,f0.3)') 'mlon0=', mlon0, ' mlat0=', mlat0
-
 #ifdef MPI
       ! MPI
       !       north 
@@ -649,123 +695,35 @@ program JAGURS
       dgrid(ig)%my%rx = rankx
       dgrid(ig)%my%ry = ranky
 
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       call MPI_Allreduce(niz, totalNx, 1, MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
 #else
       call MPI_Allreduce(niz, totalNx, 1, MPI_INTEGER, MPI_SUM, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
-      if(ierr == 0) then
-         totalNx = totalNx/npy - (npx-1)*2
-         dgrid(ig)%my%totalNx = totalNx
-      else
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
+      totalNx = totalNx/npy - (npx-1)*2
+      dgrid(ig)%my%totalNx = totalNx
 
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       call MPI_Allreduce(njz, totalNy, 1, MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
 #else
       call MPI_Allreduce(njz, totalNy, 1, MPI_INTEGER, MPI_SUM, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
-      if(ierr ==0) then
-         totalNy = totalNy/npx - (npy-1)*2
-         dgrid(ig)%my%totalNy = totalNy
-      else
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end  select
-         call fatal_error(ierr)
-      end if
+      totalNy = totalNy/npx - (npy-1)*2
+      dgrid(ig)%my%totalNy = totalNy
 
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       call MPI_Allreduce(mlon0, glon0, 1, REAL_MPI, MPI_MIN, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
 #else
       call MPI_Allreduce(mlon0, glon0, 1, REAL_MPI, MPI_MIN, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
-      if(ierr == 0) then
-         dgrid(ig)%my%glon0 = glon0
-      else
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
+      dgrid(ig)%my%glon0 = glon0
 
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       call MPI_Allreduce(mlat0, glat0, 1, REAL_MPI, MPI_MIN, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
 #else
       call MPI_Allreduce(mlat0, glat0, 1, REAL_MPI, MPI_MIN, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
-      if(ierr == 0) then
-         dgrid(ig)%my%glat0 = glat0
-      else
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end select
-         call fatal_error(ierr)
-      end if
+      dgrid(ig)%my%glat0 = glat0
 
       nbx    = totalNx / npx ! x-size of local region without edges
       if(mod(totalNx, npx) /= 0) nbx = nbx + 1
@@ -809,38 +767,21 @@ program JAGURS
       dgrid(ig)%my%kxend        = kxend
       dgrid(ig)%my%kyend        = kyend
       dgrid(ig)%my%has_boundary = has_boundary
+#ifdef ONEFILE
+      TIMER_START('onefile_setparams')
+      call onefile_setparams(dgrid(ig))
+      TIMER_STOP('onefile_setparams')
+#endif
 ! === To avoid numerical error =================================================
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       call MPI_Bcast(dgrid(ig)%my%dh, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
 #else
       call MPI_Bcast(dgrid(ig)%my%dh, 1, REAL_MPI, 0, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
-      if(ierr == 0) then
 #ifndef CARTESIAN
-         dgrid(ig)%my%mlon0 = dgrid(ig)%my%glon0 + (kx - 1)*dgrid(ig)%my%dh*60.0d0
-         dgrid(ig)%my%mlat0 = dgrid(ig)%my%glat0 + (ky - 1)*dgrid(ig)%my%dh*60.0d0
+      dgrid(ig)%my%mlon0 = dgrid(ig)%my%glon0 + (kx - 1)*dgrid(ig)%my%dh*60.0d0
+      dgrid(ig)%my%mlat0 = dgrid(ig)%my%glat0 + (ky - 1)*dgrid(ig)%my%dh*60.0d0
 #endif
-      else
-         select case (ierr)
-            case(MPI_ERR_BUFFER)
-               write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-            case(MPI_ERR_COUNT)
-               write(0,'(a)') 'MPI Error : Invalid count argument'
-            case(MPI_ERR_TYPE)
-               write(0,'(a)') 'MPI Error : Invalid datatype argument'
-            case(MPI_ERR_OP)
-               write(0,'(a)') 'MPI Error : Invalid operation'
-            case(MPI_ERR_COMM)
-               write(0,'(a)') 'MPI Error : Invalid communicator'
-            case default
-               write(0,'(a)') 'MPI Error : Unknown error'
-         end  select
-         call fatal_error(ierr)
-      end if
 ! ==============================================================================
 #endif
       !*** allocate and initalize the memory space ***
@@ -849,6 +790,14 @@ program JAGURS
       allocate(dgrid(ig)%wave_field%fy    (-1:niz+1,-2:njz+1))
       allocate(dgrid(ig)%wave_field%fx_old(-2:niz+1,-1:njz+1))
       allocate(dgrid(ig)%wave_field%fy_old(-1:niz+1,-2:njz+1))
+#ifdef BANKFILE
+      if(dgrid(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+         allocate(dgrid(ig)%wave_field%btx(-2:niz+1,-1:njz+1))
+         allocate(dgrid(ig)%wave_field%brokenx(-2:niz+1,-1:njz+1))
+         allocate(dgrid(ig)%wave_field%bty(-1:niz+1,-2:njz+1))
+         allocate(dgrid(ig)%wave_field%brokeny(-1:niz+1,-2:njz+1))
+      end if
+#endif
       if((with_disp == 1) .or. (with_disp == 2 .and. ig /= 1)) then
          allocate(dgrid(ig)%wave_field%yu(0:niz,0:njz))
          allocate(dgrid(ig)%wave_field%yv(0:niz,0:njz))
@@ -863,6 +812,12 @@ program JAGURS
       if(iand(has_boundary, NORTH_BOUND) /= 0) jst = -1
       allocate(dgrid(ig)%wave_field%fx    (ist:ien,jst:jen))
       allocate(dgrid(ig)%wave_field%fx_old(ist:ien,jst:jen))
+#ifdef BANKFILE
+      if(dgrid(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+         allocate(dgrid(ig)%wave_field%btx(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%brokenx(ist:ien,jst:jen))
+      end if
+#endif
 
       ! fy, fy_old
       ist = 0
@@ -873,6 +828,12 @@ program JAGURS
       if(iand(has_boundary, NORTH_BOUND) /= 0) jst = -2
       allocate(dgrid(ig)%wave_field%fy    (ist:ien,jst:jen))
       allocate(dgrid(ig)%wave_field%fy_old(ist:ien,jst:jen))
+#ifdef BANKFILE
+      if(dgrid(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+         allocate(dgrid(ig)%wave_field%bty(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%brokeny(ist:ien,jst:jen))
+      end if
+#endif
       if((with_disp == 1) .or. (with_disp == 2 .and. ig /= 1)) then
          if(iand(has_boundary, WEST_BOUND)  /= 0) then
             if(iand(has_boundary, NORTH_BOUND)  /= 0) then
@@ -901,6 +862,13 @@ program JAGURS
       allocate(dgrid(ig)%wave_field%hz    (-1:niz+2,-1:njz+2))
       allocate(dgrid(ig)%wave_field%hz_old(-1:niz+2,-1:njz+2))
       allocate(dgrid(ig)%depth_field%dz   (-1:niz+2,-1:njz+2))
+#ifdef BANKFILE
+      if(dgrid(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+         allocate(dgrid(ig)%wave_field%ir   (-1:niz+2,-1:njz+2))
+         allocate(dgrid(ig)%depth_field%dxbx(-1:niz+2,-1:njz+2))
+         allocate(dgrid(ig)%depth_field%dyby(-1:niz+2,-1:njz+2))
+      end if
+#endif
 #ifndef CARTESIAN
 ! === Density ==================================================================
       if(with_density == 1) then
@@ -918,6 +886,13 @@ program JAGURS
       allocate(dgrid(ig)%wave_field%hz    (ist:ien,jst:jen))
       allocate(dgrid(ig)%wave_field%hz_old(ist:ien,jst:jen))
       allocate(dgrid(ig)%depth_field%dz   (ist:ien,jst:jen))
+#ifdef BANKFILE
+      if(dgrid(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+         allocate(dgrid(ig)%wave_field%ir   (ist:ien,jst:jen))
+         allocate(dgrid(ig)%depth_field%dxbx(ist:ien,jst:jen))
+         allocate(dgrid(ig)%depth_field%dyby(ist:ien,jst:jen))
+      end if
+#endif
 #ifndef CARTESIAN
 ! === Density ==================================================================
       if(with_density == 1) then
@@ -929,6 +904,7 @@ program JAGURS
       if(with_abc == 1) then
          if(ig == 1) then
             allocate(dgrid(ig)%wave_field%abc(niz,njz))
+            TIMER_START('make_abc')
 #ifndef MPI
             call make_abc(dgrid(ig)%wave_field%abc,niz,njz)
 #else
@@ -936,10 +912,17 @@ program JAGURS
                           dgrid(ig)%my%totalNx,dgrid(ig)%my%totalNy, &
                           dgrid(ig)%my%kx,dgrid(ig)%my%ky)
 #endif
+            TIMER_STOP('make_abc')
          end if
       end if
       allocate(dgrid(ig)%depth_field%dx(niz,njz))
       allocate(dgrid(ig)%depth_field%dy(niz,njz))
+#ifdef BANKFILE
+      if(dgrid(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+         allocate(dgrid(ig)%depth_field%dx_old(niz,njz))
+         allocate(dgrid(ig)%depth_field%dy_old(niz,njz))
+      end if
+#endif
       allocate(dgrid(ig)%wod_field(niz,njz))
       allocate(dgrid(ig)%bcf_field(niz,njz))
       allocate(dgrid(ig)%ts_field(niz,njz))
@@ -948,6 +931,9 @@ program JAGURS
       allocate(dgrid(ig)%zz_dp(niz,njz))
 #endif
       allocate(dgrid(ig)%hzmax(niz,njz))
+#ifdef HZMINOUT
+      allocate(dgrid(ig)%hzmin(niz,njz))
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 #ifndef SKIP_MAX_VEL
       allocate(dgrid(ig)%vmax(niz,njz))
@@ -960,6 +946,12 @@ program JAGURS
 #else
       allocate(dgrid(ig)%wod_flags(0:niz+1,0:njz+1))
 #endif
+! ==============================================================================
+! === Arrival time =============================================================
+      if(check_arrival_time == 1) then
+         allocate(dgrid(ig)%wave_field%arrivedat(niz,njz))
+         allocate(dgrid(ig)%wave_field%arrival_time(niz,njz))
+      end if
 ! ==============================================================================
       allocate(dgrid(ig)%hbnd%north(niz))
       allocate(dgrid(ig)%hbnd%east(njz))
@@ -976,16 +968,31 @@ program JAGURS
       end if
 ! ==============================================================================
 
-! === Not be precise anymore. ==================================================
-!     write(6,'(/,6x,a,f0.3,a,/)') 'memory estimate: ', 40.0d0*REAL_FUNC(niz)*REAL_FUNC(njz)/1.0d6, ' (Mb)'
-!     tmem = tmem + 40.0d0*REAL_FUNC(niz)*REAL_FUNC(njz)/1.0d6
-! ==============================================================================
-
       !*** initialize depth and friction field ***
       dgrid(ig)%depth_field%dx = 0.0d0 ! depth field
       dgrid(ig)%depth_field%dy = 0.0d0 ! depth field
       dgrid(ig)%depth_field%dz = 0.0d0 ! depth field
       dgrid(ig)%bcf_field = 0.0d0 ! friction field
+#ifdef BANKFILE
+      if(dgrid(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+         dgrid(ig)%depth_field%dx_old = 0.0d0
+         dgrid(ig)%depth_field%dy_old = 0.0d0
+
+         dgrid(ig)%wave_field%btx = 0.0d0
+         dgrid(ig)%wave_field%bty = 0.0d0
+         dgrid(ig)%wave_field%ir = 0
+         dgrid(ig)%depth_field%dxbx = 0.0d0
+         dgrid(ig)%depth_field%dyby = 0.0d0
+
+         if(broken_rate < 0.0d0) then
+            dgrid(ig)%wave_field%brokenx = 1
+            dgrid(ig)%wave_field%brokeny = 1
+         else
+            dgrid(ig)%wave_field%brokenx = 0
+            dgrid(ig)%wave_field%brokeny = 0
+         end if
+      end if
+#endif
 
       !*** set simulation parameters ***
 #ifndef CARTESIAN
@@ -1018,6 +1025,9 @@ program JAGURS
       ubnd                   => dgrid(ig)%ubnd
       hbnd                   => dgrid(ig)%hbnd
       hzmax                  => dgrid(ig)%hzmax
+#ifdef HZMINOUT
+      hzmin                  => dgrid(ig)%hzmin
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 #ifndef SKIP_MAX_VEL
       vmax                   => dgrid(ig)%vmax
@@ -1031,18 +1041,33 @@ program JAGURS
 #ifdef MPI
       has_boundary          =  dgrid(ig)%my%has_boundary
 ! === Don't repeat allocate/deallocate! ========================================
+      TIMER_START('allocate_edges')
       call allocate_edges(dgrid(ig))
+      TIMER_STOP('allocate_edges')
 ! ==============================================================================
 #endif
 
       !*** read in the bathymetry ***
       TIMER_START('read_bathymetry_gmt_grd')
+#if !defined(MPI) || !defined(ONEFILE)
       call read_bathymetry_gmt_grd(file_name_bathymetry, depth_field, niz, njz, linear_flag)
+#else
+      call read_bathymetry_gmt_grd(file_name_bathymetry, depth_field, niz, njz, linear_flag, dgrid(ig), myrank)
+#endif
       TIMER_STOP('read_bathymetry_gmt_grd')
+#ifdef BANKFILE
+      TIMER_START('read_bank_file')
+      call read_bank_file(dgrid(ig))
+      TIMER_STOP('read_bank_file')
+#endif
 
       !*** read in the bottom friction coefficient ***
       TIMER_START('read_friction_gmt_grd')
-      call read_friction_gmt_grd(bcf_file_name, bcf_field, niz, njz )
+#if !defined(MPI) || !defined(ONEFILE)
+      call read_friction_gmt_grd(bcf_file_name, bcf_field, niz, njz)
+#else
+      call read_friction_gmt_grd(bcf_file_name, bcf_field, niz, njz, dgrid(ig), myrank)
+#endif
       TIMER_STOP('read_friction_gmt_grd')
 
       !*** read seismic displacement ***
@@ -1054,6 +1079,7 @@ program JAGURS
       TIMER_STOP('initl_wfld')
 
 #ifdef NCDIO
+      TIMER_START('open_file')
 #ifndef MULTI
 #ifndef MPI
       call open_file(base, dgrid(ig))
@@ -1068,11 +1094,16 @@ program JAGURS
       call open_file(temp_filename, dgrid(ig), myrank)
 #endif
 #endif
+      TIMER_STOP('open_file')
 #endif
 
       !*** initialize wet or dry flags ***
       TIMER_START('wet_or_dry')
+#if !defined(MPI) || !defined(ONEFILE)
       call wet_or_dry(wave_field,depth_field,wod_flags,niz,njz,wod_file_name,wod_field)
+#else
+      call wet_or_dry(wave_field,depth_field,wod_flags,niz,njz,wod_file_name,wod_field,dgrid(ig),myrank)
+#endif
       TIMER_STOP('wet_or_dry')
 
       if(ig == 1) then ! set zero slope radiation condition for coarse grid only
@@ -1096,6 +1127,11 @@ program JAGURS
       TIMER_START('maxgrd_init_rwg')
       call maxgrd_init_rwg(hzmax,niz,njz)
       TIMER_STOP('maxgrd_init_rwg')
+#ifdef HZMINOUT
+      TIMER_START('mingrd_init_rwg')
+      call mingrd_init_rwg(hzmin,niz,njz)
+      TIMER_STOP('mingrd_init_rwg')
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 #ifndef SKIP_MAX_VEL
       TIMER_START('maxgrd_v_init_rwg')
@@ -1104,10 +1140,6 @@ program JAGURS
 #endif
 ! ==============================================================================
    end do
-
-! === Not be precise anymore. ==================================================
-!  write(6,'(/,a,f0.3,a,/)') '***** TOTAL memory estimate: ', tmem, '(Mb)'
-! ==============================================================================
 
    ! find parents, initialize fields and set-up interpolation/copying mapping
    do ig = 2, ngrid
@@ -1358,15 +1390,21 @@ program JAGURS
 ! ==============================================================================
 ! === USE_MPI_ALLTOALLV ========================================================
 #endif
+      TIMER_STOP('initl_gridmap')
+      TIMER_START('initl_gridmap_dz')
       call initl_gridmap_dz(dgrid(ig))
+      TIMER_STOP('initl_gridmap_dz')
       if(ig /= 1) then
          pid = dgrid(ig)%parent%id
+         TIMER_START('interp2fine_dz')
          call interp2fine_dz(dgrid(pid),dgrid(ig))
+         TIMER_STOP('interp2fine_dz')
       end if
 #ifdef MPI
+      TIMER_START('exchange_edges_dz')
       call exchange_edges_dz(dgrid(ig))
+      TIMER_STOP('exchange_edges_dz')
 #endif
-      TIMER_STOP('initl_gridmap')
 
       if(smooth_edges == 1) then
          TIMER_START('smooth_bath')
@@ -1374,15 +1412,24 @@ program JAGURS
          TIMER_STOP('smooth_bath')
          if(ig /= 1) then
             pid = dgrid(ig)%parent%id
+            TIMER_START('interp2fine_dz')
             call interp2fine_dz(dgrid(pid),dgrid(ig))
+            TIMER_STOP('interp2fine_dz')
          end if
 #ifdef MPI
+         TIMER_START('exchange_edges_dz')
          call exchange_edges_dz(dgrid(ig))
+         TIMER_STOP('exchange_edges_dz')
 #endif
-         TIMER_START('wet_or_dry')
          ! recheck wet or dry since depth may have changed
+         TIMER_START('wet_or_dry')
          call wet_or_dry(dgrid(ig)%wave_field,dgrid(ig)%depth_field,dgrid(ig)%wod_flags, &
+#if !defined(MPI) || !defined(ONEFILE)
                          dgrid(ig)%my%nx,dgrid(ig)%my%ny,dgrid(ig)%wod_file,dgrid(ig)%wod_field)
+#else
+                         dgrid(ig)%my%nx,dgrid(ig)%my%ny,dgrid(ig)%wod_file,dgrid(ig)%wod_field, &
+                         dgrid(ig),myrank)
+#endif
          TIMER_STOP('wet_or_dry')
       end if
 
@@ -1574,16 +1621,12 @@ program JAGURS
             tgsfp(j) = 200 + j
          end do
          do j = 1, nsta
-! === For ensemble =============================================================
 #ifndef MULTI
-!===============================================================================
             write(tgsfiles(j),'(a,i6.6)') trim(tgstxtoutfile), mytgs(j)%number
-! === For ensemble =============================================================
 #else
             write(tgsfiles(j),'(a,i6.6)') &
                trim(members_dir) // trim(tgstxtoutfile), mytgs(j)%number
 #endif
-!===============================================================================
             open(tgsfp(j),file=trim(tgsfiles(j)),action='write',status='replace',form='formatted',err=200)
             cycle
 200         write(0,'(a,a,a)') 'tgs text out : file open error "', trim(tgsfiles(j)), '"'
@@ -1628,11 +1671,9 @@ program JAGURS
             if(with_disp == 1 .or. ig /= 1) then
                dgrid(ig)%my%nconvout = 1000 + ig
                str = 'conv_step.' // trim(dgrid(ig)%my%base_name)
-! === For ensemble =============================================================
 #ifdef MULTI
                str = trim(members_dir) // trim(str)
 #endif
-! ==============================================================================
                open(dgrid(ig)%my%nconvout,file=str,action='write',status='replace',form='formatted')
             end if
          end do
@@ -1675,6 +1716,18 @@ program JAGURS
    end if
 ! ==============================================================================
 #endif
+#ifdef BANKFILE
+   do ig = 1, ngrid
+      TIMER_START('update_bathymetory')
+      call update_bathymetory(dgrid(ig))
+      TIMER_STOP('update_bathymetory')
+   end do
+#endif
+#ifdef DUMP1D
+   TIMER_START('dump1d_initialize')
+   call dump1d_initialize(dgrid)
+   TIMER_STOP('dump1d_initialize')
+#endif
    !*** main loop ***
 ! === Support restart ==========================================================
 !  do istep = 1, nstep
@@ -1690,7 +1743,9 @@ program JAGURS
       write(6,'(a,i0)') '[RESTART] Restart from step ', restart
       write(6,'(a,a)') '[RESTART] Restart file read: ', trim(restart_file_name)
       write(6,'(a,i0)') '[RESTART] Next step is ', istart
+      TIMER_START('read_restart_file')
       call read_restart_file(ngrid, dgrid, restart_file_name)
+      TIMER_STOP('read_restart_file')
    end if
    do istep = istart, nstep
 ! ==============================================================================
@@ -1701,15 +1756,11 @@ program JAGURS
          trunc_flag = check_trunc(max_time_i)
 #else
          if(myrank == 0) trunc_flag = check_trunc(max_time_i)
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
          call MPI_Bcast(trunc_flag, 1, MPI_LOGICAL, 0, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
 #else
          call MPI_Bcast(trunc_flag, 1, MPI_LOGICAL, 0, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
 #endif
          if(trunc_flag) then
             write(6,'(a)')          '======================================================='
@@ -1758,19 +1809,27 @@ program JAGURS
                TIMER_START('read_rupture')
                call read_rupture(dgrid(ig)%zz,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
                                  dgrid(ig)%my%mlat0,dgrid(ig)%my%mlon0,dgrid(ig)%my%dh, &
+#if !defined(MPI) || !defined(ONEFILE)
                                  ruptgrd(irupt),program_name)
+#else
+                                 ruptgrd(irupt),program_name,dgrid(ig),myrank)
+#endif
                TIMER_STOP('read_rupture')
 ! === Displacement =============================================================
                else
                   if(ig == 1) then
                      if(multrupt == 1) fault_param_file = ruptgrd(irupt)
+                     TIMER_START('displacement_initialize')
 #ifndef MULTI
                      call displacement_initialize()
 #else
                      call displacement_initialize(input_dirname)
 #endif
+                     TIMER_STOP('displacement_initialize')
                   end if
+                  TIMER_START('displacement_calc_displacement')
                   call displacement_calc_displacement(dgrid(ig), ig)
+                  TIMER_STOP('displacement_calc_displacement')
                end if
 ! ==============================================================================
 ! === Displacement =============================================================
@@ -1783,30 +1842,46 @@ program JAGURS
 #endif
 #ifndef CARTESIAN
 #ifndef REAL_DBLE
-                  if(ig == 1) call displacement_calc_h0_lat1(dgrid(ig), dgrid(ig)%zz_dp, &
+                  if(ig == 1) then
+                     TIMER_START('displacement_calc_h0_lat1')
+                     call displacement_calc_h0_lat1(dgrid(ig), dgrid(ig)%zz_dp, &
 #else
-                  if(ig == 1) call displacement_calc_h0_lat1(dgrid(ig), dgrid(ig)%zz, &
+                  if(ig == 1) then
+                     TIMER_START('displacement_calc_h0_lat1')
+                     call displacement_calc_h0_lat1(dgrid(ig), dgrid(ig)%zz, &
 #endif
                      dgrid(ig)%my%nx, dgrid(ig)%my%ny, h0, lat1)
+                     TIMER_STOP('displacement_calc_h0_lat1')
+                  end if
+                  TIMER_START('displacement_apply_kj_filter')
 #ifndef REAL_DBLE
                   call displacement_apply_kj_filter(dgrid(ig), dgrid(ig)%zz_dp, &
 #else
                   call displacement_apply_kj_filter(dgrid(ig), dgrid(ig)%zz, &
 #endif
                      dgrid(ig)%my%nx, dgrid(ig)%my%ny, h0, lat1)
+                  TIMER_STOP('displacement_apply_kj_filter')
 #else
 #ifndef REAL_DBLE
-                  if(ig == 1) call displacement_calc_h0(dgrid(ig), dgrid(ig)%zz_dp, &
+                  if(ig == 1) then
+                     TIMER_START('displacement_calc_h0')
+                     call displacement_calc_h0(dgrid(ig), dgrid(ig)%zz_dp, &
 #else
-                  if(ig == 1) call displacement_calc_h0(dgrid(ig), dgrid(ig)%zz, &
+                  if(ig == 1) then
+                     TIMER_START('displacement_calc_h0')
+                     call displacement_calc_h0(dgrid(ig), dgrid(ig)%zz, &
 #endif
                      dgrid(ig)%my%nx, dgrid(ig)%my%ny, h0)
+                     TIMER_STOP('displacement_calc_h0')
+                  end if
+                  TIMER_START('displacement_apply_kj_filter')
 #ifndef REAL_DBLE
                   call displacement_apply_kj_filter(dgrid(ig), dgrid(ig)%zz_dp, &
 #else
                   call displacement_apply_kj_filter(dgrid(ig), dgrid(ig)%zz, &
 #endif
                      dgrid(ig)%my%nx, dgrid(ig)%my%ny, h0)
+                  TIMER_STOP('displacement_apply_kj_filter')
 #endif
 #ifdef MPI
                   call exchange_edges_zz(dgrid(ig))
@@ -1816,7 +1891,9 @@ program JAGURS
 ! === Initial displacement of child domains is given by interpolation. =========
                else
                   pid = dgrid(ig)%parent%id
+                  TIMER_START('interp2fine_init_disp')
                   call interp2fine_init_disp(dgrid(pid),dgrid(ig))
+                  TIMER_STOP('interp2fine_init_disp')
 #ifdef MPI
                   call exchange_edges_zz(dgrid(ig))
 #endif
@@ -1824,33 +1901,6 @@ program JAGURS
 ! ==============================================================================
 ! === Displacement =============================================================
                if((init_disp_fault == 1) .and. (ig == ngrid)) call displacement_finalize()
-! ==============================================================================
-! === Multiple rupture =========================================================
-#ifndef NCDIO
-#ifndef MPI
-               write(str,'(a,a,i3.3,a)') &
-                  trim(dgrid(ig)%my%base_name),  '.initl_disp', irupt, '.grd'
-#else
-               write(str,'(a,a,i3.3,a,a)') &
-                  trim(dgrid(ig)%my%base_name),  '.initl_disp', irupt, '.grd', trim(suffix)
-#endif
-#ifndef DIROUT
-#ifdef MULTI
-               str =  trim(members_dir) // trim(str)
-#endif
-               call maxgrd_write_gmt(dgrid(ig)%zz,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
-                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.false.)
-#else
-               dirname = 'initl_disp.grd'
-#ifdef MULTI
-               dirname =  trim(members_dir) // trim(dirname)
-#endif
-               call maxgrd_write_gmt(dgrid(ig)%zz,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
-                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.false.)
-#endif
-#else
-               call write_initial_displacement(dgrid(ig), irupt)
-#endif
 ! ==============================================================================
 ! === For MRI ==================================================================
                else
@@ -1861,6 +1911,56 @@ program JAGURS
                   call make_gaussian_rupture(dgrid(ig))
                   TIMER_STOP('make_gaussian_rupture')
                end if
+! ==============================================================================
+! === Multiple rupture =========================================================
+#ifndef NCDIO
+#ifndef MPI
+               write(str,'(a,a,i3.3,a)') &
+                  trim(dgrid(ig)%my%base_name),  '.initl_disp', irupt, '.grd'
+#else
+#ifndef ONEFILE
+               write(str,'(a,a,i3.3,a,a)') &
+                  trim(dgrid(ig)%my%base_name),  '.initl_disp', irupt, '.grd', trim(suffix)
+#else
+               write(str,'(a,a,i3.3,a)') &
+                  trim(dgrid(ig)%my%base_name),  '.initl_disp', irupt, '.grd'
+#endif
+#endif
+#ifndef DIROUT
+#ifdef MULTI
+               str =  trim(members_dir) // trim(str)
+#endif
+               TIMER_START('maxgrd_write_gmt_init')
+               call maxgrd_write_gmt(dgrid(ig)%zz,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+#if !defined(MPI) || !defined(ONEFILE)
+                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.false.)
+#else
+                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.false.,dgrid(ig),myrank)
+#endif
+               TIMER_STOP('maxgrd_write_gmt_init')
+#else
+               dirname = 'initl_disp.grd'
+#ifdef MULTI
+               dirname =  trim(members_dir) // trim(dirname)
+#endif
+               TIMER_START('maxgrd_write_gmt_init')
+               call maxgrd_write_gmt(dgrid(ig)%zz,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+#if !defined(MPI) || !defined(ONEFILE)
+                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.false.)
+#else
+                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.false.,dgrid(ig),myrank)
+#endif
+               TIMER_STOP('maxgrd_write_gmt_init')
+#endif
+#else
+               TIMER_START('write_initial_displacement')
+#if !defined(MPI) || !defined(ONEFILE)
+               call write_initial_displacement(dgrid(ig), irupt)
+#else
+               call write_initial_displacement(dgrid(ig), myrank, irupt)
+#endif
+               TIMER_STOP('write_initial_displacement')
+#endif
 ! ==============================================================================
                jrupt = irupt
             end if
@@ -1923,6 +2023,13 @@ program JAGURS
             end if
 ! ==============================================================================
             TIMER_STOP('hrise_rwg')
+#ifdef BANKFILE
+            if(defbathy_flag == 1) then
+               TIMER_START('save_dxdy_old')
+               call save_dxdy_old(dgrid(ig))
+               TIMER_STOP('save_dxdy_old')
+            end if
+#endif
 #ifdef MPI
             call exchange_edges(HGT,dgrid(ig))
 #endif
@@ -1932,10 +2039,22 @@ program JAGURS
             TIMER_STOP('drise_rwg')
             if(ig /= 1) then
                pid = dgrid(ig)%parent%id
+               TIMER_START('interp2fine_dz')
                call interp2fine_dz(dgrid(pid),dgrid(ig))
+               TIMER_STOP('interp2fine_dz')
             end if
 #ifdef MPI
             call exchange_edges_dz(dgrid(ig))
+#endif
+#ifdef BANKFILE
+            if(defbathy_flag == 1) then
+               TIMER_START('update_btxbty')
+               call update_btxbty(dgrid(ig))
+               TIMER_STOP('update_btxbty')
+               TIMER_START('update_bathymetory')
+               call update_bathymetory(dgrid(ig))
+               TIMER_STOP('update_bathymetory')
+            end if
 #endif
          end if
 ! === Write snapshot on step 0 =================================================
@@ -1962,7 +2081,11 @@ program JAGURS
                                 mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,VEL)
 #else
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
+#ifndef ONEFILE
                                 mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,VEL,has_boundary)
+#else
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,VEL,has_boundary,dgrid(ig))
+#endif
 #endif
                TIMER_STOP('dump_gmt_nl_vel')
                TIMER_START('dump_gmt_nl_hgt')
@@ -1971,19 +2094,37 @@ program JAGURS
                                 mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,HGT)
 #else
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
+#ifndef ONEFILE
                                 mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,HGT,has_boundary)
+#else
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,HGT,has_boundary,dgrid(ig))
+#endif
 #endif
                TIMER_STOP('dump_gmt_nl_hgt')
 #else
+               TIMER_START('write_snapshot')
 #ifndef MPI
                call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL)
                call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT)
 #else
+#ifndef ONEFILE
                call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL,has_boundary)
                call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT,has_boundary)
+#else
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL,has_boundary,myrank)
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT,has_boundary,myrank)
 #endif
+#endif
+               TIMER_STOP('write_snapshot')
 #endif
             end if
+         end if
+! ==============================================================================
+! === Arrival time =============================================================
+         if(check_arrival_time == 1 .and. istep == 1) then
+            TIMER_START('check_arrival')
+            call check_arrival(wave_field,depth_field,niz,njz,0)
+            TIMER_STOP('check_arrival')
          end if
 ! ==============================================================================
          pid = dgrid(ig)%parent%id
@@ -2002,6 +2143,18 @@ program JAGURS
 #endif
 #endif
          TIMER_STOP('tstep_grid_vel')
+#ifdef BANKFILE
+         if(dgrid(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+#ifdef MPI
+            TIMER_START('exchange_edges_btxbty')
+            call exchange_edges_btxbty(dgrid(ig))
+            TIMER_STOP('exchange_edges_btxbty')
+#endif
+            TIMER_START('update_bathymetory')
+            call update_bathymetory(dgrid(ig))
+            TIMER_STOP('update_bathymetory')
+         end if
+#endif
 #ifdef CONV_CHECK
 #ifdef MPI
          if(myrank == 0) then
@@ -2038,6 +2191,9 @@ program JAGURS
          ubnd                   => dgrid(ig)%ubnd
          hbnd                   => dgrid(ig)%hbnd
          hzmax                  => dgrid(ig)%hzmax
+#ifdef HZMINOUT
+         hzmin                  => dgrid(ig)%hzmin
+#endif
 #ifndef SKIP_MAX_VEL
          vmax                   => dgrid(ig)%vmax
 #endif
@@ -2062,24 +2218,28 @@ program JAGURS
                TIMER_START('dump_gmt_nl_vel')
 #ifndef MPI
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
-! === Speed output. ============================================================
-!                               mlat0,mlon0,dxdy,t,istep,base,velgrd_flag,VEL)
                                 mlat0,mlon0,dxdy,t,istep,base,VEL)
-! ==============================================================================
 #else
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
-! === Speed output. ============================================================
-!                               mlat0,mlon0,dxdy,t,istep,myrank,base,velgrd_flag,VEL,has_boundary)
+#ifndef ONEFILE
                                 mlat0,mlon0,dxdy,t,istep,myrank,base,VEL,has_boundary)
-! ==============================================================================
+#else
+                                mlat0,mlon0,dxdy,t,istep,myrank,base,VEL,has_boundary,dgrid(ig))
+#endif
 #endif
                TIMER_STOP('dump_gmt_nl_vel')
 #else
+               TIMER_START('write_snapshot_vel')
 #ifndef MPI
                call write_snapshot(dgrid(ig),t,istep,VEL)
 #else
+#ifndef ONEFILE
                call write_snapshot(dgrid(ig),t,istep,VEL,has_boundary)
+#else
+               call write_snapshot(dgrid(ig),t,istep,VEL,has_boundary,myrank)
 #endif
+#endif
+               TIMER_STOP('write_snapshot_vel')
 #endif
             end if
          end if
@@ -2138,6 +2298,9 @@ program JAGURS
          ubnd                   => dgrid(ig)%ubnd
          hbnd                   => dgrid(ig)%hbnd
          hzmax                  => dgrid(ig)%hzmax
+#ifdef HZMINOUT
+         hzmin                  => dgrid(ig)%hzmin
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 #ifndef SKIP_MAX_VEL
          vmax                   => dgrid(ig)%vmax
@@ -2149,11 +2312,26 @@ program JAGURS
          has_boundary          =  dgrid(ig)%my%has_boundary
 #endif
 ! ==============================================================================
+#ifdef DUMP1D
+         TIMER_START('dump1d')
+         call dump1d(ig, dgrid(ig), istep)
+         TIMER_STOP('dump1d')
+#endif
 
+! === Arrival time =============================================================
+         if(check_arrival_time == 1) then
+            call check_arrival(wave_field,depth_field,niz,njz,istep)
+         end if
+! ==============================================================================
          !*** check for maximum wave heights ***
          TIMER_START('maxgrd_check_nl')
          call maxgrd_check_nl(hzmax,wave_field,wod_flags,niz,njz)
          TIMER_STOP('maxgrd_check_nl')
+#ifdef HZMINOUT
+         TIMER_START('mingrd_check_nl')
+         call mingrd_check_nl(hzmin,wave_field,wod_flags,niz,njz)
+         TIMER_STOP('mingrd_check_nl')
+#endif
 
          ! Burbidge: Stop things if the maximum wave height gets silly
          TIMER_START('error_check')
@@ -2170,15 +2348,11 @@ program JAGURS
          end do
 ! === Finalized if error occurred. =============================================
 #ifdef MPI
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
          call MPI_Allreduce(MPI_IN_PLACE, error, 1, MPI_INTEGER, MPI_SUM, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
 #else
          call MPI_Allreduce(MPI_IN_PLACE, error, 1, MPI_INTEGER, MPI_SUM, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
 #endif
          if(error /= 0) then
             TIMER_STOP('error_check')
@@ -2205,16 +2379,14 @@ program JAGURS
 ! ==============================================================================
 #ifndef MPI
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
-! === Speed output. ============================================================
-!                               mlat0,mlon0,dxdy,t,istep,base,velgrd_flag,HGT)
                                 mlat0,mlon0,dxdy,t,istep,base,HGT)
-! ==============================================================================
 #else
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
-! === Speed output. ============================================================
-!                               mlat0,mlon0,dxdy,t,istep,myrank,base,velgrd_flag,HGT,has_boundary)
+#ifndef ONEFILE
                                 mlat0,mlon0,dxdy,t,istep,myrank,base,HGT,has_boundary)
-! ==============================================================================
+#else
+                                mlat0,mlon0,dxdy,t,istep,myrank,base,HGT,has_boundary,dgrid(ig))
+#endif
 #endif
 ! === Conversion from flux to velocity should be done right after calc. ========
 !              TIMER_STOP('dump_gmt_nl')
@@ -2223,11 +2395,17 @@ program JAGURS
 #else
 ! === Conversion from flux to velocity should be done right after calc. ========
 !              call write_snapshot(dgrid(ig),t,istep)
+               TIMER_START('write_snapshot_hgt')
 #ifndef MPI
                call write_snapshot(dgrid(ig),t,istep,HGT)
 #else
+#ifndef ONEFILE
                call write_snapshot(dgrid(ig),t,istep,HGT,has_boundary)
+#else
+               call write_snapshot(dgrid(ig),t,istep,HGT,has_boundary,myrank)
 #endif
+#endif
+               TIMER_STOP('write_snapshot_hgt')
 ! ==============================================================================
 #endif
             end if
@@ -2267,14 +2445,14 @@ program JAGURS
 ! === DEBUG for tgs text output by tkato. 2012/10/11 ===========================
 #ifndef __FUJITSU
             write(tgsfp(j), '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
-               'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+               'step=', istep, ' t=', t, ' hz= ', tgs_hz, ' fx= ', tgs_fx, ' fy= ', tgs_fy
 #else
 #ifndef REAL_DBLE
             write(tgsfp(j), '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
-               'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+               'step=', istep, ' t=', t, ' hz= ', tgs_hz, ' fx= ', tgs_fx, ' fy= ', tgs_fy
 #else
             write(tgsfp(j), '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
-               'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+               'step=', istep, ' t=', t, ' hz= ', tgs_hz, ' fx= ', tgs_fx, ' fy= ', tgs_fy
 #endif
 #endif
 ! ==============================================================================
@@ -2302,14 +2480,14 @@ program JAGURS
             end if
 #ifndef __FUJITSU
             write(tgsfp, '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
-               trim(tgsnum) // 'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+               trim(tgsnum) // 'step=', istep, ' t=', t, ' hz= ', tgs_hz, ' fx= ', tgs_fx, ' fy= ', tgs_fy
 #else
 #ifndef REAL_DBLE
             write(tgsfp, '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
-               trim(tgsnum) // 'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+               trim(tgsnum) // 'step=', istep, ' t=', t, ' hz= ', tgs_hz, ' fx= ', tgs_fx, ' fy= ', tgs_fy
 #else
             write(tgsfp, '(a,i0,a,e23.15e3,a,e23.15e3,a,e23.15e3,a,e23.15e3)') &
-               trim(tgsnum) // 'step=', istep, ' t=', t, ' hz=', tgs_hz, ' fx=', tgs_fx, ' fy=', tgs_fy
+               trim(tgsnum) // 'step=', istep, ' t=', t, ' hz= ', tgs_hz, ' fx= ', tgs_fx, ' fy= ', tgs_fy
 #endif
 #endif
          end if
@@ -2325,28 +2503,32 @@ program JAGURS
       end if
 ! === Support restart ==========================================================
       if(restart_interval /= 0) then
-          if(mod(istep,restart_interval) == 0) then
+         if(mod(istep,restart_interval) == 0) then
 #ifndef MPI
-             write(restart_file_name, '(a,i8.8)') 'restart.', istep
+            write(restart_file_name, '(a,i8.8)') 'restart.', istep
 #else
-             write(restart_file_name, '(a,i8.8,a,i6.6)') 'restart.', istep, '.', myrank
+            write(restart_file_name, '(a,i8.8,a,i6.6)') 'restart.', istep, '.', myrank
 #endif
-             write(6,'(a,a)') '[RESTART] Restart file written: ', trim(restart_file_name)
-             call write_restart_file(ngrid, dgrid, restart_file_name)
-          end if
+            write(6,'(a,a)') '[RESTART] Restart file written: ', trim(restart_file_name)
+            TIMER_START('write_restart_file')
+            call write_restart_file(ngrid, dgrid, restart_file_name)
+            TIMER_STOP('write_restart_file')
+         end if
       end if
 ! ==============================================================================
    end do ! end of main loop
 ! === Restart output for truncation ============================================
       if(restart_interval /= 0 .and. trunc_flag) then
-          istep = istep - 1
+         istep = istep - 1
 #ifndef MPI
-          write(restart_file_name, '(a,i8.8)') 'restart.', istep
+         write(restart_file_name, '(a,i8.8)') 'restart.', istep
 #else
-          write(restart_file_name, '(a,i8.8,a,i6.6)') 'restart.', istep, '.', myrank
+         write(restart_file_name, '(a,i8.8,a,i6.6)') 'restart.', istep, '.', myrank
 #endif
-          write(6,'(a,a)') '[RESTART] Restart file written: ', trim(restart_file_name)
-          call write_restart_file(ngrid, dgrid, restart_file_name)
+         write(6,'(a,a)') '[RESTART] Restart file written: ', trim(restart_file_name)
+         TIMER_START('write_restart_file')
+         call write_restart_file(ngrid, dgrid, restart_file_name)
+         TIMER_STOP('write_restart_file')
       end if
 ! ==============================================================================
 
@@ -2360,37 +2542,152 @@ program JAGURS
 #ifndef MPI
          str = trim(dgrid(ig)%my%base_name) // '.' // trim(max_grid_file_name)
 #else
+#ifndef ONEFILE
          str = trim(dgrid(ig)%my%base_name) // '.' // trim(max_grid_file_name) // trim(suffix)
+#else
+         str = trim(dgrid(ig)%my%base_name) // '.' // trim(max_grid_file_name)
+#endif
 #endif
          TIMER_START('maxgrd_write_gmt')
 #ifndef DIROUT
-! === For ensemble =============================================================
 #ifdef MULTI
          str = trim(members_dir) // trim(str)
 #endif
-! ==============================================================================
          call maxgrd_write_gmt(dgrid(ig)%hzmax,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
 ! === For negative max. height =================================================
 !                              dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str)
+#if !defined(MPI) || !defined(ONEFILE)
                                dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.)
+#else
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.,dgrid(ig),myrank)
+#endif
 !===============================================================================
 #else
          dirname = trim(max_grid_file_name)
-! === For ensemble =============================================================
 #ifdef MULTI
          dirname = trim(members_dir) // trim(dirname)
 #endif
-! ==============================================================================
          call maxgrd_write_gmt(dgrid(ig)%hzmax,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
 ! === For negative max. height =================================================
 !                              dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str)
+#if !defined(MPI) || !defined(ONEFILE)
                                dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.)
+#else
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.,dgrid(ig),myrank)
+#endif
 !===============================================================================
 #endif
          TIMER_STOP('maxgrd_write_gmt')
 #else
+         TIMER_START('write_max_height')
+#if !defined(MPI) || !defined(ONEFILE)
          call write_max_height(dgrid(ig))
+#else
+         call write_max_height(dgrid(ig), myrank)
 #endif
+         TIMER_STOP('write_max_height')
+#endif
+#ifdef HZMINOUT
+#ifndef NCDIO
+#ifndef MPI
+         str = trim(dgrid(ig)%my%base_name) // '.' // trim(min_grid_file_name)
+#else
+#ifndef ONEFILE
+         str = trim(dgrid(ig)%my%base_name) // '.' // trim(min_grid_file_name) // trim(suffix)
+#else
+         str = trim(dgrid(ig)%my%base_name) // '.' // trim(min_grid_file_name)
+#endif
+#endif
+         TIMER_START('mingrd_write_gmt')
+#ifndef DIROUT
+#ifdef MULTI
+         str = trim(members_dir) // trim(str)
+#endif
+         call mingrd_write_gmt(dgrid(ig)%hzmin,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+! === For negative min. height =================================================
+!                              dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str)
+#if !defined(MPI) || !defined(ONEFILE)
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.)
+#else
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.,dgrid(ig),myrank)
+#endif
+!===============================================================================
+#else
+         dirname = trim(min_grid_file_name)
+#ifdef MULTI
+         dirname = trim(members_dir) // trim(dirname)
+#endif
+         call mingrd_write_gmt(dgrid(ig)%hzmin,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+! === For negative min. height =================================================
+!                              dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str)
+#if !defined(MPI) || !defined(ONEFILE)
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.)
+#else
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.,dgrid(ig),myrank)
+#endif
+!===============================================================================
+#endif
+         TIMER_STOP('mingrd_write_gmt')
+#else
+         TIMER_START('write_min_height')
+#if !defined(MPI) || !defined(ONEFILE)
+         call write_min_height(dgrid(ig))
+#else
+         call write_min_height(dgrid(ig), myrank)
+#endif
+         TIMER_STOP('write_min_height')
+#endif
+#endif
+! === Arrival time =============================================================
+         if(check_arrival_time == 1) then
+            TIMER_START('calc_arrival_time')
+            call calc_arrival_time(dgrid(ig)%wave_field,dgrid(ig)%my%nx,dgrid(ig)%my%ny,dt)
+            TIMER_STOP('calc_arrival_time')
+#ifndef NCDIO
+#ifndef MPI
+            str = trim(dgrid(ig)%my%base_name) // '.arrival_time.grd'
+#else
+#ifndef ONEFILE
+            str = trim(dgrid(ig)%my%base_name) // '.arrival_time.grd' // trim(suffix)
+#else
+            str = trim(dgrid(ig)%my%base_name) // '.arrival_time.grd'
+#endif
+#endif
+            TIMER_START('maxgrd_write_gmt_arrival')
+#ifndef DIROUT
+#ifdef MULTI
+            str = trim(members_dir) // trim(str)
+#endif
+            call maxgrd_write_gmt(dgrid(ig)%wave_field%arrival_time,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+#if !defined(MPI) || !defined(ONEFILE)
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.)
+#else
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.,dgrid(ig),myrank)
+#endif
+#else
+            dirname = 'arrival_time.grd'
+#ifdef MULTI
+            dirname = trim(members_dir) // trim(dirname)
+#endif
+            call maxgrd_write_gmt(dgrid(ig)%wave_field%arrival_time,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+#if !defined(MPI) || !defined(ONEFILE)
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.)
+#else
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.,dgrid(ig),myrank)
+#endif
+#endif
+            TIMER_STOP('maxgrd_write_gmt_arrival')
+#else
+            TIMER_START('write_arrival_time')
+#if !defined(MPI) || !defined(ONEFILE)
+            call write_arrival_time(dgrid(ig))
+#else
+            call write_arrival_time(dgrid(ig), myrank)
+#endif
+            TIMER_STOP('write_arrival_time')
+#endif
+         end if
+! ==============================================================================
       end if
    end do
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
@@ -2405,30 +2702,44 @@ program JAGURS
 #ifndef MPI
          str = trim(dgrid(ig)%my%base_name) // '.' // trim(vmax_grid_file_name)
 #else
+#ifndef ONEFILE
          str = trim(dgrid(ig)%my%base_name) // '.' // trim(vmax_grid_file_name) // trim(suffix)
+#else
+         str = trim(dgrid(ig)%my%base_name) // '.' // trim(vmax_grid_file_name)
+#endif
 #endif
          TIMER_START('maxgrd_v_write_gmt')
 #ifndef DIROUT
-! === For ensemble =============================================================
 #ifdef MULTI
          str = trim(members_dir) // trim(str)
 #endif
-! ==============================================================================
          call maxgrd_v_write_gmt(dgrid(ig)%vmax,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+#if !defined(MPI) || !defined(ONEFILE)
                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str)
 #else
+                                 dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,dgrid(ig),myrank)
+#endif
+#else
          dirname = trim(vmax_grid_file_name)
-! === For ensemble =============================================================
 #ifdef MULTI
          dirname = trim(members_dir) // trim(dirname)
 #endif
-! ==============================================================================
          call maxgrd_v_write_gmt(dgrid(ig)%vmax,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+#if !defined(MPI) || !defined(ONEFILE)
                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str)
+#else
+                                 dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,dgrid(ig),myrank)
+#endif
 #endif
          TIMER_STOP('maxgrd_v_write_gmt')
 #else
+         TIMER_START('write_max_velocity')
+#if !defined(MPI) || !defined(ONEFILE)
          call write_max_velocity(dgrid(ig))
+#else
+         call write_max_velocity(dgrid(ig), myrank)
+#endif
+         TIMER_STOP('write_max_velocity')
 #endif
       end if
    end do
@@ -2453,7 +2764,11 @@ program JAGURS
       if(plotgrd(1) < 0 .or. plotgrd_num(ig)) then
 ! ==============================================================================
 ! ==============================================================================
+#if !defined(MPI) || !defined(ONEFILE)
       call close_file(dgrid(ig))
+#else
+      call close_file(dgrid(ig), myrank)
+#endif
 ! === Output only specified domains. ===========================================
       end if
 ! ==============================================================================
@@ -2504,7 +2819,17 @@ program JAGURS
    end do
 #endif
 ! ==============================================================================
+#ifdef DUMP1D
+   call dump1d_finalize()
+#endif
 
+#ifdef MPI
+#ifndef MULTI
+   call MPI_Barrier(MPI_COMM_WORLD, ierr)
+#else
+   call MPI_Barrier(MPI_MEMBER_WORLD, ierr)
+#endif
+#endif
    TIMER_STOP('All')
 #ifdef TIMER
    call print_timer()
@@ -2519,12 +2844,10 @@ program JAGURS
 #endif
 #endif
    call MPI_Finalize(ierr)
-! === For ensemble =============================================================
 #else
 #ifdef MULTI
    call MPI_Finalize(ierr)
 #endif
-! ==============================================================================
 #endif
    stop
 

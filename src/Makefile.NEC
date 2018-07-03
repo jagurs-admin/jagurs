@@ -1,31 +1,32 @@
 # FC: Specify Fortran90 compiler command.
-FC=mpifrtpx
+FC=mpiifort
 
 # Added for displacement.
 # PRJ4_DIR: Specify PROJ.4 install directory.
 # CC&CFLAGS: Specify C compiler command and flags.
-PROJ4_DIR=/data/hp120312/k01249/local
-CC=fccpx
-CFLAGS=-I$(PROJ4_DIR)/include
+PROJ4_DIR=/aqua/work4/tkato/local
+CC=icc
+CFLAGS=-g -traceback -I$(PROJ4_DIR)/include
 
 # BASE: Specify basic compiler options.
-BASE=-Cpp -Ccpp -I/home/system/job_utility/include
+BASE=-fpp -assume byterecl
 
 # FFTW3_INCLUDE_DIR: Specify FFTW3 include directory.
-FFTW3_INCLUDE_DIR=/home/apps/fftw/3.3.3/include
+FFTW3_INCLUDE_DIR=$(MKLROOT)/include/fftw
 
 # FFTW3_LIB: Specify linker options to link FFTW3.
-FFTW3_LIB=-L/home/apps/fftw/3.3.3/lib64 -lfftw3 -lm
+FFTW3_LIB=-mkl=sequential
 
 # OPT: Specify compiler options about optimization level.
-OPT=-Nquickdbg -I$(FFTW3_INCLUDE_DIR)
-OPT=-Kfast,parallel,openmp,optmsg=2,ocl -Qt -I$(FFTW3_INCLUDE_DIR)
+OPT=-check all -warn all -O0 -g -traceback -fpe0 -I$(FFTW3_INCLUDE_DIR) # for DEBUG!
+OPT=-O0 -qopenmp -qopt-report=5 -I$(FFTW3_INCLUDE_DIR)
+OPT=-O2 -qopenmp -qopt-report=5 -I$(FFTW3_INCLUDE_DIR)
 
 # NETCDF: Specify the path to NetCDF library.
-NETCDF=/home/hp120312/k01041/local
+NETCDF=/aqua/work4/tkato/local
 
 # LIBS: Specify linker options.
-LIBS=-L$(NETCDF)/lib -lnetcdf -L$(PROJ4_DIR)/lib -lproj $(FFTW3_LIB)
+LIBS=-L$(NETCDF)/lib -lnetcdff -lnetcdf -L/opt/atlocal/supplibs/lib -lhdf5_hl -lhdf5 -lcurl -lsz -L$(PROJ4_DIR)/lib -lproj $(FFTW3_LIB) -limf -lm
 
 # EXEC: Specify the name of executable.
 EXEC=jagurs
@@ -125,7 +126,7 @@ endif
 
 # MPI
 ifeq ($(MPI),ON)
-   FFLAGS+=-DMPI -lmpi
+   FFLAGS+=-DMPI
 ifeq ($(CARTESIAN),ON)
    OBJS=mapproject.o okada.sub.o \
         mod_multi.o \
@@ -257,4 +258,4 @@ $(EXEC): $(OBJS)
 	$(CC) -c $(CFLAGS) $^
 
 clean:
-	rm -f *.o *.mod *.lst $(EXEC)
+	rm -f *.o *.mod *__genmod.f90 *.optrpt $(EXEC)

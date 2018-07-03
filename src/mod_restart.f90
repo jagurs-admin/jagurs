@@ -12,6 +12,9 @@ use mod_params, only : with_elastic_loading
 ! === DEBUG for restart with sinwave/file-input 2016/02/18 =====================
 use mod_init_disp_sinwave, only : ccount
 ! ==============================================================================
+! === Arrival time =============================================================
+use mod_params, only : check_arrival_time
+! ==============================================================================
 implicit none
 
 contains
@@ -58,6 +61,10 @@ contains
          read(1) rarray
          rarray => dg%hzmax
          read(1) rarray
+#ifdef HZMINOUT
+         rarray => dg%hzmin
+         read(1) rarray
+#endif
 #ifndef SKIP_MAX_VEL
          rarray => dg%vmax
          read(1) rarray
@@ -82,6 +89,20 @@ contains
          read(1) barray
          barray => dg%hbnd%west
          read(1) barray
+#ifdef BANKFILE
+         rarray => dg%wave_field%btx
+         read(1) rarray
+         rarray => dg%wave_field%bty
+         read(1) rarray
+         rarray => dg%depth_field%dxbx
+         read(1) rarray
+         rarray => dg%depth_field%dyby
+         read(1) rarray
+         iarray => dg%wave_field%brokenx
+         read(1) iarray
+         iarray => dg%wave_field%brokeny
+         read(1) iarray
+#endif
 
 #ifndef CARTESIAN
 ! === Elastic Loading ==========================================================
@@ -91,6 +112,12 @@ contains
          end if
 ! ==============================================================================
 #endif
+! === Arrival time =============================================================
+         if(check_arrival_time == 1) then
+            iarray => dg%wave_field%arrivedat
+            read(1) iarray
+         end if
+! ==============================================================================
       end do
 
       close(1)
@@ -140,6 +167,10 @@ contains
          write(1) rarray
          rarray => dg%hzmax
          write(1) rarray
+#ifdef HZMINOUT
+         rarray => dg%hzmin
+         write(1) rarray
+#endif
 #ifndef SKIP_MAX_VEL
          rarray => dg%vmax
          write(1) rarray
@@ -164,6 +195,20 @@ contains
          write(1) barray
          barray => dg%hbnd%west
          write(1) barray
+#ifdef BANKFILE
+         rarray => dg%wave_field%btx
+         write(1) rarray
+         rarray => dg%wave_field%bty
+         write(1) rarray
+         rarray => dg%depth_field%dxbx
+         write(1) rarray
+         rarray => dg%depth_field%dyby
+         write(1) rarray
+         iarray => dg%wave_field%brokenx
+         write(1) iarray
+         iarray => dg%wave_field%brokeny
+         write(1) iarray
+#endif
 
 #ifndef CARTESIAN
 ! === Elastic Loading ==========================================================
@@ -173,6 +218,12 @@ contains
          end if
 ! ==============================================================================
 #endif
+! === Arrival time =============================================================
+         if(check_arrival_time == 1) then
+            iarray => dg%wave_field%arrivedat
+            write(1) iarray
+         end if
+! ==============================================================================
       end do
 
       close(1)

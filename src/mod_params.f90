@@ -6,14 +6,12 @@ use mod_mpi_fatal
 ! === Support truncation =======================================================
 use mod_truncation
 ! ==============================================================================
-! === For ensemble =============================================================
 #ifdef MULTI
 ! === Split Dir ================================================================
 !  use mod_multi, only : member_id, input_files
    use mod_multi, only : member_id, input_files, input_dirname
 ! ==============================================================================
 #endif
-! ==============================================================================
 implicit none
 
 integer(kind=4), parameter :: INI = 0
@@ -40,9 +38,21 @@ real(kind=REAL_BYTE) :: cf = RUDEF ! when cf> 0: it is a non-dimensional frictio
 real(kind=REAL_BYTE) :: cfl = 0.0d0 ! frictional coefficient for land
 integer(kind=4) :: coriolis = IUDEF ! coriolis=1: coriolis force included
                                     ! coriolis=0: coriolis force neglected
-character(len=128) :: maxgrdfn = SUDEF, max_grid_file_name
+! === Output file name should be optional. =====================================
+!character(len=128) :: maxgrdfn = SUDEF, max_grid_file_name
+character(len=128) :: maxgrdfn = 'zmax.grd', max_grid_file_name
+! ==============================================================================
+#ifdef HZMINOUT
+! === Output file name should be optional. =====================================
+!character(len=128) :: mingrdfn = SUDEF, min_grid_file_name
+character(len=128) :: mingrdfn = 'zmin.grd', min_grid_file_name
+! ==============================================================================
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
-character(len=128) :: vmaxgrdfn = SUDEF, vmax_grid_file_name
+! === Output file name should be optional. =====================================
+!character(len=128) :: vmaxgrdfn = SUDEF, vmax_grid_file_name
+character(len=128) :: vmaxgrdfn = 'vmax.grd', vmax_grid_file_name
+! ==============================================================================
 ! ==============================================================================
 character(len=128) :: tgstafn = SUDEF, tg_station_file_name
 character(len=256) :: tgsoutfile = SUDEF
@@ -51,9 +61,7 @@ integer(kind=4) :: smooth_edges = 0
 !*** Burbidge ***
 integer(kind=4) :: velmux = 1, velmux_flag ! If 1 then out velocity mux files, else do not output
 integer(kind=4) :: velgrd = 1, velgrd_flag ! If 1 then out velocity grd files, else do not output
-! === Speed output. ============================================================
 integer(kind=4) :: speedgrd = 0, speedgrd_flag ! If 1 then out speed grd files, else do not output
-! ==============================================================================
 ! === Multi-grids can be specified! ============================================
 !integer(kind=4) :: plotgrd = -1, plotgrd_num ! If < 0 then output all grd files, else grdnumber equal to plotgrd_num
 integer(kind=4), parameter, private :: ngrid_max = 16
@@ -160,23 +168,32 @@ integer(kind=4) :: use_linear = 0
 ! === Specify lower limit of depth to adopt horizontal displacement effect. ====
 real(kind=REAL_BYTE) :: min_depth_hde = 50.0d0
 ! ==============================================================================
+! === Arrival time =============================================================
+integer(kind=4) :: check_arrival_time = 0
+real(kind=REAL_BYTE) :: check_arrival_height = 0.01d0 ! [m]
+! ==============================================================================
+! === Elastic loading with interpolation =======================================
+integer(kind=4) :: elastic_loading_interpolation = 1
+! ==============================================================================
+#ifdef BANKFILE
+real(kind=REAL_BYTE) :: broken_rate = -1.0d0
+#endif
 
 contains
 
    subroutine getpar()
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       integer(kind=4) :: num_arg, len_arg
-! === For ensemble =============================================================
 #endif
-! ==============================================================================
       character(len=128) :: arg
       namelist /params/ gridfile, dt, tau, tend, itmap, cf, cfl, coriolis, &
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 !        maxgrdfn, tgstafn, tgsoutfile, pointers, smooth_edges, &
          maxgrdfn, vmaxgrdfn, tgstafn, tgsoutfile, pointers, smooth_edges, &
 ! ==============================================================================
+#ifdef HZMINOUT
+         mingrdfn, &
+#endif
       !** Burbidge - GA's input flags **
          velmux, velgrd, plotgrd, itmap_start, itmap_end, def_bathy, smallh_xy, smallh_wod, &
       ! thomas - additional parameters for version that can write smaller mux files
@@ -215,8 +232,6 @@ contains
 ! ==============================================================================
 #ifndef CARTESIAN
 ! === For MRI ==================================================================
-! === Speed output. ============================================================
-!        init_disp_gaussian
          init_disp_gaussian, &
 ! === SINWAVE ==================================================================
          init_disp_sinwave, &
@@ -240,8 +255,25 @@ contains
 ! === Specify lower limit of depth to adopt horizontal displacement effect. ====
 !        nest_1way, init_disp_interpolation, use_linear
          nest_1way, init_disp_interpolation, use_linear, &
-         min_depth_hde
+#ifndef BANKFILE
+! === Arrival time =============================================================
+!        min_depth_hde
+! === Elastic loading with interpolation =======================================
+!        min_depth_hde, check_arrival_time, check_arrival_height
+         min_depth_hde, check_arrival_time, check_arrival_height, &
+         elastic_loading_interpolation
 ! ==============================================================================
+! ==============================================================================
+#else
+! === Arrival time =============================================================
+!        min_depth_hde, broken_rate
+! === Elastic loading with interpolation =======================================
+!        min_depth_hde, broken_rate, check_arrival_time, check_arrival_height
+         min_depth_hde, broken_rate, check_arrival_time, check_arrival_height, &
+         elastic_loading_interpolation
+! ==============================================================================
+! ==============================================================================
+#endif
 ! ==============================================================================
 ! ==============================================================================
 ! ==============================================================================
@@ -255,8 +287,6 @@ contains
          init_disp_gaussian, &
 ! ==============================================================================
 ! === SINWAVE ==================================================================
-! === Speed output. ============================================================
-!        init_disp_sinwave
          init_disp_sinwave, &
 ! === Limiter with max Froude number. ==========================================
 !        speedgrd
@@ -271,8 +301,25 @@ contains
 ! === Specify lower limit of depth to adopt horizontal displacement effect. ====
 !        nest_1way, init_disp_interpolation, use_linear
          nest_1way, init_disp_interpolation, use_linear, &
-         min_depth_hde
+#ifndef BANKFILE
+! === Arrival time =============================================================
+!        min_depth_hde
+! === Elastic loading with interpolation =======================================
+!        min_depth_hde, check_arrival_time, check_arrival_height
+         min_depth_hde, check_arrival_time, check_arrival_height, &
+         elastic_loading_interpolation
 ! ==============================================================================
+! ==============================================================================
+#else
+! === Arrival time =============================================================
+!        min_depth_hde, broken_rate
+! === Elastic loading with interpolation =======================================
+!        min_depth_hde, broken_rate, check_arrival_time, check_arrival_height
+         min_depth_hde, broken_rate, check_arrival_time, check_arrival_height, &
+         elastic_loading_interpolation
+! ==============================================================================
+! ==============================================================================
+#endif
 ! ==============================================================================
 ! ==============================================================================
 ! ==============================================================================
@@ -283,9 +330,7 @@ contains
 
       call get_command_argument(0, program_name)
 
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
       num_arg = command_argument_count()
       if(num_arg /= 1) then
          call print_usage()
@@ -300,29 +345,28 @@ contains
          call print_usage()
          stop
       end if
-! === For ensemble =============================================================
 #else
 ! === Split Dir ================================================================
 !     arg = input_files(member_id+1)
       arg = trim(input_dirname) // trim(input_files(member_id+1))
 ! ==============================================================================
 #endif
-! ==============================================================================
 
       open(1,file=trim(arg),action='read',status='old',form='formatted')
       read(1,params)
       close(1)
 
       max_grid_file_name   = maxgrdfn
+#ifdef HZMINOUT
+      min_grid_file_name   = mingrdfn
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
       vmax_grid_file_name  = vmaxgrdfn
 ! ==============================================================================
       tg_station_file_name = tgstafn
       velmux_flag          = velmux
       velgrd_flag          = velgrd
-! === Speed output. ============================================================
       speedgrd_flag        = speedgrd
-! ==============================================================================
 ! === Multi-grids can be specified! ============================================
 !     plotgrd_num          = plotgrd
       do i = 1, ngrid_max
@@ -422,9 +466,18 @@ contains
       if(itmap == IUDEF)      then; write(0,'(a)') 'ERROR!: itmap must be specified!';      error = .true.; end if
       if(cf == RUDEF)         then; write(0,'(a)') 'ERROR!: cf must be specified!';         error = .true.; end if
       if(coriolis == IUDEF)   then; write(0,'(a)') 'ERROR!: coriolis must be specified!';   error = .true.; end if
-      if(maxgrdfn == SUDEF)   then; write(0,'(a)') 'ERROR!: maxgrdfn must be specified!';   error = .true.; end if
+! === Output file name should be optional. =====================================
+!     if(maxgrdfn == SUDEF)   then; write(0,'(a)') 'ERROR!: maxgrdfn must be specified!';   error = .true.; end if
+! ==============================================================================
+#ifdef HZMINOUT
+! === Output file name should be optional. =====================================
+!     if(mingrdfn == SUDEF)   then; write(0,'(a)') 'ERROR!: mingrdfn must be specified!';   error = .true.; end if
+! ==============================================================================
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
-      if(vmaxgrdfn == SUDEF)  then; write(0,'(a)') 'ERROR!: vmaxgrdfn must be specified!';  error = .true.; end if
+! === Output file name should be optional. =====================================
+!     if(vmaxgrdfn == SUDEF)  then; write(0,'(a)') 'ERROR!: vmaxgrdfn must be specified!';  error = .true.; end if
+! ==============================================================================
 ! ==============================================================================
       if(tgstafn == SUDEF)    then; write(0,'(a)') 'ERROR!: tgstafn must be specified!';    error = .true.; end if
 #ifdef MPI
@@ -457,6 +510,9 @@ contains
       integer(kind=4), intent(in) :: ngrid
       type(data_grids), dimension(ngrid), intent(in) :: dg
       integer(kind=4) :: i, disp, wod, bcf
+#ifdef BANKFILE
+      integer(kind=4) :: bkf
+#endif
       character(len=8) :: myname, pname
 
       write(6,'(a)') '============================================================'
@@ -487,6 +543,11 @@ contains
       write(6,'(a)') '- MPI parallelization: OFF'
 #else
       write(6,'(a)') '- MPI parallelization: ON (-DMPI)'
+#ifdef ONEFILE
+      write(6,'(a)') '   - Undecomposed input/output files: ON (-DONEFILE)'
+#else
+      write(6,'(a)') '   - Undecomposed input/output files: OFF (Default)'
+#endif
 #ifdef USE_ALLTOALLV
       write(6,'(a)') '   - Inter-domain communication: MPI_Alltoallv (-DUSE_ALLTOALLV)'
 #ifdef A2A3D
@@ -595,6 +656,10 @@ contains
       if(with_elastic_loading == 1) then
          write(6,'(a,e15.6)') '   - Radius in which the loading effect will be estimated (m_radius): ', m_radius
          write(6,'(a,a)') '   - NetCDF file to specify Green function (m_pyfile): ', trim(m_pyfile)
+! === Elastic loading with interpolation =======================================
+         write(6,'(a,i3)') '   - Elastic loading with interpolation (elastic_loading_interpolation=1:ON/0:OFF): ', &
+            elastic_loading_interpolation
+! ==============================================================================
       end if
 ! ==============================================================================
 ! === Density ==================================================================
@@ -605,11 +670,21 @@ contains
       end if
 ! ==============================================================================
 #endif
+! === Arrival time =============================================================
+      write(6,'(a,i3)') '- Check arrival time (check_arrival_time=1:ON/0:OFF): ', check_arrival_time
+      if(check_arrival_time == 1) then
+         write(6,'(a,e15.6)') '   - Threshold height[m] (check_arrival_height): ', check_arrival_height
+      end if
+! ==============================================================================
 ! ----------------------------------------------------------------------------------------
       write(6,'(/,a)') '(Domains)'
       write(6,'(a,a)') '- Grid file: ', trim(gfile)
       write(6,'(a,i6)') '- Number of domains: ', ngrid
+#ifndef BANKFILE
       write(6,'(/,a)') '   ID  Name     Parent  Linear  disp_file wod_file bcf_file'
+#else
+      write(6,'(/,a)') '   ID  Name     Parent  Linear  disp_file wod_file bcf_file bank_file'
+#endif
       do i = 1, ngrid
          myname = ''
          myname = trim(dg(i)%my%base_name)
@@ -621,7 +696,13 @@ contains
          if(trim(dg(i)%wod_file) == 'NO_WETORDRY_FILE_GIVEN') wod = 0
          bcf = 1
          if(trim(dg(i)%bcf_file) == 'NO_FRICTION_FILE_GIVEN') bcf = 0
+#ifndef BANKFILE
          write(6,'(a,i3,a,a,a,a,i6,i11,2i9)') '   ', i, ' ', myname, ' ', pname, dg(i)%my%linear_flag, disp, wod, bcf
+#else
+         bkf = 1
+         if(trim(dg(i)%bank_file) == 'NO_BANK_FILE_GIVEN') bkf = 0
+         write(6,'(a,i3,a,a,a,a,i6,i11,2i9,i10)') '   ', i, ' ', myname, ' ', pname, dg(i)%my%linear_flag, disp, wod, bcf, bkf
+#endif
       end do
 ! ----------------------------------------------------------------------------------------
       write(6,'(/,a)') '(Dispersive)'
@@ -633,6 +714,16 @@ contains
 #endif
          write(6,'(a,e15.6)') '   - Min. depth despersive is available[m] (min_depth): ', min_depth
       end if
+! ----------------------------------------------------------------------------------------
+#ifdef BANKFILE
+      write(6,'(/,a)') '(Linedata)'
+      if(broken_rate < 0.0d0) then
+         write(6,'(a)') '- Wall break: OFF (broken_rate=[negative number])'
+      else
+         write(6,'(a)') '- Wall break: ON'
+         write(6,'(a,e15.6)') '   - Broken rate (broken_rate=[real number]): ', broken_rate
+      end if
+#endif
 ! ----------------------------------------------------------------------------------------
       write(6,'(/,a)') '(Absorbing boundary condition)'
       write(6,'(a,i3)') '- Absorbing boundary condition (with_abc=1:ON/0:OFF): ', with_abc

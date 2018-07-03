@@ -2,13 +2,17 @@
 module mod_ncdio
 #ifdef NCDIO
 use mod_grid
-! === Speed output. ============================================================
-!use mod_params, only : velgrd_flag, start_date, missing_value, VEL, HGT
-use mod_params, only : velgrd_flag, start_date, missing_value, VEL, HGT, speedgrd_flag
+! === Arrival time =============================================================
+!use mod_params, only : velgrd_flag, start_date, missing_value, VEL, HGT, speedgrd_flag
+use mod_params, only : velgrd_flag, start_date, missing_value, VEL, HGT, &
+                       speedgrd_flag, check_arrival_time
 ! ==============================================================================
 ! === Multiple rupture =========================================================
 use mod_params, only : multrupt
 ! ==============================================================================
+#if defined(MPI) && defined(ONEFILE)
+use mod_onefile, only : onefile_gather_array_ncdio
+#endif
 implicit none
 include 'netcdf.inc'
 integer(kind=4), private :: stat
@@ -27,13 +31,16 @@ contains
 #endif
 
       integer(kind=4) :: nx, ny
-! === Speed output. ============================================================
-!     integer(kind=4), pointer :: ncid, idid, mhid, mvid, hzid, vxid, vyid
 #ifndef SKIP_MAX_VEL
       integer(kind=4), pointer :: ncid, idid, mhid, mvid, hzid, vxid, vyid, speedid
 #else
       integer(kind=4), pointer :: ncid, idid, mhid, hzid, vxid, vyid, speedid
 #endif
+#ifdef HZMINOUT
+      integer(kind=4), pointer :: minhid
+#endif
+! === Arrival time =============================================================
+      integer(kind=4), pointer :: atid
 ! ==============================================================================
       integer(kind=4), pointer, dimension(:) :: start, count
 
@@ -47,8 +54,10 @@ contains
 ! ==============================================================================
       character(len=512) :: fname
 #ifdef MPI
+#ifndef ONEFILE
       integer(kind=4), dimension(0:5) :: mpi_id
       integer(kind=4), dimension(2) :: tmp
+#endif
 #endif
 #ifndef MPI
       real(kind=REAL_BYTE), pointer :: mlat0, mlon0
@@ -79,6 +88,7 @@ contains
       dgrid%my%ncdio%jst = 1
       dgrid%my%ncdio%jen = ny
 #else
+#ifndef ONEFILE
       write(fname,'(a,a,i6.6,a)') trim(base), '.', myrank, '.nc'
 
       nx = dgrid%my%ixend - dgrid%my%ix + 1
@@ -91,22 +101,41 @@ contains
       dgrid%my%ncdio%jsize = ny
       dgrid%my%ncdio%jst = 1 + (dgrid%my%iy - dgrid%my%ky)
       dgrid%my%ncdio%jen = dgrid%my%ncdio%jst + ny - 1
+#else
+      nx = dgrid%my%totalNx
+      ny = dgrid%my%totalNy
+
+      dgrid%my%ncdio%isize = dgrid%my%nx
+      dgrid%my%ncdio%ist = 1
+      dgrid%my%ncdio%ien = dgrid%my%nx
+
+      dgrid%my%ncdio%jsize = dgrid%my%ny
+      dgrid%my%ncdio%jst = 1
+      dgrid%my%ncdio%jen = dgrid%my%ny
+
+      if(myrank == 0) then
+      write(fname,'(a,a)') trim(base), '.nc'
+#endif
 #endif
 
       ncid => dgrid%my%ncdio%ncid
 
       idid => dgrid%my%ncdio%idid
       mhid => dgrid%my%ncdio%mhid
+#ifdef HZMINOUT
+      minhid => dgrid%my%ncdio%minhid
+#endif
 #ifndef SKIP_MAX_VEL
       mvid => dgrid%my%ncdio%mvid
 #endif
+! === Arrival time =============================================================
+      atid => dgrid%my%ncdio%atid
+! ==============================================================================
 
       hzid => dgrid%my%ncdio%hzid
       vxid => dgrid%my%ncdio%vxid
       vyid => dgrid%my%ncdio%vyid
-! === Speed output. ============================================================
       speedid => dgrid%my%ncdio%speedid
-! ==============================================================================
 
       start => dgrid%my%ncdio%start
       count => dgrid%my%ncdio%count
@@ -131,6 +160,7 @@ contains
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
 
 #ifdef MPI
+#ifndef ONEFILE
       stat = nf_def_dim(ncid, 'mpi_params', 2, mpi_id(0))
       vdims(1) = mpi_id(0)
       stat = nf_def_var(ncid, 'total_xy',   NF_INT, 1, vdims, mpi_id(1))
@@ -138,6 +168,7 @@ contains
       stat = nf_def_var(ncid, 'myrank',     NF_INT, 1, vdims, mpi_id(3))
       stat = nf_def_var(ncid, 'nprocs_xy',  NF_INT, 1, vdims, mpi_id(4))
       stat = nf_def_var(ncid, 'myrank_xy',  NF_INT, 1, vdims, mpi_id(5))
+#endif
 #endif
 
       vdims(1) = xid
@@ -207,6 +238,19 @@ contains
       stat = nf_put_att_real(ncid, mhid, '_FillValue', NF_REAL, 1, &
                              real(missing_value))
 ! ==============================================================================
+#ifdef HZMINOUT
+      stat = nf_def_var(ncid, 'min_height', NF_REAL, 2, vdims, minhid)
+      if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+      att = 'Minimum wave height'
+      stat = nf_put_att_text(ncid, minhid, 'long_name', len(trim(att)), att)
+      att = 'Meters'
+      stat = nf_put_att_text(ncid, minhid, 'units', len(trim(att)), att)
+! === For negative min. height =================================================
+!     stat = nf_put_att_real(ncid, minhid, 'missing_value', NF_REAL, 1, &
+      stat = nf_put_att_real(ncid, minhid, '_FillValue', NF_REAL, 1, &
+                             real(missing_value))
+! ==============================================================================
+#endif
 
 #ifndef SKIP_MAX_VEL
       stat = nf_def_var(ncid, 'max_velocity', NF_REAL, 2, vdims, mvid)
@@ -216,6 +260,18 @@ contains
       att = 'Meters/Second'
       stat = nf_put_att_text(ncid, mvid, 'units', len(trim(att)), att)
 #endif
+! === Arrival time =============================================================
+      if(check_arrival_time == 1) then
+         stat = nf_def_var(ncid, 'arrival_time', NF_REAL, 2, vdims, atid)
+         if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+         att = 'Arrival time'
+         stat = nf_put_att_text(ncid, atid, 'long_name', len(trim(att)), att)
+         att = 'seconds since ' // trim(start_date)
+         stat = nf_put_att_text(ncid, atid, 'units', len(trim(att)), att)
+         stat = nf_put_att_real(ncid, atid, '_FillValue', NF_REAL, 1, &
+                                real(missing_value))
+      end if
+! ==============================================================================
 
       stat = nf_def_var(ncid, 'wave_height', NF_REAL, 3, vdims, hzid)
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
@@ -243,7 +299,6 @@ contains
          att = 'Meters/Second'
          stat = nf_put_att_text(ncid, vyid, 'units', len(trim(att)), att)
       end if
-! === Speed output. ============================================================
       if(speedgrd_flag == 1) then
          stat = nf_def_var(ncid, 'speed', NF_REAL, 3, vdims, speedid)
          if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
@@ -252,7 +307,6 @@ contains
          att = 'Meters/Second'
          stat = nf_put_att_text(ncid, speedid, 'units', len(trim(att)), att)
       end if
-! ==============================================================================
 
       stat = nf_enddef(ncid)
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
@@ -265,6 +319,7 @@ contains
       count(3) = 1
 
 #ifdef MPI
+#ifndef ONEFILE
       tmp(1) = dgrid%my%totalNx
       tmp(2) = dgrid%my%totalNy
       stat = nf_put_var_int(ncid, mpi_id(1), tmp)
@@ -284,6 +339,7 @@ contains
       tmp(1) = dgrid%my%rx
       tmp(2) = dgrid%my%ry
       stat = nf_put_var_int(ncid, mpi_id(5), tmp)
+#endif
 #endif
 
 #ifdef MPI
@@ -341,8 +397,13 @@ contains
       dy = dx
 #endif
 
+#if !defined(MPI) || !defined(ONEFILE)
       allocate(lon(isize))
       allocate(lat(jsize))
+#else
+      allocate(lon(totalNx))
+      allocate(lat(totalNy))
+#endif
 
 #ifndef MPI
       do i = ist, ien
@@ -353,6 +414,7 @@ contains
          lat(j-jst+1) = lat_north - dy*(jen-j)
       end do
 #else
+#ifndef ONEFILE
       do i = ix, ix+isize-1
          lon(i-ix+1) = lon_west + dx*(i-1)
       end do
@@ -360,6 +422,15 @@ contains
       do j = iy, iy+jsize-1
          lat(j-iy+1) = lat_north - dy*(2*iy+jsize-j-2)
       end do
+#else
+      do i = 1, totalNx
+         lon(i) = lon_west + dx*(i-1)
+      end do
+
+      do j = 1, totalNy
+         lat(j) = lat_north - dy*(totalNy-j)
+      end do
+#endif
 #endif
 
       stat = nf_put_var_double(ncid, lonid, lon)
@@ -369,6 +440,9 @@ contains
 
       deallocate(lon)
       deallocate(lat)
+#if defined(MPI) && defined(ONEFILE)
+      end if
+#endif
 
       return
    end subroutine open_file
@@ -378,7 +452,11 @@ contains
 #ifndef MPI
    subroutine write_snapshot(dgrid, t, istep, mode)
 #else
+#ifndef ONEFILE
    subroutine write_snapshot(dgrid, t, istep, mode, bflag)
+#else
+   subroutine write_snapshot(dgrid, t, istep, mode, bflag, myrank)
+#endif
 #endif
 ! ==============================================================================
       type(data_grids), target, intent(inout) :: dgrid
@@ -388,20 +466,24 @@ contains
       integer(kind=4), intent(in) :: mode
 #ifdef MPI
       integer(kind=4), intent(in) :: bflag
+#ifdef ONEFILE
+      integer(kind=4), intent(in) :: myrank
+#endif
 #endif
 ! ==============================================================================
 
       integer(kind=4), pointer, dimension(:) :: start, count
-! === Speed output. ============================================================
-!     integer(kind=4), pointer :: ncid, timeid, stepid, hzid, vxid, vyid
       integer(kind=4), pointer :: ncid, timeid, stepid, hzid, vxid, vyid, speedid
-! ==============================================================================
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz, fx, fy
       integer(kind=4), pointer, dimension(:,:) :: wod
       integer(kind=4), pointer :: isize, ist, ien, jsize, jst, jen
       real(kind=4), allocatable, dimension(:,:) :: tmp
       real(kind=8) :: time
+#if !defined(MPI) || !defined(ONEFILE)
       integer(kind=4) :: i, j, i_, j_
+#else
+      integer(kind=4) :: i, j
+#endif
 ! === Flux -> Flow speed =======================================================
 ! === Conversion from flux to velocity should be done right after calc. ========
 !     real(kind=REAL_BYTE) :: td
@@ -411,9 +493,10 @@ contains
       real(kind=REAL_BYTE), parameter :: td_min = 0.01d0 ! 1 cm
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: dz
 ! ==============================================================================
-! === Speed output. ============================================================
       real(kind=REAL_BYTE) :: tx, ty, speed
-! ==============================================================================
+#if defined(MPI) && defined(ONEFILE)
+      real(kind=4), allocatable, dimension(:,:) :: tmp_all
+#endif
 
       start => dgrid%my%ncdio%start
       count => dgrid%my%ncdio%count
@@ -424,9 +507,7 @@ contains
       hzid => dgrid%my%ncdio%hzid
       vxid => dgrid%my%ncdio%vxid
       vyid => dgrid%my%ncdio%vyid
-! === Speed output. ============================================================
       speedid => dgrid%my%ncdio%speedid
-! ==============================================================================
 
       hz => dgrid%wave_field%hz
       fx => dgrid%wave_field%fx
@@ -444,18 +525,21 @@ contains
       jen   => dgrid%my%ncdio%jen
 
       if(((velgrd_flag == 0) .and. (mode == HGT)) .or. &
-! === Speed output. ============================================================
-!        ((velgrd_flag == 1) .and. (mode == VEL))) then
          ((velgrd_flag == 1) .and. (mode == VEL)) .or. &
          ((speedgrd_flag == 1) .and. (mode == VEL))) then
-! ==============================================================================
       start(3) = start(3) + 1
 
       time = t
+#if defined(MPI) && defined(ONEFILE)
+      if(myrank == 0) then
+#endif
       stat = nf_put_vara_double(ncid, timeid, start(3), count(3), time)
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
       stat = nf_put_vara_int(ncid, stepid, start(3), count(3), istep)
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+#if defined(MPI) && defined(ONEFILE)
+      end if
+#endif
 ! === Conversion from flux to velocity should be done right after calc. ========
       end if
 ! ==============================================================================
@@ -467,6 +551,7 @@ contains
 ! ==============================================================================
       do j = 1, jsize
          do i = 1, isize
+#if !defined(MPI) || !defined(ONEFILE)
             i_ = i + ist - 1
             j_ = j + jst - 1
             if(wod(i_, j_) == 1) then
@@ -477,10 +562,31 @@ contains
                tmp(i, jsize-j+1) = missing_value
 ! ==============================================================================
             end if
+#else
+            if(wod(i,j) == 1) then
+               tmp(i,j) = hz(i,j)
+            else
+               tmp(i,j) = missing_value
+            end if
+#endif
          end do
       end do
+#if !defined(MPI) || !defined(ONEFILE)
       stat = nf_put_vara_real(ncid, hzid, start, count, tmp)
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+#else
+      if(myrank == 0) then
+         allocate(tmp_all(dgrid%my%totalNx,dgrid%my%totalNy))
+      else
+         allocate(tmp_all(1,1))
+      end if
+      call onefile_gather_array_ncdio(tmp,tmp_all,dgrid)
+      if(myrank == 0) then
+         stat = nf_put_vara_real(ncid, hzid, start, count, tmp_all)
+         if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+      end if
+      deallocate(tmp_all)
+#endif
 ! === Conversion from flux to velocity should be done right after calc. ========
       end if
 ! ==============================================================================
@@ -492,6 +598,7 @@ contains
 ! === Conversion from flux to velocity should be done right after calc. ========
          do j = 1, jsize
             do i = 1, isize
+#if !defined(MPI) || !defined(ONEFILE)
                i_ = i + ist - 1
                j_ = j + jst - 1
 #ifndef MPI
@@ -512,15 +619,45 @@ contains
                else
                   tmp(i, jsize-j+1) = 0.0d0
                end if
+#else
+               im = i - 1
+               ip = i + 1
+               if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+               if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+               tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
+               tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
+               if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                  wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                  wod(i,j) == 1) then
+                  tmp(i,j) = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+               else
+                  tmp(i,j) = 0.0d0
+               end if
+#endif
             end do
          end do
 ! ==============================================================================
+#if !defined(MPI) || !defined(ONEFILE)
          stat = nf_put_vara_real(ncid, vxid, start, count, tmp)
          if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+#else
+         if(myrank == 0) then
+            allocate(tmp_all(dgrid%my%totalNx,dgrid%my%totalNy))
+         else
+            allocate(tmp_all(1,1))
+         end if
+         call onefile_gather_array_ncdio(tmp,tmp_all,dgrid)
+         if(myrank == 0) then
+            stat = nf_put_vara_real(ncid, vxid, start, count, tmp_all)
+            if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+         end if
+         deallocate(tmp_all)
+#endif
 
 ! === Conversion from flux to velocity should be done right after calc. ========
          do j = 1, jsize
             do i = 1, isize
+#if !defined(MPI) || !defined(ONEFILE)
                i_ = i + ist - 1
                j_ = j + jst - 1
 #ifndef MPI
@@ -542,18 +679,48 @@ contains
                else
                   tmp(i, jsize-j+1) = 0.0d0
                end if
+#else
+               jm = j - 1
+               jp = j + 1
+               if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+               if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+               tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
+               tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
+               if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                  wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                  wod(i,j) == 1) then
+                  ! Invert latitude!!!
+                  tmp(i,j) = -0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+               else
+                  tmp(i,j) = 0.0d0
+               end if
+#endif
             end do
          end do
 ! ==============================================================================
+#if !defined(MPI) || !defined(ONEFILE)
          stat = nf_put_vara_real(ncid, vyid, start, count, tmp)
          if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+#else
+         if(myrank == 0) then
+            allocate(tmp_all(dgrid%my%totalNx,dgrid%my%totalNy))
+         else
+            allocate(tmp_all(1,1))
+         end if
+         call onefile_gather_array_ncdio(tmp,tmp_all,dgrid)
+         if(myrank == 0) then
+            stat = nf_put_vara_real(ncid, vyid, start, count, tmp_all)
+            if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+         end if
+         deallocate(tmp_all)
+#endif
       end if
-! === Speed output. ============================================================
          if(speedgrd_flag == 1) then
             do j = 1, jsize
                do i = 1, isize
                   tx = 0.0d0
 
+#if !defined(MPI) || !defined(ONEFILE)
                   i_ = i + ist - 1
                   j_ = j + jst - 1
 #ifndef MPI
@@ -597,13 +764,59 @@ contains
 
                   speed = sqrt(tx**2 + ty**2)
                   tmp(i, jsize-j+1) = speed
+#else
+                  im = i - 1
+                  ip = i + 1
+                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+                  tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
+                  tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
+                  if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                     wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                     wod(i,j) == 1) then
+                     tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+                  else
+                     tx = 0.0d0
+                  end if
+
+                  jm = j - 1
+                  jp = j + 1
+                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+                  tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
+                  tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
+                  if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                     wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                     wod(i,j) == 1) then
+                     ! Invert latitude!!!
+                     ty = -0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+                  else
+                     ty = 0.0d0
+                  end if
+
+                  speed = sqrt(tx**2 + ty**2)
+                  tmp(i,j) = speed
+#endif
                end do
             end do
 
+#if !defined(MPI) || !defined(ONEFILE)
             stat = nf_put_vara_real(ncid, speedid, start, count, tmp)
             if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+#else
+            if(myrank == 0) then
+               allocate(tmp_all(dgrid%my%totalNx,dgrid%my%totalNy))
+            else
+               allocate(tmp_all(1,1))
+            end if
+            call onefile_gather_array_ncdio(tmp,tmp_all,dgrid)
+            if(myrank == 0) then
+               stat = nf_put_vara_real(ncid, speedid, start, count, tmp_all)
+               if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+            end if
+            deallocate(tmp_all)
+#endif
          end if
-! ==============================================================================
 ! === Conversion from flux to velocity should be done right after calc. ========
       end if
 ! ==============================================================================
@@ -615,12 +828,19 @@ contains
 
 ! === Multiple rupture =========================================================
 !  subroutine write_initial_displacement(dgrid)
+#if !defined(MPI) || !defined(ONEFILE)
    subroutine write_initial_displacement(dgrid, irupt)
+#else
+   subroutine write_initial_displacement(dgrid, myrank, irupt)
+#endif
 ! ==============================================================================
       type(data_grids), target, intent(inout) :: dgrid
 ! === Multiple rupture =========================================================
       integer(kind=4), intent(in) :: irupt
 ! ==============================================================================
+#if defined(MPI) && defined(ONEFILE)
+      integer(kind=4), intent(in) :: myrank
+#endif
       integer(kind=4), pointer :: idid
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: zz
 
@@ -629,35 +849,111 @@ contains
 
 ! === Multiple rupture =========================================================
 !     call write_array(dgrid, zz, idid)
+#if !defined(MPI) || !defined(ONEFILE)
       call write_array(dgrid, zz, idid, irupt)
+#else
+      call write_array(dgrid, zz, idid, myrank, irupt)
+#endif
 ! ==============================================================================
 
       return
    end subroutine write_initial_displacement
 
+#if !defined(MPI) || !defined(ONEFILE)
    subroutine write_max_height(dgrid)
+#else
+   subroutine write_max_height(dgrid, myrank)
+#endif
       type(data_grids), target, intent(inout) :: dgrid
+#if defined(MPI) && defined(ONEFILE)
+      integer(kind=4), intent(in) :: myrank
+#endif
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: hzmax
       integer(kind=4), pointer :: mhid
 
       mhid => dgrid%my%ncdio%mhid
       hzmax => dgrid%hzmax
 
+#if !defined(MPI) || !defined(ONEFILE)
       call write_array(dgrid, hzmax, mhid)
+#else
+      call write_array(dgrid, hzmax, mhid, myrank)
+#endif
 
       return
    end subroutine write_max_height
+! === Arrival time =============================================================
+#if !defined(MPI) || !defined(ONEFILE)
+   subroutine write_arrival_time(dgrid)
+#else
+   subroutine write_arrival_time(dgrid, myrank)
+#endif
+      type(data_grids), target, intent(inout) :: dgrid
+#if defined(MPI) && defined(ONEFILE)
+      integer(kind=4), intent(in) :: myrank
+#endif
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: arrival_time
+      integer(kind=4), pointer :: atid
+
+      atid => dgrid%my%ncdio%atid
+      arrival_time => dgrid%wave_field%arrival_time
+
+#if !defined(MPI) || !defined(ONEFILE)
+      call write_array(dgrid, arrival_time, atid)
+#else
+      call write_array(dgrid, arrival_time, atid, myrank)
+#endif
+
+      return
+   end subroutine write_arrival_time
+! ==============================================================================
+#ifdef HZMINOUT
+#if !defined(MPI) || !defined(ONEFILE)
+   subroutine write_min_height(dgrid)
+#else
+   subroutine write_min_height(dgrid, myrank)
+#endif
+      type(data_grids), target, intent(inout) :: dgrid
+#if defined(MPI) && defined(ONEFILE)
+      integer(kind=4), intent(in) :: myrank
+#endif
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: hzmin
+      integer(kind=4), pointer :: minhid
+
+      minhid => dgrid%my%ncdio%minhid
+      hzmin => dgrid%hzmin
+
+#if !defined(MPI) || !defined(ONEFILE)
+      call write_array(dgrid, hzmin, minhid)
+#else
+      call write_array(dgrid, hzmin, minhid, myrank)
+#endif
+
+      return
+   end subroutine write_min_height
+#endif
 
 #ifndef SKIP_MAX_VEL
+#if !defined(MPI) || !defined(ONEFILE)
    subroutine write_max_velocity(dgrid)
+#else
+   subroutine write_max_velocity(dgrid, myrank)
+#endif
       type(data_grids), target, intent(inout) :: dgrid
+#if defined(MPI) && defined(ONEFILE)
+      integer(kind=4), intent(in) :: myrank
+#endif
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: vmax
       integer(kind=4), pointer :: mvid
 
       vmax => dgrid%vmax
       mvid => dgrid%my%ncdio%mvid
 
+#if !defined(MPI) || !defined(ONEFILE)
       call write_array(dgrid, vmax, mvid)
+#else
+      call write_array(dgrid, vmax, mvid, myrank)
+#endif
 
       return
    end subroutine write_max_velocity
@@ -667,7 +963,11 @@ contains
    !       Because they are NOT 1-origin.
 ! === Multiple rupture =========================================================
 !  subroutine write_array(dgrid, array, id)
+#if !defined(MPI) || !defined(ONEFILE)
    subroutine write_array(dgrid, array, id, irupt)
+#else
+   subroutine write_array(dgrid, array, id, myrank, irupt)
+#endif
 ! ==============================================================================
       type(data_grids), target, intent(inout) :: dgrid
       real(kind=REAL_BYTE), dimension(:,:), intent(in) :: array
@@ -675,6 +975,9 @@ contains
 ! === Multiple rupture =========================================================
       integer(kind=4), intent(in), optional :: irupt
 ! ==============================================================================
+#if defined(MPI) && defined(ONEFILE)
+      integer(kind=4), intent(in) :: myrank
+#endif
 
       integer(kind=4), pointer :: ncid, isize, ist, ien, jsize, jst, jen
       integer(kind=4), pointer, dimension(:) :: start, count
@@ -683,6 +986,9 @@ contains
 ! === Multiple rupture =========================================================
       integer(kind=4), dimension(3) :: start_id
 ! ==============================================================================
+#if defined(MPI) && defined(ONEFILE)
+      real(kind=4), allocatable, dimension(:,:) :: tmp_all
+#endif
 
       ncid  => dgrid%my%ncdio%ncid
       isize => dgrid%my%ncdio%isize
@@ -705,33 +1011,82 @@ contains
 
       do j = 1, jsize
          do i = 1, isize
+#if !defined(MPI) || !defined(ONEFILE)
             tmp(i,jsize-j+1) = array(i+ist-1,j+jst-1)
+#else
+            tmp(i,j) = array(i,j)
+#endif
          end do
       end do
 ! === Multiple rupture =========================================================
       if(present(irupt)) then
+#if !defined(MPI) || !defined(ONEFILE)
          stat = nf_put_vara_real(ncid, id, start_id, count, tmp)
+#else
+         if(myrank == 0) then
+            allocate(tmp_all(dgrid%my%totalNx,dgrid%my%totalNy))
+         else
+            allocate(tmp_all(1,1))
+         end if
+         call onefile_gather_array_ncdio(tmp,tmp_all,dgrid)
+         if(myrank == 0) then
+            stat = nf_put_vara_real(ncid, id, start_id, count, tmp_all)
+         end if
+         deallocate(tmp_all)
+#endif
       else
 ! ==============================================================================
+#if !defined(MPI) || !defined(ONEFILE)
       stat = nf_put_vara_real(ncid, id, start, count, tmp)
+#else
+      if(myrank == 0) then
+         allocate(tmp_all(dgrid%my%totalNx,dgrid%my%totalNy))
+      else
+         allocate(tmp_all(1,1))
+      end if
+      call onefile_gather_array_ncdio(tmp,tmp_all,dgrid)
+       if(myrank == 0) then
+         stat = nf_put_vara_real(ncid, id, start, count, tmp_all)
+      end if
+      deallocate(tmp_all)
+#endif
 ! === Multiple rupture =========================================================
       end if
 ! ==============================================================================
+#if defined(MPI) && defined(ONEFILE)
+      if(myrank == 0) then
+#endif
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+#if defined(MPI) && defined(ONEFILE)
+      end if
+#endif
 
       deallocate(tmp)
 
       return
    end subroutine write_array
 
+#if !defined(MPI) || !defined(ONEFILE)
    subroutine close_file(dgrid)
+#else
+   subroutine close_file(dgrid, myrank)
+#endif
       type(data_grids), target, intent(inout) :: dgrid
+#if defined(MPI) && defined(ONEFILE)
+      integer(kind=4), intent(in) :: myrank
+#endif
       integer(kind=4), pointer :: ncid
 
       ncid => dgrid%my%ncdio%ncid
 
+#if defined(MPI) && defined(ONEFILE)
+      if(myrank == 0) then
+#endif
       stat = nf_close(ncid)
       if(stat /= NF_NOERR) write(0, '(a)') nf_strerror(stat)
+#if defined(MPI) && defined(ONEFILE)
+      end if
+#endif
 
       return
    end subroutine close_file

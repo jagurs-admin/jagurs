@@ -1178,7 +1178,10 @@ contains
 !              else if(fx(i,j) < -15.0d0*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))) then
 !                 fx(i,j) = -15.0d0*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
 !              end if
-               d = half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
+! === To prevent sqrt of negative numbers. =====================================
+!              d = half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
+               d = max(0.0d0, half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j)))
+! ==============================================================================
                lim = froude_lim*d*sqrt(9.8d0*d)
                if(fx(i,j) > lim) then
                   fx(i,j) = lim
@@ -1241,7 +1244,10 @@ contains
 !              else if(fy(i,j) < -15.0d0*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))) then
 !                 fy(i,j) = -15.0d0*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
 !              end if
-               d = half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
+! === To prevent sqrt of negative numbers. =====================================
+!              d = half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
+               d = max(0.0d0, half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j)))
+! ==============================================================================
                lim = froude_lim*d*sqrt(9.8d0*d)
                if(fy(i,j) > lim) then
                   fy(i,j) = lim

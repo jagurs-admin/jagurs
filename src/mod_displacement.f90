@@ -7,13 +7,11 @@ use omp_lib
 use mod_grid
 use mod_params, only : hzdisp_effect, fault_param_file, apply_kj_filter
 use mod_mygmt_gridio, only : read_gmt_grd_hdr
-! === For ensemble =============================================================
 #ifdef MPI
 #ifdef MULTI
 use mod_multi, only : MPI_MEMBER_WORLD
 #endif
 #endif
-! ==============================================================================
 #ifdef MPI
 use mod_mpi, only : exchange_edges_zz
 #endif
@@ -276,6 +274,9 @@ contains
       real(kind=8) :: p, q, xi, et, r, d, rd
       integer(kind=4) :: num_distance_zero, l_, w_
 ! ==============================================================================
+#if defined(MPI) && defined(ONEFILE)
+      integer(kind=4) :: dummynx, dummyny
+#endif
 
       write(6,'(a)') '[displacement] Initial displacement with fault calculation.'
 
@@ -297,6 +298,7 @@ contains
       allocate(mask  (nlon,nlat))
 #endif
 
+#if !defined(MPI) || !defined(ONEFILE)
       call read_gmt_grd_hdr(dg%my%bath_file,nlon,nlat,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
 #ifdef MPI
 #ifndef MULTI
@@ -313,6 +315,26 @@ contains
       call MPI_Allreduce(MPI_IN_PLACE, y_min, 1, REAL_MPI, MPI_MIN, MPI_MEMBER_WORLD, ierr)
       call MPI_Allreduce(MPI_IN_PLACE, x_max, 1, REAL_MPI, MPI_MAX, MPI_MEMBER_WORLD, ierr)
       call MPI_Allreduce(MPI_IN_PLACE, y_max, 1, REAL_MPI, MPI_MAX, MPI_MEMBER_WORLD, ierr)
+#endif
+#endif
+#else
+      if(myrank == 0) then
+         call read_gmt_grd_hdr(dg%my%bath_file,dummynx,dummyny,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
+      end if
+#ifndef MULTI
+      call MPI_Bcast(x_inc, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(y_inc, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(x_min, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(y_min, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(x_max, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(y_max, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
+#else
+      call MPI_Bcast(x_inc, 1, REAL_MPI, 0, MPI_MEMBER_WORLD, ierr)
+      call MPI_Bcast(y_inc, 1, REAL_MPI, 0, MPI_MEMBER_WORLD, ierr)
+      call MPI_Bcast(x_min, 1, REAL_MPI, 0, MPI_MEMBER_WORLD, ierr)
+      call MPI_Bcast(y_min, 1, REAL_MPI, 0, MPI_MEMBER_WORLD, ierr)
+      call MPI_Bcast(x_max, 1, REAL_MPI, 0, MPI_MEMBER_WORLD, ierr)
+      call MPI_Bcast(y_max, 1, REAL_MPI, 0, MPI_MEMBER_WORLD, ierr)
 #endif
 #endif
       x_inc = real(x_inc)
@@ -752,17 +774,11 @@ contains
 #else
       integer(kind=4), allocatable, dimension(:,:) :: ifax_x, ifax_y
       real(kind=8), allocatable, dimension(:,:) :: trigs_x, trigs_y
-#ifndef REAL_FFT
-      complex(kind=8), allocatable, dimension(:,:) :: work_x, work_y
-#else
       real(kind=8), allocatable, dimension(:,:) :: work_x
       complex(kind=8), allocatable, dimension(:,:) :: work_y
 #endif
-#endif
       complex(kind=8), pointer, dimension(:,:) :: xfftbuf, yfftbuf
-#ifdef REAL_FFT
       real(kind=8), pointer, dimension(:,:) :: realbuf
-#endif
 
       integer(kind=4) :: i, j
 #ifdef MPI
@@ -885,23 +901,14 @@ contains
       end do
 
       ! Grid for y-FFT.
-#ifndef REAL_FFT
-      nx2 = N_X/nprocs
-      if(myrank < mod(N_X,nprocs)) nx2 = nx2 + 1
-#else
       nx2 = (N_X/2+1)/nprocs
       if(myrank < mod(N_X/2+1,nprocs)) nx2 = nx2 + 1
-#endif
       ny2 = N_Y
 
       write(6,'(a,2i6)') '[displacement] nx2, ny2: ', nx2, ny2
 
       ! MPI_Alltoallv1: (N_X,ny1) -> (N_Y,nx2)
-#ifndef REAL_FFT
-      allocate(sendbuf2(N_X*ny1))
-#else
       allocate(sendbuf2((N_X/2+1)*ny1))
-#endif
       allocate(sendcounts2(0:nprocs-1))
       allocate(sdispls2(0:nprocs-1))
 
@@ -910,13 +917,8 @@ contains
       allocate(rdispls2(0:nprocs-1))
 
       do p = 0, nprocs-1
-#ifndef REAL_FFT
-         i = N_X/nprocs
-         if(p < mod(N_X,nprocs)) i = i + 1
-#else
          i = (N_X/2+1)/nprocs
          if(p < mod(N_X/2+1,nprocs)) i = i + 1
-#endif
          sendcounts2(p) = i*ny1
       end do
 #ifndef MULTI
@@ -956,22 +958,12 @@ contains
       allocate(ifax_y(20,0:nthreads-1))
       allocate(trigs_x(N_X*2,0:nthreads-1))
       allocate(trigs_y(N_Y*2,0:nthreads-1))
-#ifndef REAL_FFT
-#ifndef MPI
-      allocate(work_x(N_X,N_Y))
-      allocate(work_y(N_Y,N_X))
-#else
-      allocate(work_x(N_X,ny1))
-      allocate(work_y(N_Y,nx2))
-#endif
-#else
 #ifndef MPI
       allocate(work_x(N_X+2,N_Y))
       allocate(work_y(N_Y,N_X/2+1))
 #else
       allocate(work_x(N_X+2,ny1))
       allocate(work_y(N_Y,nx2))
-#endif
 #endif
 #endif
       allocate(its2(0:nthreads-1))
@@ -983,13 +975,8 @@ contains
 
 #ifndef MPI
       do it = 0, nthreads-1
-#ifndef REAL_FFT
-         itn2(it) = N_X/nthreads
-         if(it < mod(N_X,nthreads)) itn2(it) = itn2(it) + 1
-#else
          itn2(it) = (N_X/2+1)/nthreads
          if(it < mod(N_X/2+1,nthreads)) itn2(it) = itn2(it) + 1
-#endif
          jtn1(it) = N_Y/nthreads
          if(it < mod(N_Y,nthreads)) jtn1(it) = jtn1(it) + 1
       end do
@@ -1014,15 +1001,6 @@ contains
 ! ==============================================================================
 
 #ifndef __SX__
-#ifndef REAL_FFT
-#ifndef MPI
-      allocate(xfftbuf(N_X,N_Y))
-      allocate(yfftbuf(N_Y,N_X))
-#else
-      allocate(xfftbuf(N_X,ny1))
-      allocate(yfftbuf(N_Y,nx2))
-#endif
-#else
 #ifndef MPI
       allocate(realbuf(N_X,N_Y))
       allocate(xfftbuf(N_X/2+1,N_Y))
@@ -1031,16 +1009,6 @@ contains
       allocate(realbuf(N_X,ny1))
       allocate(xfftbuf(N_X/2+1,ny1))
       allocate(yfftbuf(N_Y,nx2))
-#endif
-#endif
-#else
-#ifndef REAL_FFT
-#ifndef MPI
-      allocate(xfftbuf(N_X+1,N_Y))
-      allocate(yfftbuf(N_Y+1,N_X))
-#else
-      allocate(xfftbuf(N_X+1,ny1))
-      allocate(yfftbuf(N_Y+1,nx2))
 #endif
 #else
 #ifndef MPI
@@ -1053,24 +1021,8 @@ contains
       allocate(yfftbuf(N_Y+16,nx2))
 #endif
 #endif
-#endif
 
       ! First touch!
-#ifndef REAL_FFT
-!$omp parallel do private(i, j)
-      do it = 0, nthreads-1
-         do j = jts1(it), jte1(it)
-            do i = 1, N_X
-               xfftbuf(i,j) = dcmplx(0.0d0,0.0d0)
-            end do
-         end do
-         do i = its2(it), ite2(it)
-            do j = 1, N_Y
-               yfftbuf(j,i) = dcmplx(0.0d0,0.0d0)
-            end do
-         end do
-      end do
-#else
 !$omp parallel do private(i, j)
       do it = 0, nthreads-1
          do j = jts1(it), jte1(it)
@@ -1089,49 +1041,30 @@ contains
             end do
          end do
       end do
-#endif
 
       do it = 0, nthreads-1
 #ifndef __SX__
-#ifndef REAL_FFT
-         call dfftw_plan_many_dft(xplan_forward(it), 1, N_X, jtn1(it), &
-                                  xfftbuf(1,jts1(it)), 0, 1, N_X,      &
-                                  xfftbuf(1,jts1(it)), 0, 1, N_X,      &
-                                  FFTW_FORWARD, FFTW_MEASURE)
-#else
          call dfftw_plan_many_dft_r2c(xplan_forward(it), 1, N_X, jtn1(it), &
                                       realbuf(1,jts1(it)), 0, 1, N_X,      &
                                       xfftbuf(1,jts1(it)), 0, 1, N_X/2+1,  &
                                       FFTW_MEASURE)
-#endif
 
          call dfftw_plan_many_dft(yplan_forward(it), 1, N_Y, itn2(it), &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,      &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,      &
                                   FFTW_FORWARD, FFTW_MEASURE)
 
-#ifndef REAL_FFT
-         call dfftw_plan_many_dft(xplan_backward(it), 1, N_X, jtn1(it), &
-                                  xfftbuf(1,jts1(it)), 0, 1, N_X,       &
-                                  xfftbuf(1,jts1(it)), 0, 1, N_X,       &
-                                  FFTW_BACKWARD, FFTW_MEASURE)
-#else
          call dfftw_plan_many_dft_c2r(xplan_backward(it), 1, N_X, jtn1(it), &
                                       xfftbuf(1,jts1(it)), 0, 1, N_X/2+1,   &
                                       realbuf(1,jts1(it)), 0, 1, N_X,       &
                                       FFTW_MEASURE)
-#endif
 
          call dfftw_plan_many_dft(yplan_backward(it), 1, N_Y, itn2(it), &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,       &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,       &
                                   FFTW_BACKWARD, FFTW_MEASURE)
 #else
-#ifndef REAL_FFT
-         call ZFCMFB(N_X,jtn1(it),xfftbuf(1,jts1(it)),1,N_X+1,0,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
-#else
          call DFRMFB(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+16,0,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
-#endif
          call ZFCMFB(N_Y,itn2(it),yfftbuf(1,its2(it)),1,N_Y+16,0,ifax_y(1,it),trigs_y(1,it),work_y(1,its2(it)),ierr)
 #endif
       end do
@@ -1142,7 +1075,13 @@ contains
 ! ==============================================================================
 ! === Calc. m_dx and m_dy Begin ================================================
 ! ==============================================================================
+#ifdef MPI
+      if(myrank == 0) then
+#endif
       call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
+#ifdef MPI
+      end if
+#endif
 #ifdef MPI
 #ifndef MULTI
       call MPI_Bcast(x_inc, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
@@ -1190,11 +1129,7 @@ contains
       do it = 0, nthreads-1
          do j = jts1(it), jte1(it)
             do i = 1, N_X
-#ifndef REAL_FFT
-               xfftbuf(i,j) = dcmplx(0.0d0,0.0d0)
-#else
                realbuf(i,j) = 0.0d0
-#endif
             end do
          end do
       end do
@@ -1202,11 +1137,7 @@ contains
 !$omp do private(i)
       do j = 1, nlat
          do i = 1, nlon
-#ifndef REAL_FFT
-            xfftbuf(i,j) = dcmplx(zz(i,j),0.0d0)
-#else
             realbuf(i,j) = zz(i,j)
-#endif
          end do
       end do
 
@@ -1214,24 +1145,13 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
-#ifndef REAL_FFT
-         call dfftw_execute(xplan_forward(it))
-#else
          call dfftw_execute_dft_r2c(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
-#endif
-      end do
-#else
-#ifndef REAL_FFT
-!$omp do private(ierr)
-      do it = 0, nthreads-1
-         call ZFCMBF(N_X,jtn1(it),xfftbuf(1,jts1(it)),1,N_X+1,1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
 #else
 !$omp do private(ierr)
       do it = 0, nthreads-1
          call DFRMBF(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+2,1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
-#endif
 #endif
 
       ! Transposiion: (N_X,N_Y) -> (N_Y,N_X)
@@ -1242,11 +1162,7 @@ contains
 #ifndef __SX__
                yfftbuf(j,i) = xfftbuf(i,j)
 #else
-#ifndef REAL_FFT
-               yfftbuf(j,i) = xfftbuf(i,j)
-#else
                yfftbuf(j,i) = dcmplx(realbuf(2*i-1,j),realbuf(2*i,j))
-#endif
 #endif
             end do
          end do
@@ -1300,20 +1216,12 @@ contains
 !$omp do private(j, i)
       do it = 0, nthreads-1
          do j = jts1(it), jte1(it)
-#ifndef REAL_FFT
-            do i = 1, N_X
-#else
             do i = 1, N_X/2+1
-#endif
 #ifndef __SX__
-               xfftbuf(i,j) = yfftbuf(j,i)
-#else
-#ifndef REAL_FFT
                xfftbuf(i,j) = yfftbuf(j,i)
 #else
                realbuf(2*i-1,j) = dble (yfftbuf(j,i))
                realbuf(2*i,  j) = dimag(yfftbuf(j,i))
-#endif
 #endif
             end do
          end do
@@ -1323,17 +1231,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
-#ifndef REAL_FFT
-         call dfftw_execute(xplan_backward(it))
-#else
          call dfftw_execute_dft_c2r(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
-#endif
-      end do
-#else
-#ifndef REAL_FFT
-!$omp do private(ierr)
-      do it = 0, nthreads-1
-         call ZFCMBF(N_X,jtn1(it),xfftbuf(1,jts1(it)),1,N_X+1,-1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
 #else
 !$omp do private(ierr)
@@ -1341,16 +1239,11 @@ contains
          call DFRMBF(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+2,-1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
 #endif
-#endif
 
 !$omp do private(i)
       do j = 1, nlat
          do i = 1, nlon
-#ifndef REAL_FFT
-            zz(i,j) = dble(xfftbuf(i,j))
-#else
             zz(i,j) = realbuf(i,j)
-#endif
          end do
       end do
 #else
@@ -1380,21 +1273,12 @@ contains
 
 !$omp do private(i)
       do j = 1, ny1
-#ifndef REAL_FFT
-#ifndef __SX__
-         do i = 1, N_X
-#else
-         do i = 1, N_X+1
-#endif
-            xfftbuf(i,j) = dcmplx(0.0d0,0.0d0)
-#else
 #ifndef __SX__
          do i = 1, N_X
 #else
          do i = 1, N_X+16
 #endif
             realbuf(i,j) = 0.0d0
-#endif
          end do
       end do
 
@@ -1406,11 +1290,7 @@ contains
             do i = 1, xlen
                ind = rdispls1(p) + (j-1)*xlen + i
                i_ =  xst + i
-#ifndef REAL_FFT
-               xfftbuf(i_,j) = dcmplx(recvbuf1(ind),0.0d0)
-#else
                realbuf(i_,j) = recvbuf1(ind)
-#endif
             end do
          end do
       end do
@@ -1419,17 +1299,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
-#ifndef REAL_FFT
-         call dfftw_execute(xplan_forward(it))
-#else
          call dfftw_execute_dft_r2c(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
-#endif
-      end do
-#else
-#ifndef REAL_FFT
-!$omp do private(ierr)
-      do it = 0, nthreads-1
-         call ZFCMBF(N_X,jtn1(it),xfftbuf(1,jts1(it)),1,N_X+1,1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
 #else
 !$omp do private(ierr)
@@ -1437,17 +1307,11 @@ contains
          call DFRMBF(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+16,1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
 #endif
-#endif
 
       ! Transposiion: (N_X,ny1) -> (N_Y,nx2)
 #ifndef __SX__
-#ifndef REAL_FFT
-!$omp do private(j, ind)
-      do i = 1, N_X
-#else
 !$omp do private(j, ind)
       do i = 1, N_X/2+1
-#endif
          do j = 1, ny1
             ind = ny1*(i-1) + j
             sendbuf2(ind) = xfftbuf(i,j)
@@ -1456,17 +1320,9 @@ contains
 #else
 !$omp do private(i, ind)
       do j = 1, ny1
-#ifndef REAL_FFT
-         do i = 1, N_X
-#else
          do i = 1, N_X/2+1
-#endif
             ind = ny1*(i-1) + j
-#ifndef REAL_FFT
-            sendbuf2(ind) = xfftbuf(i,j)
-#else
             sendbuf2(ind) = dcmplx(realbuf(2*i-1,j),realbuf(2*i,j))
-#endif
          end do
       end do
 #endif
@@ -1520,15 +1376,9 @@ contains
 
       ! Calc. F(hz)*F(g)
 !$omp single
-#ifndef REAL_FFT
-      num = N_X/nprocs
-      ist = myrank*num
-      ist = ist + min(mod(N_X,nprocs),myrank) + 1
-#else
       num = (N_X/2+1)/nprocs
       ist = myrank*num
       ist = ist + min(mod(N_X/2+1,nprocs),myrank) + 1
-#endif
       dk_x = 2.0d0*M_PI/(m_dx*dble(N_X))
       dk_y = 2.0d0*M_PI/(m_dy*dble(N_Y))
 !$omp end single
@@ -1587,11 +1437,7 @@ contains
 #ifndef __SX__
 !$omp do private(i, ind)
       do j = 1, ny1
-#ifndef REAL_FFT
-         do i = 1, N_X
-#else
          do i = 1, N_X/2+1
-#endif
             ind = ny1*(i-1) + j
             xfftbuf(i,j) = sendbuf2(ind)
          end do
@@ -1599,18 +1445,10 @@ contains
 #else
 !$omp do private(i, ind)
       do j = 1, ny1
-#ifndef REAL_FFT
-         do i = 1, N_X
-#else
          do i = 1, N_X/2+1
-#endif
             ind = ny1*(i-1) + j
-#ifndef REAL_FFT
-            xfftbuf(i,j) = sendbuf2(ind)
-#else
             realbuf(2*i-1,j) = dble (sendbuf2(ind))
             realbuf(2*i,  j) = dimag(sendbuf2(ind))
-#endif
          end do
       end do
 #endif
@@ -1619,24 +1457,13 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
-#ifndef REAL_FFT
-         call dfftw_execute(xplan_backward(it))
-#else
          call dfftw_execute_dft_c2r(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
-#endif
-      end do
-#else
-#ifndef REAL_FFT
-!$omp do private(ierr)
-      do it = 0, nthreads-1
-         call ZFCMBF(N_X,jtn1(it),xfftbuf(1,jts1(it)),1,N_X+1,-1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
 #else
 !$omp do private(ierr)
       do it = 0, nthreads-1
          call DFRMBF(N_X,jtn1(it),realbuf(1,jts1(it)),1,N_X+16,-1,ifax_x(1,it),trigs_x(1,it),work_x(1,jts1(it)),ierr)
       end do
-#endif
 #endif
 
       ! Transposiion: (N_X,ny1) -> (nx0,ny0)
@@ -1648,11 +1475,7 @@ contains
             do i = 1, xlen
                ind = rdispls1(p) + (j-1)*xlen + i
                i_ =  xst + i
-#ifndef REAL_FFT
-               recvbuf1(ind) = dble(xfftbuf(i_,j))
-#else
                recvbuf1(ind) = realbuf(i_,j)
-#endif
             end do
          end do
       end do
@@ -1708,9 +1531,7 @@ contains
       deallocate(jte1)
       deallocate(jtn1)
 
-#ifdef REAL_FFT
       deallocate(realbuf)
-#endif
       deallocate(xfftbuf)
       deallocate(yfftbuf)
 
@@ -1800,7 +1621,13 @@ contains
 #endif
 #endif
 
+#ifdef MPI
+      if(myrank == 0) then
+#endif
       call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
+#ifdef MPI
+      end if
+#endif
 #ifdef MPI
 #ifndef MULTI
       call MPI_Bcast(x_inc, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)

@@ -21,6 +21,9 @@ use mod_params, only : VEL
 ! === Limiter with max Froude number. ==========================================
 use mod_params, only : froude_lim
 ! ==============================================================================
+#ifdef BANKFILE
+use mod_params, only : broken_rate
+#endif
 implicit none
 
 contains
@@ -505,6 +508,13 @@ contains
 ! === Limiter with max Froude number. ==========================================
       real(kind=REAL_BYTE) :: d, lim
 ! ==============================================================================
+#ifdef BANKFILE
+      integer(kind=4), pointer, dimension(:,:) :: ir, brokenx, brokeny
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: btx, bty, dx, dy
+
+      real(kind=REAL_BYTE) :: zhigh, zlow, discharge, dhigh
+      real(kind=REAL_BYTE), parameter :: GX = 1.0d-5, GY = 1.0d-10
+#endif
 
       fx => wfld%fx
       fy => wfld%fy
@@ -521,8 +531,24 @@ contains
       cv = 0.0d0
 ! ==============================================================================
 
+#ifndef BANKFILE
       ddx => dfld%dx
       ddy => dfld%dy
+#else
+      if(allocated(wfld%ir)) then
+         ir  => wfld%ir
+
+         ddx => dfld%dxbx
+         ddy => dfld%dyby
+
+         btx => wfld%btx
+         dx => dfld%dx
+         brokenx => wfld%brokenx
+         bty => wfld%bty
+         dy => dfld%dy
+         brokeny => wfld%brokeny
+      end if
+#endif
       dz  => dfld%dz
 #ifdef CONV_CHECK
       tdx => wfld%tdx
@@ -844,6 +870,43 @@ contains
          end do
       end do
 ! ==============================================================================
+#ifdef BANKFILE
+      if(allocated(wfld%ir)) then
+!$omp do private(i, zhigh, zlow, discharge, dhigh)
+         do j = jst, jnd
+            do i = ist, ind
+               if((ir(i,j) == 1) .or. (ir(i,j) == 3)) then
+                  dhigh = min(dz(i,j), dz(i+1,j))
+                  if(ddx(i,j) > -dhigh) then
+                     ! === CAL. OF DISCHANGE OF OVERFLOW ===
+                     if(hz(i,j) + ddx(i,j) > hz(i+1,j) + ddx(i,j)) then
+                        zhigh = hz(i,j) + ddx(i,j)
+                        zlow = hz(i+1,j) + ddx(i,j)
+                     else
+                        zhigh = hz(i+1,j) + ddx(i,j)
+                        zlow = hz(i,j) + ddx(i,j)
+                     end if
+                     if(zhigh < GX) then
+                        fx(i,j) = zap
+                     else
+                        if(zhigh*0.66667d0 < zlow) then
+                           discharge = 4.029d0*zlow*sqrt(zhigh - zlow) ! 4.029 = u'*(9.8*2)*0.5, u' = 2.6u
+                        else
+                           discharge = 1.55d0*zhigh**1.5d0 ! 1.55 = u*(9.8*2)*0.5, u = 0.35
+                        end if
+                        if(hz(i+1,j) + ddx(i,j) > hz(i,j) + ddx(i,j)) discharge = -discharge
+                        fx(i,j) = discharge
+                        if(brokenx(i,j) == 0) then
+                           btx(i,j) = broken_rate*(btx(i,j) - dhigh) + dhigh
+                           brokenx(i,j) = 1
+                        end if
+                     end if
+                  end if
+               end if
+            end do
+         end do
+      end if
+#endif
 #ifndef UPWIND3
 !$omp do private(i, fxbar, dvdx, dvdy, advc, tmp0, tmp1)
 #else
@@ -1043,6 +1106,43 @@ contains
          end do
       end do
 ! ==============================================================================
+#ifdef BANKFILE
+      if(allocated(wfld%ir)) then
+!$omp do private(i, zhigh, zlow, discharge, dhigh)
+         do j = jst, jnd
+            do i = ist, ind
+               if((ir(i,j+1) == 2) .or. (ir(i,j+1) == 3)) then
+                  dhigh = min(dz(i,j), dz(i,j+1))
+                  if(ddy(i,j) > -dhigh) then
+                     ! === CAL. OF DISCHANGE OF OVERFLOW ===
+                     if(hz(i,j) + ddy(i,j) > hz(i,j+1) + ddy(i,j)) then
+                        zhigh = hz(i,j) + ddy(i,j)
+                        zlow = hz(i,j+1) + ddy(i,j)
+                     else
+                        zhigh = hz(i,j+1) + ddy(i,j)
+                        zlow = hz(i,j) + ddy(i,j)
+                     end if
+                     if(zhigh < GX) then
+                        fy(i,j) = zap
+                     else
+                        if(zhigh*0.66667d0 < zlow) then
+                           discharge = 4.029d0*zlow*sqrt(zhigh - zlow) ! 4.029 = u'*(9.8*2)*0.5, u' = 2.6u
+                        else
+                           discharge = 1.55d0*zhigh**1.5d0 ! 1.55 = u*(9.8*2)*0.5, u = 0.35
+                        end if
+                        if(hz(i,j+1) + ddy(i,j) > hz(i,j) + ddy(i,j)) discharge = -discharge
+                        fy(i,j) = discharge
+                        if(brokeny(i,j) == 0) then
+                           bty(i,j) = broken_rate*(bty(i,j) - dhigh) + dhigh
+                           brokeny(i,j) = 1
+                        end if
+                     end if
+                  end if
+               end if
+            end do
+         end do
+      end if
+#endif
 !$omp do private(i, fybar, cf, bcf, fric, ddx_tmp, d, lim)
       do j = jst, jnd
          do i = ist, ind
@@ -1076,7 +1176,10 @@ contains
 !              else if(fx(i,j) < -15.0d0*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))) then
 !                 fx(i,j) = -15.0d0*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
 !              end if
-               d = half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
+! === To prevent sqrt of negative numbers. =====================================
+!              d = half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
+               d = max(0.0d0, half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j)))
+! ==============================================================================
                lim = froude_lim*d*sqrt(9.8d0*d)
                if(fx(i,j) > lim) then
                   fx(i,j) = lim
@@ -1084,6 +1187,36 @@ contains
                   fx(i,j) = -lim
                end if
 ! ==============================================================================
+#ifdef BANKFILE
+            end if
+         end do
+      end do
+
+      if(allocated(wfld%ir)) then
+!$omp do private(i)
+         do j = jst, jnd
+            do i = ist, ind
+               if(ifz(i,j)+ifz(i+1,j) > 0) then ! both wet
+                  if(dz(i,j) > min_depth) then
+                     if((ir(i,j) /= 1) .and. (ir(i,j) /= 3)) then
+                        cu(i,j) = ((1.0d0/dxdy)**2/3.0d0)*(0.5d0*(dz(i+1,j)+dz(i,j)))**2
+                        fx(i,j) = fx(i,j) - cu(i,j)*( &
+                                ! U_n
+                                &   fx_old(i+1,j) - 2.0d0*fx_old(i,j) + fx_old(i-1,j) &
+                                ! V_n
+                                & + fy_old(i+1,j  )-fy_old(i,  j  )-fy_old(i+1,j-1)+fy_old(i,  j-1) &
+                                & )
+                     end if
+                  end if
+               end if
+            end do
+         end do
+      else
+!$omp do private(i)
+      do j = jst, jnd
+         do i = ist, ind
+            if(ifz(i,j)+ifz(i+1,j) > 0) then ! both wet
+#endif
 ! === Dispersive ===============================================================
                if(dz(i,j) > min_depth) then
                   cu(i,j) = ((1.0d0/dxdy)**2/3.0d0)*(0.5d0*(dz(i+1,j)+dz(i,j)))**2
@@ -1099,6 +1232,9 @@ contains
          end do
       end do
 ! ==============================================================================
+#ifdef BANKFILE
+      end if
+#endif
 !$omp do private(i, fxbar, cf, bcf, fric, ddy_tmp, d, lim)
       do j = jst, jnd
          do i = ist, ind
@@ -1132,7 +1268,10 @@ contains
 !              else if(fy(i,j) < -15.0d0*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))) then
 !                 fy(i,j) = -15.0d0*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
 !              end if
-               d = half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
+! === To prevent sqrt of negative numbers. =====================================
+!              d = half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
+               d = max(0.0d0, half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j)))
+! ==============================================================================
                lim = froude_lim*d*sqrt(9.8d0*d)
                if(fy(i,j) > lim) then
                   fy(i,j) = lim
@@ -1140,6 +1279,36 @@ contains
                   fy(i,j) = -lim
                end if
 ! ==============================================================================
+#ifdef BANKFILE
+            end if
+         end do
+      end do
+
+      if(allocated(wfld%ir)) then
+!$omp do private(i)
+         do j = jst, jnd
+            do i = ist, ind
+               if(ifz(i,j)+ifz(i,j+1) > 0) then ! both wet
+                  if(dz(i,j) > min_depth) then
+                     if((ir(i,j+1) /= 2) .and. (ir(i,j+1) /= 3)) then
+                        cv(i,j) = ((1.0d0/dxdy)**2/3.0d0)*(0.5d0*(dz(i,j+1)+dz(i,j)))**2
+                        fy(i,j) = fy(i,j) - cv(i,j)*( &
+                                ! V_n
+                                &   fy_old(i,j+1) - 2.0d0*fy_old(i,j) + fy_old(i,j-1) &
+                                ! U_n
+                                & + fx_old(i  ,j+1)-fx_old(i-1,j+1)-fx_old(i,  j  )+fx_old(i-1,j  ) &
+                                & )
+                     end if
+                  end if
+               end if
+            end do
+         end do
+      else
+!$omp do private(i)
+      do j = jst, jnd
+         do i = ist, ind
+            if(ifz(i,j)+ifz(i,j+1) > 0) then ! both wet
+#endif
 ! === Dispersive ===============================================================
                if(dz(i,j) > min_depth) then
                   cv(i,j) = ((1.0d0/dxdy)**2/3.0d0)*(0.5d0*(dz(i,j+1)+dz(i,j)))**2
@@ -1155,6 +1324,9 @@ contains
          end do
       end do
 ! ==============================================================================
+#ifdef BANKFILE
+      end if
+#endif
 #ifdef MPI
       if(iand(bflag, NORTH_BOUND) == 0) then
          j = 1

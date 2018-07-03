@@ -8,12 +8,9 @@ implicit none
 real(kind=8), parameter, private :: R       = 6371.d0
 real(kind=8), parameter, private :: PI      = 3.14159265d0
 real(kind=8), parameter, private :: DEG2RAD = PI / 180.d0
-real(kind=8), parameter, private :: h0      = 1.0d0
-
-real(kind=8), private :: lon_o = 0.0d0, lat_o = 0.0d0, L = 0.0d0
-#else
-real(kind=8), private :: h0 = 1.0d0, lon_o = 0.0d0, lat_o = 0.0d0, L = 0.0d0
 #endif
+
+real(kind=8), private :: h0 = 1.0d0, lon_o = 0.0d0, lat_o = 0.0d0, L = 0.0d0
 
 private geth
 
@@ -21,11 +18,7 @@ contains
 
    subroutine specify_gaussian_params(file)
       character(len=256), intent(in) :: file
-#ifndef CARTESIAN
-      namelist /gaussian/ lon_o, lat_o, L
-#else
       namelist /gaussian/ h0, lon_o, lat_o, L
-#endif
 
       open(1,file=trim(file),action='read',status='old',form='formatted')
       read(1,gaussian)
@@ -36,6 +29,7 @@ contains
       write(6,'(a)') '============================================================'
       write(6,'(a,a)') '- Filename: ', trim(file)
 #ifndef CARTESIAN
+      write(6,'(a,f15.6)') '- Wave height[m] (h0):          ', h0
       write(6,'(a,f15.6)') '- Center lon.[Degrees] (lon_o): ', lon_o
       write(6,'(a,f15.6)') '- Center lat.[Degrees] (lat_o): ', lat_o
       write(6,'(a,f15.6)') '- Width[km] (L):                ', L

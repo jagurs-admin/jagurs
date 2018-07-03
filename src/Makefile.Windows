@@ -25,7 +25,7 @@ BASE=/nologo /fpp /assume:byterecl /Qmkl=sequential
 # OPT: Specify compiler options about optimization level.
 OPT=/O2 /Qopenmp /I:$(FFTW3_INCLUDE_DIR)
 
-FFLAGS=$(BASE) $(OPT) /I:$(NETCDFF)/include /DREAL_DBLE /DREAL_FFT
+FFLAGS=$(BASE) $(OPT) /I:$(NETCDFF)/include /DREAL_DBLE
 
 # LIBS: Specify linker options.
 LIBS=/link /NODEFAULTLIB:MSVCRT /LIBPATH:$(NETCDFF)\lib netcdff.lib \

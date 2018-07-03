@@ -583,15 +583,11 @@ contains
          end do
 #ifdef MPI
 !$omp single
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
          call MPI_Allreduce(MPI_IN_PLACE, diffxy, 1, REAL_MPI, MPI_MAX, MPI_COMM_WORLD, ierr)
-! === For ensemble =============================================================
 #else
          call MPI_Allreduce(MPI_IN_PLACE, diffxy, 1, REAL_MPI, MPI_MAX, MPI_MEMBER_WORLD, ierr)
 #endif
-! ==============================================================================
 !$omp end single
 #endif
          if(diffxy < conv_val) then

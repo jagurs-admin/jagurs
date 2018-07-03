@@ -16,10 +16,13 @@ integer(kind=4), parameter :: WEST_BOUND = 1, EAST_BOUND = 2, SOUTH_BOUND = 4, N
 #ifdef NCDIO
 type ncdio_info
    integer(kind=4), dimension(3) :: start, count
-! === Speed output. ============================================================
-!  integer(kind=4) :: ncid, idid, mhid, mvid, hzid, vxid, vyid
    integer(kind=4) :: ncid, idid, mhid, mvid, hzid, vxid, vyid, speedid
+! === Arrival time =============================================================
+   integer(kind=4) :: atid
 ! ==============================================================================
+#ifdef HZMINOUT
+   integer(kind=4) :: minhid
+#endif
    integer(kind=4) :: isize, ist, ien, jsize, jst, jen
    integer(kind=4) :: timeid, stepid
 end type ncdio_info
@@ -75,6 +78,17 @@ type grid_info
 #endif
 #ifdef CONV_CHECK
    integer(kind=4) :: nconvout
+#endif
+#if defined(MPI) && defined(ONEFILE)
+   integer(kind=4), allocatable, dimension(:) :: kx_all, ky_all, kxend_all, kyend_all
+   integer(kind=4), allocatable, dimension(:) :: ix_all, iy_all, ixend_all, iyend_all
+   integer(kind=4) :: srcount_x, srcount_y, srcount
+   real(kind=REAL_BYTE), allocatable, dimension(:) :: buf_g
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: buf_l
+#ifdef NCDIO
+   real(kind=4), allocatable, dimension(:) :: buf_g_ncdio
+   real(kind=4), allocatable, dimension(:,:) :: buf_l_ncdio
+#endif
 #endif
 end type grid_info
 
@@ -150,6 +164,15 @@ type wave_arrays
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: m_rhoC
 ! ==============================================================================
 #endif
+! === Arrival time =============================================================
+   integer(kind=4), allocatable, dimension(:,:) :: arrivedat
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: arrival_time
+! ==============================================================================
+#ifdef BANKFILE
+   integer(kind=4), allocatable, dimension(:,:) :: ir
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: btx, bty
+   integer(kind=4), allocatable, dimension(:,:) :: brokenx, brokeny
+#endif
 end type wave_arrays
 #ifndef CARTESIAN
 ! === Elastic Loading ==========================================================
@@ -161,19 +184,16 @@ type loading
 #else
    integer(kind=4), allocatable, dimension(:,:) :: ifax_x, ifax_y
    real(kind=8), allocatable, dimension(:,:) :: trigs_x, trigs_y
-#ifndef REAL_FFT
-   complex(kind=8), allocatable, dimension(:,:) :: work_x, work_y
-#else
    real(kind=8), allocatable, dimension(:,:) :: work_x
    complex(kind=8), allocatable, dimension(:,:) :: work_y
 #endif
-#endif
    complex(kind=8), allocatable, dimension(:,:) :: green_out_Z
    complex(kind=8), allocatable, dimension(:,:) :: xfftbuf, yfftbuf
-#ifdef REAL_FFT
    real(kind=8), allocatable, dimension(:,:) :: realbuf
-#endif
    real(kind=8), allocatable, dimension(:,:) :: defZmap, defZmap1
+! === Elastic loading with interpolation =======================================
+   real(kind=8), allocatable, dimension(:,:) :: delta
+! ==============================================================================
 #ifdef MPI
    integer(kind=4) :: nx0, ny0, nx1, ny1, nx2, ny2, ibias, jbias
    real(kind=8), allocatable, dimension(:) :: sendbuf1, recvbuf1
@@ -193,6 +213,13 @@ type depth_arrays
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: dx
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: dy
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: dz
+#ifdef BANKFILE
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: dx_old
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: dy_old
+
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: dxbx
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: dyby
+#endif
 end type depth_arrays
 
 type boundary_arrays
@@ -249,6 +276,9 @@ type data_grids
    type(boundary_arrays) :: ubnd
    type(boundary_arrays) :: hbnd
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzmax
+#ifdef HZMINOUT
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzmin
+#endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: vmax
 ! ==============================================================================
@@ -256,6 +286,9 @@ type data_grids
    character(len=256) :: wod_file
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: wod_field
    character(len=256) :: bcf_file
+#ifdef BANKFILE
+   character(len=256) :: bank_file
+#endif
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: bcf_field
    type(interp_info) :: fxo
    type(interp_info) :: fyo
@@ -358,10 +391,17 @@ contains
                              dg(ig)%my%disp_file, dg(ig)%wod_file
          read(buf,*,end=106) dg(ig)%my%base_name, dg(ig)%parent%base_name, dg(ig)%my%linear_flag, dg(ig)%my%bath_file, &
                              dg(ig)%my%disp_file, dg(ig)%wod_file, dg(ig)%bcf_file
+#ifdef BANKFILE
+         read(buf,*,end=107) dg(ig)%my%base_name, dg(ig)%parent%base_name, dg(ig)%my%linear_flag, dg(ig)%my%bath_file, &
+                             dg(ig)%my%disp_file, dg(ig)%wod_file, dg(ig)%bcf_file, dg(ig)%bank_file
+#endif
          cycle
 104      dg(ig)%my%disp_file = 'NO_DISPLACEMENT_FILE_GIVEN'
 105      dg(ig)%wod_file     = 'NO_WETORDRY_FILE_GIVEN'
 106      dg(ig)%bcf_file     = 'NO_FRICTION_FILE_GIVEN'
+#ifdef BANKFILE
+107      dg(ig)%bank_file    = 'NO_BANK_FILE_GIVEN'
+#endif
       end do
 #ifdef MULTI
 ! === Split Dir ================================================================
@@ -376,6 +416,11 @@ contains
          if(dg(ig)%bcf_file /= 'NO_FRICTION_FILE_GIVEN') then
             dg(ig)%bcf_file = trim(input_dirname) // trim(dg(ig)%bcf_file)
          end if
+#ifdef BANKFILE
+         if(dg(ig)%bank_file /= 'NO_BANK_FILE_GIVEN') then
+            dg(ig)%bank_file = trim(input_dirname) // trim(dg(ig)%bank_file)
+         end if
+#endif
       end do
 ! ==============================================================================
 #endif

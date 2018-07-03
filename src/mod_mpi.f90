@@ -1024,5 +1024,341 @@ contains
       return
    end subroutine exchange_edges_wod
 ! ==============================================================================
+#ifdef BANKFILE
+   subroutine exchange_edges_dxbxdyby(grid)
+      type(data_grids), target, intent(inout) :: grid
+
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: north_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: south_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: east_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: west_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: north_buf
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: south_buf
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: east_buf
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: west_buf
+      integer(kind=4) :: nx
+      integer(kind=4) :: ny
+      integer(kind=4) :: has_boundary
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz
+
+      integer(kind=4), dimension(2) :: sreqs, rreqs
+      integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
+      integer(kind=4) :: ierr = 0
+
+      nx = grid%my%nx
+      ny = grid%my%ny
+      has_boundary = grid%my%has_boundary
+
+      hz => grid%depth_field%dxbx
+
+      !**************************************
+      !*                                    *
+      !* North-South Communication          *
+      !*                                    *
+      !**************************************
+      north_edge => grid%edges%dne
+      south_edge => grid%edges%dse
+      north_buf  => grid%edges%dnb
+      south_buf  => grid%edges%dsb
+
+      if(iand(has_boundary, NORTH_BOUND) == 0) then
+         north_edge(1:nx,1) = hz(1:nx,2)
+         north_edge(1:nx,2) = hz(1:nx,3)
+         north_edge(1:nx,3) = hz(1:nx,4)
+      end if
+      if(iand(has_boundary, SOUTH_BOUND) == 0) then
+         south_edge(1:nx,1) = hz(1:nx,ny-1)
+         south_edge(1:nx,2) = hz(1:nx,ny-2)
+      end if
+
+#ifndef MULTI
+      call MPI_Irecv(north_buf,  2*nx, REAL_MPI, north_rank, 0, MPI_COMM_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(south_buf,  3*nx, REAL_MPI, south_rank, 1, MPI_COMM_WORLD, rreqs(2), ierr)
+      call MPI_Isend(north_edge, 3*nx, REAL_MPI, north_rank, 1, MPI_COMM_WORLD, sreqs(1), ierr)
+      call MPI_Isend(south_edge, 2*nx, REAL_MPI, south_rank, 0, MPI_COMM_WORLD, sreqs(2), ierr)
+#else
+      call MPI_Irecv(north_buf,  2*nx, REAL_MPI, north_rank, 0, MPI_MEMBER_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(south_buf,  3*nx, REAL_MPI, south_rank, 1, MPI_MEMBER_WORLD, rreqs(2), ierr)
+      call MPI_Isend(north_edge, 3*nx, REAL_MPI, north_rank, 1, MPI_MEMBER_WORLD, sreqs(1), ierr)
+      call MPI_Isend(south_edge, 2*nx, REAL_MPI, south_rank, 0, MPI_MEMBER_WORLD, sreqs(2), ierr)
+#endif
+      call MPI_Waitall(2, sreqs, sstat, ierr)
+      call MPI_Waitall(2, rreqs, rstat, ierr)
+
+      if(iand(has_boundary, NORTH_BOUND) == 0) then
+         hz(1:nx,1) = north_buf(1:nx,1)
+         hz(1:nx,0) = north_buf(1:nx,2)
+      end if
+      if(iand(has_boundary, SOUTH_BOUND) == 0) then
+         hz(1:nx,ny  ) = south_buf(1:nx,1)
+         hz(1:nx,ny+1) = south_buf(1:nx,2)
+         hz(1:nx,ny+2) = south_buf(1:nx,3)
+      end if
+
+      !**************************************
+      !*                                    *
+      !* East-West Communication            *
+      !*                                    *
+      !**************************************
+      east_edge => grid%edges%dee
+      west_edge => grid%edges%dwe
+      east_buf  => grid%edges%deb
+      west_buf  => grid%edges%dwb
+
+      if(iand(has_boundary, EAST_BOUND) == 0) then
+         east_edge(0:ny+2,1) = hz(nx-1,0:ny+2)
+         east_edge(0:ny+2,2) = hz(nx-2,0:ny+2)
+      end if
+      if(iand(has_boundary, WEST_BOUND) == 0) then
+         west_edge(0:ny+2,1) = hz(2,0:ny+2)
+         west_edge(0:ny+2,2) = hz(3,0:ny+2)
+         west_edge(0:ny+2,3) = hz(4,0:ny+2)
+      end if
+
+#ifndef MULTI
+      call MPI_Irecv(east_buf,  3*(ny+3), REAL_MPI, east_rank, 2, MPI_COMM_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(west_buf,  2*(ny+3), REAL_MPI, west_rank, 3, MPI_COMM_WORLD, rreqs(2), ierr)
+      call MPI_Isend(east_edge, 2*(ny+3), REAL_MPI, east_rank, 3, MPI_COMM_WORLD, sreqs(1), ierr)
+      call MPI_Isend(west_edge, 3*(ny+3), REAL_MPI, west_rank, 2, MPI_COMM_WORLD, sreqs(2), ierr)
+#else
+      call MPI_Irecv(east_buf,  3*(ny+3), REAL_MPI, east_rank, 2, MPI_MEMBER_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(west_buf,  2*(ny+3), REAL_MPI, west_rank, 3, MPI_MEMBER_WORLD, rreqs(2), ierr)
+      call MPI_Isend(east_edge, 2*(ny+3), REAL_MPI, east_rank, 3, MPI_MEMBER_WORLD, sreqs(1), ierr)
+      call MPI_Isend(west_edge, 3*(ny+3), REAL_MPI, west_rank, 2, MPI_MEMBER_WORLD, sreqs(2), ierr)
+#endif
+      call MPI_Waitall(2, sreqs, sstat, ierr)
+      call MPI_Waitall(2, rreqs, rstat, ierr)
+
+      if(iand(has_boundary, EAST_BOUND) == 0) then
+         hz(nx,  0:ny+2) = east_buf(0:ny+2,1)
+         hz(nx+1,0:ny+2) = east_buf(0:ny+2,2)
+         hz(nx+2,0:ny+2) = east_buf(0:ny+2,3)
+      end if
+      if(iand(has_boundary, WEST_BOUND) == 0) then
+         hz(1,0:ny+2) = west_buf(0:ny+2,1)
+         hz(0,0:ny+2) = west_buf(0:ny+2,2)
+      end if
+
+      hz => grid%depth_field%dyby
+
+      !**************************************
+      !*                                    *
+      !* North-South Communication          *
+      !*                                    *
+      !**************************************
+      north_edge => grid%edges%dne
+      south_edge => grid%edges%dse
+      north_buf  => grid%edges%dnb
+      south_buf  => grid%edges%dsb
+
+      if(iand(has_boundary, NORTH_BOUND) == 0) then
+         north_edge(1:nx,1) = hz(1:nx,2)
+         north_edge(1:nx,2) = hz(1:nx,3)
+         north_edge(1:nx,3) = hz(1:nx,4)
+      end if
+      if(iand(has_boundary, SOUTH_BOUND) == 0) then
+         south_edge(1:nx,1) = hz(1:nx,ny-1)
+         south_edge(1:nx,2) = hz(1:nx,ny-2)
+      end if
+
+#ifndef MULTI
+      call MPI_Irecv(north_buf,  2*nx, REAL_MPI, north_rank, 0, MPI_COMM_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(south_buf,  3*nx, REAL_MPI, south_rank, 1, MPI_COMM_WORLD, rreqs(2), ierr)
+      call MPI_Isend(north_edge, 3*nx, REAL_MPI, north_rank, 1, MPI_COMM_WORLD, sreqs(1), ierr)
+      call MPI_Isend(south_edge, 2*nx, REAL_MPI, south_rank, 0, MPI_COMM_WORLD, sreqs(2), ierr)
+#else
+      call MPI_Irecv(north_buf,  2*nx, REAL_MPI, north_rank, 0, MPI_MEMBER_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(south_buf,  3*nx, REAL_MPI, south_rank, 1, MPI_MEMBER_WORLD, rreqs(2), ierr)
+      call MPI_Isend(north_edge, 3*nx, REAL_MPI, north_rank, 1, MPI_MEMBER_WORLD, sreqs(1), ierr)
+      call MPI_Isend(south_edge, 2*nx, REAL_MPI, south_rank, 0, MPI_MEMBER_WORLD, sreqs(2), ierr)
+#endif
+      call MPI_Waitall(2, sreqs, sstat, ierr)
+      call MPI_Waitall(2, rreqs, rstat, ierr)
+
+      if(iand(has_boundary, NORTH_BOUND) == 0) then
+         hz(1:nx,1) = north_buf(1:nx,1)
+         hz(1:nx,0) = north_buf(1:nx,2)
+      end if
+      if(iand(has_boundary, SOUTH_BOUND) == 0) then
+         hz(1:nx,ny  ) = south_buf(1:nx,1)
+         hz(1:nx,ny+1) = south_buf(1:nx,2)
+         hz(1:nx,ny+2) = south_buf(1:nx,3)
+      end if
+
+      !**************************************
+      !*                                    *
+      !* East-West Communication            *
+      !*                                    *
+      !**************************************
+      east_edge => grid%edges%dee
+      west_edge => grid%edges%dwe
+      east_buf  => grid%edges%deb
+      west_buf  => grid%edges%dwb
+
+      if(iand(has_boundary, EAST_BOUND) == 0) then
+         east_edge(0:ny+2,1) = hz(nx-1,0:ny+2)
+         east_edge(0:ny+2,2) = hz(nx-2,0:ny+2)
+      end if
+      if(iand(has_boundary, WEST_BOUND) == 0) then
+         west_edge(0:ny+2,1) = hz(2,0:ny+2)
+         west_edge(0:ny+2,2) = hz(3,0:ny+2)
+         west_edge(0:ny+2,3) = hz(4,0:ny+2)
+      end if
+
+#ifndef MULTI
+      call MPI_Irecv(east_buf,  3*(ny+3), REAL_MPI, east_rank, 2, MPI_COMM_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(west_buf,  2*(ny+3), REAL_MPI, west_rank, 3, MPI_COMM_WORLD, rreqs(2), ierr)
+      call MPI_Isend(east_edge, 2*(ny+3), REAL_MPI, east_rank, 3, MPI_COMM_WORLD, sreqs(1), ierr)
+      call MPI_Isend(west_edge, 3*(ny+3), REAL_MPI, west_rank, 2, MPI_COMM_WORLD, sreqs(2), ierr)
+#else
+      call MPI_Irecv(east_buf,  3*(ny+3), REAL_MPI, east_rank, 2, MPI_MEMBER_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(west_buf,  2*(ny+3), REAL_MPI, west_rank, 3, MPI_MEMBER_WORLD, rreqs(2), ierr)
+      call MPI_Isend(east_edge, 2*(ny+3), REAL_MPI, east_rank, 3, MPI_MEMBER_WORLD, sreqs(1), ierr)
+      call MPI_Isend(west_edge, 3*(ny+3), REAL_MPI, west_rank, 2, MPI_MEMBER_WORLD, sreqs(2), ierr)
+#endif
+      call MPI_Waitall(2, sreqs, sstat, ierr)
+      call MPI_Waitall(2, rreqs, rstat, ierr)
+
+      if(iand(has_boundary, EAST_BOUND) == 0) then
+         hz(nx,  0:ny+2) = east_buf(0:ny+2,1)
+         hz(nx+1,0:ny+2) = east_buf(0:ny+2,2)
+         hz(nx+2,0:ny+2) = east_buf(0:ny+2,3)
+      end if
+      if(iand(has_boundary, WEST_BOUND) == 0) then
+         hz(1,0:ny+2) = west_buf(0:ny+2,1)
+         hz(0,0:ny+2) = west_buf(0:ny+2,2)
+      end if
+
+      return
+   end subroutine exchange_edges_dxbxdyby
+
+   subroutine exchange_edges_btxbty(grid)
+      type(data_grids), target, intent(inout) :: grid
+
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: north_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: south_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: east_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: west_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: north_buf
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: south_buf
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: east_buf
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: west_buf
+      integer(kind=4) :: nx
+      integer(kind=4) :: ny
+      integer(kind=4) :: has_boundary
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: fx
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: fy
+
+      integer(kind=4), dimension(2) :: sreqs, rreqs
+      integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
+      integer(kind=4) :: ierr = 0
+
+      nx = grid%my%nx
+      ny = grid%my%ny
+      has_boundary = grid%my%has_boundary
+
+      fx => grid%wave_field%btx
+      fy => grid%wave_field%bty
+
+      !**************************************
+      !*                                    *
+      !* North-South Communication          *
+      !*                                    *
+      !**************************************
+      north_edge => grid%edges%fne
+      south_edge => grid%edges%fse
+      north_buf  => grid%edges%fnb
+      south_buf  => grid%edges%fsb
+
+      if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,1) = fx(1:nx,2)
+      if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,2) = fy(1:nx,2)
+      if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,3) = fx(1:nx,3)
+      if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,4) = fy(1:nx,3)
+
+      if(iand(has_boundary, SOUTH_BOUND) == 0) south_edge(1:nx,1) = fx(1:nx,ny-1)
+      if(iand(has_boundary, SOUTH_BOUND) == 0) south_edge(1:nx,4) = fx(1:nx,ny-2)
+      if(iand(has_boundary, SOUTH_BOUND) == 0) then
+         south_edge(1:nx,2) = fy(1:nx,ny-1)
+         south_edge(1:nx,3) = fy(1:nx,ny-2)
+         south_edge(1:nx,5) = fy(1:nx,ny-3)
+      end if
+
+#ifndef MULTI
+      call MPI_Irecv(north_buf,  5*nx, REAL_MPI, north_rank, 0, MPI_COMM_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(south_buf,  4*nx, REAL_MPI, south_rank, 1, MPI_COMM_WORLD, rreqs(2), ierr)
+      call MPI_Isend(north_edge, 4*nx, REAL_MPI, north_rank, 1, MPI_COMM_WORLD, sreqs(1), ierr)
+      call MPI_Isend(south_edge, 5*nx, REAL_MPI, south_rank, 0, MPI_COMM_WORLD, sreqs(2), ierr)
+#else
+      call MPI_Irecv(north_buf,  5*nx, REAL_MPI, north_rank, 0, MPI_MEMBER_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(south_buf,  4*nx, REAL_MPI, south_rank, 1, MPI_MEMBER_WORLD, rreqs(2), ierr)
+      call MPI_Isend(north_edge, 4*nx, REAL_MPI, north_rank, 1, MPI_MEMBER_WORLD, sreqs(1), ierr)
+      call MPI_Isend(south_edge, 5*nx, REAL_MPI, south_rank, 0, MPI_MEMBER_WORLD, sreqs(2), ierr)
+#endif
+      call MPI_Waitall(2, sreqs, sstat, ierr)
+      call MPI_Waitall(2, rreqs, rstat, ierr)
+
+      if(iand(has_boundary, NORTH_BOUND) == 0) fx(1:nx,1) = north_buf(1:nx,1)
+      if(iand(has_boundary, NORTH_BOUND) == 0) fx(1:nx,0) = north_buf(1:nx,4)
+      if(iand(has_boundary, NORTH_BOUND) == 0) then
+         fy(1:nx,1) = north_buf(1:nx,2)
+         fy(1:nx,0) = north_buf(1:nx,3)
+         fy(1:nx,-1) = north_buf(1:nx,5)
+      end if
+      if(iand(has_boundary, SOUTH_BOUND) == 0) fx(1:nx,ny) = south_buf(1:nx,1)
+      if(iand(has_boundary, SOUTH_BOUND) == 0) fy(1:nx,ny) = south_buf(1:nx,2)
+      if(iand(has_boundary, SOUTH_BOUND) == 0) fx(1:nx,ny+1) = south_buf(1:nx,3)
+      if(iand(has_boundary, SOUTH_BOUND) == 0) fy(1:nx,ny+1) = south_buf(1:nx,4)
+
+      !**************************************
+      !*                                    *
+      !* East-West Communication            *
+      !*                                    *
+      !**************************************
+      east_edge => grid%edges%fee
+      west_edge => grid%edges%fwe
+      east_buf  => grid%edges%feb
+      west_buf  => grid%edges%fwb
+
+      if(iand(has_boundary, EAST_BOUND) == 0) then
+          east_edge(0:ny+1,1) = fx(nx-1,0:ny+1)
+          east_edge(0:ny+1,2) = fx(nx-2,0:ny+1)
+          east_edge(0:ny+1,4) = fx(nx-3,0:ny+1)
+      end if
+      if(iand(has_boundary, EAST_BOUND) == 0) east_edge(-1:ny+1,3) = fy(nx-1,-1:ny+1)
+      if(iand(has_boundary, EAST_BOUND) == 0) east_edge(-1:ny+1,5) = fy(nx-2,-1:ny+1)
+      if(iand(has_boundary, WEST_BOUND) == 0) west_edge( 0:ny+1,1) = fx(2, 0:ny+1)
+      if(iand(has_boundary, WEST_BOUND) == 0) west_edge(-1:ny+1,2) = fy(2,-1:ny+1)
+      if(iand(has_boundary, WEST_BOUND) == 0) west_edge( 0:ny+1,3) = fx(3, 0:ny+1)
+      if(iand(has_boundary, WEST_BOUND) == 0) west_edge(-1:ny+1,4) = fy(3,-1:ny+1)
+
+#ifndef MULTI
+      call MPI_Irecv(east_buf,  4*(ny+3), REAL_MPI, east_rank, 2, MPI_COMM_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(west_buf,  5*(ny+3), REAL_MPI, west_rank, 3, MPI_COMM_WORLD, rreqs(2), ierr)
+      call MPI_Isend(east_edge, 5*(ny+3), REAL_MPI, east_rank, 3, MPI_COMM_WORLD, sreqs(1), ierr)
+      call MPI_Isend(west_edge, 4*(ny+3), REAL_MPI, west_rank, 2, MPI_COMM_WORLD, sreqs(2), ierr)
+#else
+      call MPI_Irecv(east_buf,  4*(ny+3), REAL_MPI, east_rank, 2, MPI_MEMBER_WORLD, rreqs(1), ierr)
+      call MPI_Irecv(west_buf,  5*(ny+3), REAL_MPI, west_rank, 3, MPI_MEMBER_WORLD, rreqs(2), ierr)
+      call MPI_Isend(east_edge, 5*(ny+3), REAL_MPI, east_rank, 3, MPI_MEMBER_WORLD, sreqs(1), ierr)
+      call MPI_Isend(west_edge, 4*(ny+3), REAL_MPI, west_rank, 2, MPI_MEMBER_WORLD, sreqs(2), ierr)
+#endif
+      call MPI_Waitall(2, sreqs, sstat, ierr)
+      call MPI_Waitall(2, rreqs, rstat, ierr)
+
+      if(iand(has_boundary, EAST_BOUND) == 0) fx(nx,   0:ny+1) = east_buf( 0:ny+1,1)
+      if(iand(has_boundary, EAST_BOUND) == 0) fy(nx,  -1:ny+1) = east_buf(-1:ny+1,2)
+      if(iand(has_boundary, EAST_BOUND) == 0) fx(nx+1, 0:ny+1) = east_buf( 0:ny+1,3)
+      if(iand(has_boundary, EAST_BOUND) == 0) fy(nx+1,-1:ny+1) = east_buf(-1:ny+1,4)
+      if(iand(has_boundary, WEST_BOUND) == 0) then
+          fx( 1,0:ny+1) = west_buf(0:ny+1,1)
+          fx( 0,0:ny+1) = west_buf(0:ny+1,2)
+          fx(-1,0:ny+1) = west_buf(0:ny+1,4)
+      end if
+      if(iand(has_boundary, WEST_BOUND) == 0) fy(1,-1:ny+1) = west_buf(-1:ny+1,3)
+      if(iand(has_boundary, WEST_BOUND) == 0) fy(0,-1:ny+1) = west_buf(-1:ny+1,5)
+
+      return
+   end subroutine exchange_edges_btxbty
+#endif
 
 end module mod_mpi

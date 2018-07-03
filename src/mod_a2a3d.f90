@@ -5,11 +5,9 @@
 #include "real.h"
 module mod_a2a3d
 use mpi
-! === For ensemble =============================================================
 #ifdef MULTI
 use mod_multi, only : MPI_MEMBER_WORLD
 #endif
-! ==============================================================================
 implicit none
 
 integer(kind=4), private :: nprocs, myrank, max_desc, num_desc
@@ -54,17 +52,13 @@ contains
                                  '                #'
             write(0,'(a)') '###########################################################'
          end if
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
          call MPI_Barrier(MPI_COMM_WORLD,ierr)
          call MPI_Abort(MPI_COMM_WORLD,999,ierr)
-! === For ensemble =============================================================
 #else
          call MPI_Barrier(MPI_MEMBER_WORLD,ierr)
          call MPI_Abort(MPI_MEMBER_WORLD,999,ierr)
 #endif
-! ==============================================================================
          stop
       end if
 
@@ -76,15 +70,11 @@ contains
       key = myrank
 
       do i = 1, 3
-! === For ensemble =============================================================
 #ifndef MULTI
-! ==============================================================================
          call MPI_comm_split(MPI_COMM_WORLD, color(i), key, MPI_XYZ_GROUP(i), ierr)
-! === For ensemble =============================================================
 #else
          call MPI_comm_split(MPI_MEMBER_WORLD, color(i), key, MPI_XYZ_GROUP(i), ierr)
 #endif
-! ==============================================================================
          call MPI_comm_size(MPI_XYZ_GROUP(i), nprcs3d_tmp(i), ierr)
          call MPI_comm_rank(MPI_XYZ_GROUP(i), myrank3d(i), ierr)
       end do
