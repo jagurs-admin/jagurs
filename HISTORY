@@ -517,4 +517,11 @@ Miner change to the format of tgs output files has been applied.
      d = max(0.0d0, half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j)))
 
 --------------------------------------------------------------------------------
+2018.07.17 V0501
+
+CRITICAL!!!: DEBUG for line-data function.
+Almost all line-data will be ignored on V0500.
+Stop to use V0500 and use V0501 if you need line-data function.
+
+--------------------------------------------------------------------------------
 
