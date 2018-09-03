@@ -18,24 +18,45 @@ contains
 
       integer(kind=4), pointer :: nx, ny
 #if !defined(MPI) || !defined(ONEFILE)
+#ifdef CARTESIAN
       real(kind=REAL_BYTE), pointer :: mlon0, mlat0, dh
 #else
+      real(kind=REAL_BYTE), pointer :: mlon0, mlat0
+      real(kind=REAL_BYTE) :: dh
+#endif
+#else
+#ifdef CARTESIAN
       real(kind=REAL_BYTE), pointer :: dh
+#else
+      real(kind=REAL_BYTE) :: dh
+#endif
       integer(kind=4), pointer :: kx, kyend, totalNy
       real(kind=REAL_BYTE) :: mlon0, mlat0
 #endif
       integer(kind=4), pointer, dimension(:,:) :: ir
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: btx, bty
 
+#ifndef CARTESIAN
+      real(kind=REAL_BYTE), allocatable, dimension(:) :: xin, yin
+      real(kind=REAL_BYTE) :: xtmpin, ytmpin
+#endif
 #ifdef OLDFORMAT
       integer(kind=4), allocatable, dimension(:) :: x, y, val
 
+#ifdef CARTESIAN
       integer(kind=4) :: n, i, j, num_lines, xtmp, ytmp, valtmp
+#else
+      integer(kind=4) :: n, i, j, num_lines, valtmp
+#endif
 #else
       integer(kind=4), allocatable, dimension(:) :: x, y, irread
       real(kind=REAL_BYTE), allocatable, dimension(:) :: height
 
+#ifdef CARTESIAN
       integer(kind=4) :: n, i, j, num_lines, xtmp, ytmp, irtmp
+#else
+      integer(kind=4) :: n, i, j, num_lines, irtmp
+#endif
       real(kind=REAL_BYTE) :: heighttmp
 #endif
       real(kind=REAL_BYTE) :: bh
@@ -47,15 +68,27 @@ contains
 
          num_lines = 0
          do while(.true.)
+#ifdef CARTESIAN
 #ifdef OLDFORMAT
             read(1,*,end=100) xtmp, ytmp, valtmp
 #else
             read(1,*,end=100) ytmp, xtmp, irtmp, heighttmp
 #endif
+#else
+#ifdef OLDFORMAT
+            read(1,*,end=100) xtmpin, ytmpin, valtmp
+#else
+            read(1,*,end=100) ytmpin, xtmpin, irtmp, heighttmp
+#endif
+#endif
             num_lines = num_lines + 1
          end do
  100     write(6,'(a,i6)') '[bank] Number of banks: ', num_lines
 
+#ifndef CARTESIAN
+         allocate(xin(num_lines))
+         allocate(yin(num_lines))
+#endif
          allocate(x(num_lines))
          allocate(y(num_lines))
 #ifdef OLDFORMAT
@@ -67,15 +100,24 @@ contains
 
          rewind(1)
          do n = 1, num_lines
+#ifdef CARTESIAN
 #ifdef OLDFORMAT
             read(1,*) x(n), y(n), val(n)
 #else
             read(1,*) y(n), x(n), irread(n), height(n)
 #endif
+#else
+#ifdef OLDFORMAT
+            read(1,*) xin(n), yin(n), val(n)
+#else
+            read(1,*) yin(n), xin(n), irread(n), height(n)
+#endif
+#endif
          end do
 
          nx    => dg%my%nx
          ny    => dg%my%ny
+#ifdef CARTESIAN
 #if !defined(MPI) || !defined(ONEFILE)
          mlon0 => dg%my%mlon0
          mlat0 => dg%my%mlat0
@@ -89,6 +131,30 @@ contains
          mlon0 = dg%my%mlon0 + (kx - 1)*dh
          mlat0 = dg%my%mlat0 + (totalNy - 1)*dh - (kyend - 1)*dh
 #endif
+#else
+#if !defined(MPI) || !defined(ONEFILE)
+         mlon0 => dg%my%mlon0
+         mlat0 => dg%my%mlat0
+         dh    =  dg%my%dh*60.0d0
+#else
+         mlon0 = dg%my%mlon0
+         mlat0 = dg%my%mlat0
+         dh    = dg%my%dh*60.0d0
+#endif
+#endif
+#ifndef CARTESIAN
+         if(mlon0 < 0.0d0) then
+            do n = 1, num_lines
+               xin(n) = (360.0d0+xin(n))*60.0d0
+               yin(n) = (90.0d0-yin(n))*60.0d0
+            end do
+         else
+            do n = 1, num_lines
+               xin(n) = xin(n)*60.0d0
+               yin(n) = (90.0d0-yin(n))*60.0d0
+            end do
+         end if
+#endif
 
          ir    => dg%wave_field%ir
          btx   => dg%wave_field%btx
@@ -97,9 +163,14 @@ contains
          do n = 1, num_lines
 !           x(n) = int((x(n) - mlon0 + 0.5d0)/dh) + 1
 !           y(n) = int((y(n) - mlat0 + 0.5d0)/dh) + 1
+#ifdef CARTESIAN
             x(n) = floor((x(n) - mlon0 + 0.5d0)/dh) + 1
             y(n) = floor((y(n) - mlat0 + 0.5d0)/dh) + 1
             y(n) = ny - y(n) + 1
+#else
+            x(n) = floor((xin(n) - mlon0)/dh) + 1
+            y(n) = floor((yin(n) - mlat0)/dh) + 1
+#endif
 
 #ifdef MPI
             if((x(n) >= 0) .and. (x(n) <= nx+1) .and. (y(n) >= 0) .and. (y(n) <= ny+1)) then
@@ -169,6 +240,10 @@ contains
          end do
 #endif
 
+#ifndef CARTESIAN
+         deallocate(xin)
+         deallocate(yin)
+#endif
          deallocate(x)
          deallocate(y)
 #ifdef OLDFORMAT

@@ -7,6 +7,9 @@ use mod_grid
 ! === Limiter with max Froude number. ==========================================
 use mod_params, only : froude_lim
 ! ==============================================================================
+#ifdef BANKFILE
+use mod_params, only : broken_rate
+#endif
 implicit none
 
 contains
@@ -121,6 +124,13 @@ contains
 ! === Limiter with max Froude number. ==========================================
       real(kind=REAL_BYTE) :: d, lim
 ! ==============================================================================
+#ifdef BANKFILE
+      integer(kind=4), pointer, dimension(:,:) :: ir, brokenx, brokeny
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: btx, bty, dx, dy
+
+      real(kind=REAL_BYTE) :: zhigh, zlow, discharge, dhigh
+      real(kind=REAL_BYTE), parameter :: GX = 1.0d-5, GY = 1.0d-10
+#endif
 
       fx => wfld%fx
       fy => wfld%fy
@@ -129,8 +139,24 @@ contains
       fy_old => wfld%fy_old
       hz_old => wfld%hz_old
 
+#ifndef BANKFILE
       ddx => dfld%dx
       ddy => dfld%dy
+#else
+      if(allocated(wfld%ir)) then
+         ir  => wfld%ir
+
+         ddx => dfld%dxbx
+         ddy => dfld%dyby
+
+         btx => wfld%btx
+         dx => dfld%dx
+         brokenx => wfld%brokenx
+         bty => wfld%bty
+         dy => dfld%dy
+         brokeny => wfld%brokeny
+      end if
+#endif
       dz  => dfld%dz
 
       dtds = dt/(dth*rote)
@@ -665,6 +691,46 @@ contains
          end do
       end do
 ! ==============================================================================
+#ifdef BANKFILE
+      if(allocated(wfld%ir)) then
+!$omp do private(i, zhigh, zlow, discharge, dhigh)
+         do j = jst, jnd
+            do i = ist, ind
+               if((ir(i,j) == 1) .or. (ir(i,j) == 3)) then
+                  dhigh = min(dz(i,j), dz(i+1,j))
+! === CRITICAL! Almost all line-data will be ignored!!! ========================
+!                 if(ddx(i,j) > -dhigh) then
+                  if(ddx(i,j) < dhigh) then
+! ==============================================================================
+                     ! === CAL. OF DISCHANGE OF OVERFLOW ===
+                     if(hz(i,j) + ddx(i,j) > hz(i+1,j) + ddx(i,j)) then
+                        zhigh = hz(i,j) + ddx(i,j)
+                        zlow = hz(i+1,j) + ddx(i,j)
+                     else
+                        zhigh = hz(i+1,j) + ddx(i,j)
+                        zlow = hz(i,j) + ddx(i,j)
+                     end if
+                     if(zhigh < GX) then
+                        fx(i,j) = zap
+                     else
+                        if(zhigh*0.66667d0 < zlow) then
+                           discharge = 4.029d0*zlow*sqrt(zhigh - zlow) ! 4.029 = u'*(9.8*2)*0.5, u' = 2.6u
+                        else
+                           discharge = 1.55d0*zhigh**1.5d0 ! 1.55 = u*(9.8*2)*0.5, u = 0.35
+                        end if
+                        if(hz(i+1,j) + ddx(i,j) > hz(i,j) + ddx(i,j)) discharge = -discharge
+                        fx(i,j) = discharge
+                        if(brokenx(i,j) == 0) then
+                           btx(i,j) = broken_rate*(btx(i,j) - dhigh) + dhigh
+                           brokenx(i,j) = 1
+                        end if
+                     end if
+                  end if
+               end if
+            end do
+         end do
+      end if
+#endif
 !$omp do private(i, dh)
       do j = jst, jnd
          do i = ist, ind
@@ -688,6 +754,46 @@ contains
          end do
       end do
 ! ==============================================================================
+#ifdef BANKFILE
+      if(allocated(wfld%ir)) then
+!$omp do private(i, zhigh, zlow, discharge, dhigh)
+         do j = jst, jnd
+            do i = ist, ind
+               if((ir(i,j+1) == 2) .or. (ir(i,j+1) == 3)) then
+                  dhigh = min(dz(i,j), dz(i,j+1))
+! === CRITICAL! Almost all line-data will be ignored!!! ========================
+!                 if(ddy(i,j) > -dhigh) then
+                  if(ddy(i,j) < dhigh) then
+! ==============================================================================
+                     ! === CAL. OF DISCHANGE OF OVERFLOW ===
+                     if(hz(i,j) + ddy(i,j) > hz(i,j+1) + ddy(i,j)) then
+                        zhigh = hz(i,j) + ddy(i,j)
+                        zlow = hz(i,j+1) + ddy(i,j)
+                     else
+                        zhigh = hz(i,j+1) + ddy(i,j)
+                        zlow = hz(i,j) + ddy(i,j)
+                     end if
+                     if(zhigh < GX) then
+                        fy(i,j) = zap
+                     else
+                        if(zhigh*0.66667d0 < zlow) then
+                           discharge = 4.029d0*zlow*sqrt(zhigh - zlow) ! 4.029 = u'*(9.8*2)*0.5, u' = 2.6u
+                        else
+                           discharge = 1.55d0*zhigh**1.5d0 ! 1.55 = u*(9.8*2)*0.5, u = 0.35
+                        end if
+                        if(hz(i,j+1) + ddy(i,j) > hz(i,j) + ddy(i,j)) discharge = -discharge
+                        fy(i,j) = discharge
+                        if(brokeny(i,j) == 0) then
+                           bty(i,j) = broken_rate*(bty(i,j) - dhigh) + dhigh
+                           brokeny(i,j) = 1
+                        end if
+                     end if
+                  end if
+               end if
+            end do
+         end do
+      end if
+#endif
 !$omp do private(i, fybar, cf, bcf, fric, ddx_tmp, d, lim)
       do j = jst, jnd
          do i = ist, ind

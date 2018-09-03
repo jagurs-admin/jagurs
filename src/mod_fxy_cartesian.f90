@@ -456,7 +456,10 @@ contains
             do i = ist, ind
                if((ir(i,j) == 1) .or. (ir(i,j) == 3)) then
                   dhigh = min(dz(i,j), dz(i+1,j))
-                  if(ddx(i,j) > -dhigh) then
+! === CRITICAL! Almost all line-data will be ignored!!! ========================
+!                 if(ddx(i,j) > -dhigh) then
+                  if(ddx(i,j) < dhigh) then
+! ==============================================================================
                      ! === CAL. OF DISCHANGE OF OVERFLOW ===
                      if(hz(i,j) + ddx(i,j) > hz(i+1,j) + ddx(i,j)) then
                         zhigh = hz(i,j) + ddx(i,j)
@@ -692,7 +695,10 @@ contains
             do i = ist, ind
                if((ir(i,j+1) == 2) .or. (ir(i,j+1) == 3)) then
                   dhigh = min(dz(i,j), dz(i,j+1))
-                  if(ddy(i,j) > -dhigh) then
+! === CRITICAL! Almost all line-data will be ignored!!! ========================
+!                 if(ddy(i,j) > -dhigh) then
+                  if(ddy(i,j) < dhigh) then
+! ==============================================================================
                      ! === CAL. OF DISCHANGE OF OVERFLOW ===
                      if(hz(i,j) + ddy(i,j) > hz(i,j+1) + ddy(i,j)) then
                         zhigh = hz(i,j) + ddy(i,j)
