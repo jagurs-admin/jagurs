@@ -1,4 +1,5 @@
 !#define OLDFORMAT
+#define BANKFILEREAL
 #ifdef DBLE_MATH
 #include "dble_math.h"
 #endif
@@ -44,7 +45,13 @@ contains
       integer(kind=4), allocatable, dimension(:) :: x, y, val
 
 #ifdef CARTESIAN
+#ifndef BANKFILEREAL
       integer(kind=4) :: n, i, j, num_lines, xtmp, ytmp, valtmp
+#else
+      integer(kind=4) :: n, i, j, num_lines, valtmp
+      real(kind=REAL_BYTE) :: xtmp, ytmp
+      real(kind=REAL_BYTE), allocatable, dimension(:) :: xin, yin
+#endif
 #else
       integer(kind=4) :: n, i, j, num_lines, valtmp
 #endif
@@ -53,7 +60,13 @@ contains
       real(kind=REAL_BYTE), allocatable, dimension(:) :: height
 
 #ifdef CARTESIAN
+#ifndef BANKFILEREAL
       integer(kind=4) :: n, i, j, num_lines, xtmp, ytmp, irtmp
+#else
+      integer(kind=4) :: n, i, j, num_lines, irtmp
+      real(kind=REAL_BYTE) :: xtmp, ytmp
+      real(kind=REAL_BYTE), allocatable, dimension(:) :: xin, yin
+#endif
 #else
       integer(kind=4) :: n, i, j, num_lines, irtmp
 #endif
@@ -91,6 +104,10 @@ contains
 #endif
          allocate(x(num_lines))
          allocate(y(num_lines))
+#ifdef BANKFILEREAL
+         allocate(xin(num_lines))
+         allocate(yin(num_lines))
+#endif
 #ifdef OLDFORMAT
          allocate(val(num_lines))
 #else
@@ -101,10 +118,18 @@ contains
          rewind(1)
          do n = 1, num_lines
 #ifdef CARTESIAN
+#ifndef BANKFILEREAL
 #ifdef OLDFORMAT
             read(1,*) x(n), y(n), val(n)
 #else
             read(1,*) y(n), x(n), irread(n), height(n)
+#endif
+#else
+#ifdef OLDFORMAT
+            read(1,*) xin(n), yin(n), val(n)
+#else
+            read(1,*) yin(n), xin(n), irread(n), height(n)
+#endif
 #endif
 #else
 #ifdef OLDFORMAT
@@ -164,8 +189,13 @@ contains
 !           x(n) = int((x(n) - mlon0 + 0.5d0)/dh) + 1
 !           y(n) = int((y(n) - mlat0 + 0.5d0)/dh) + 1
 #ifdef CARTESIAN
+#ifndef BANKFILEREAL
             x(n) = floor((x(n) - mlon0 + 0.5d0)/dh) + 1
             y(n) = floor((y(n) - mlat0 + 0.5d0)/dh) + 1
+#else
+            x(n) = floor((xin(n) - mlon0 + 0.5d0*dh)/dh) + 1
+            y(n) = floor((yin(n) - mlat0 + 0.5d0*dh)/dh) + 1
+#endif
             y(n) = ny - y(n) + 1
 #else
             x(n) = floor((xin(n) - mlon0)/dh) + 1
@@ -228,10 +258,10 @@ contains
             do i = -1, nx+1
                if(ir(i,j) == 0) then
                   if(abs(btx(i,j)) > tiny(bh)) then
-                     write(0,*) 'Somthing is wrong on btx!!!', btx(i,j)
+                     write(0,*) 'Something is wrong on btx!!!', btx(i,j)
                   end if
                   if(abs(bty(i,j-1)) > tiny(bh)) then
-                     write(0,*) 'Somthing is wrong on bty!!!', bty(i,j-1)
+                     write(0,*) 'Something is wrong on bty!!!', bty(i,j-1)
                   end if
                else
                   write(400000,'(3i6,2f15.3)') i, j, ir(i,j), btx(i,j), bty(i,j-1)
@@ -246,6 +276,10 @@ contains
 #endif
          deallocate(x)
          deallocate(y)
+#ifdef BANKFILEREAL
+         deallocate(xin)
+         deallocate(yin)
+#endif
 #ifdef OLDFORMAT
          deallocate(val)
 #else

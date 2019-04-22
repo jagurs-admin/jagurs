@@ -815,18 +815,17 @@ contains
                   else  ! Manning's roughness coefficent
                      bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
                   end if
+                  ! explicit 
 !                 fric = dt*bcf*fx_old(i,j)*sqrt(fx_old(i,j)*fx_old(i,j) + fybar*fybar)/ddx_tmp**2
-                  fric = dt*bcf*(half*(fx(i,j)+fx_old(i,j)))*sqrt(fx_old(i,j)*fx_old(i,j) + fybar*fybar)/ddx_tmp**2
+                  ! semi-implicit added on 14/04/2019, Baba
+                  fric = dt*bcf*half*sqrt(fx_old(i,j)*fx_old(i,j)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(i,j) = (fx(i,j)-fric*fx_old(i,j))/(1.0d0+fric)
                else
-                  fric = zap
+                  fx(i,j) = zap
+!                  fric = zap
                end if
-               fx(i,j) = fx(i,j) - fric
+!               fx(i,j) = fx(i,j) - fric
 ! === Limiter with max Froude number. ==========================================
-!              if(fx(i,j) > 15.0d0*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))) then
-!                 fx(i,j) = 15.0d0*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
-!              else if(fx(i,j) < -15.0d0*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))) then
-!                 fx(i,j) = -15.0d0*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
-!              end if
 ! === To prevent sqrt of negative numbers. =====================================
 !              d = half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))
                d = max(0.0d0, half*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j)))
@@ -863,18 +862,17 @@ contains
                   else !  Manning's roughness coefficent
                      bcf = cf*cf*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
                   end if
+                  ! explicit
 !                 fric = dt*bcf*fy_old(i,j)*sqrt(fy_old(i,j)*fy_old(i,j) + fxbar*fxbar)/ddy_tmp**2
-                  fric = dt*bcf*(half*(fy(i,j)+fy_old(i,j)))*sqrt(fy_old(i,j)*fy_old(i,j) + fxbar*fxbar)/ddy_tmp**2
+                  ! semi-implicit added on 14/04/2019, Baba
+                  fric = dt*bcf*half*sqrt(fy_old(i,j)*fy_old(i,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(i,j) = (fy(i,j)-fric*fy_old(i,j))/(1.0d0+fric)
                else
-                  fric = zap
+                  fy(i,j) = zap
+!                  fric = zap
                end if
-               fy(i,j) = fy(i,j) - fric
+!               fy(i,j) = fy(i,j) - fric
 ! === Limiter with max Froude number. ==========================================
-!              if(fy(i,j) > 15.0d0*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))) then
-!                 fy(i,j) = 15.0d0*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
-!              else if(fy(i,j) < -15.0d0*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))) then
-!                 fy(i,j) = -15.0d0*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
-!              end if
 ! === To prevent sqrt of negative numbers. =====================================
 !              d = half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))
                d = max(0.0d0, half*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j)))

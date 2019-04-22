@@ -572,6 +572,7 @@ contains
                      u1, u2, u3)
 #endif
                   uh1(i,j) =  u1*sin(strike(n)*DEG2RAD) - u2*cos(strike(n)*DEG2RAD)
+                  ! note that downward is positive along Y direction in JAGURS
                   uh2(i,j) = -u1*cos(strike(n)*DEG2RAD) - u2*sin(strike(n)*DEG2RAD)
                   uz(i,j)  =  u3
 #ifndef CARTESIAN
@@ -601,7 +602,9 @@ contains
          do j = 1, nlat
             do i = 1, nlon
                uh1(i,j) =  uh1(i,j)*0.01d0
-               uh2(i,j) = -uh2(i,j)*0.01d0
+               !a bug fix on 14/04/2019, Baba
+               !uh2(i,j) = -uh2(i,j)*0.01d0
+               uh2(i,j) = uh2(i,j)*0.01d0
                uz(i,j)  =  uz(i,j) *0.01d0
             end do
          end do
