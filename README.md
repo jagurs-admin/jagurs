@@ -14,6 +14,8 @@ Technical References
 
 - Ando, K., M. Hyodo, T. Baba T. Hori, T. Kato, M. Watanabe, S. Ichikawa, H. Kitahara, H. Uhehara, H. Inoue, “Parallel-algorithm Extension for Tsunami and Earthquake-cycle Simulators for Massively Parallel Execution on the K Computer”, Inter. Jour. of High Per. Comp. App., doi: 10.1177/1094342016636670, 2016.
 
+- Baba, T., S. Allgeyer, J. Hossen, P.R. Cummins, H. Tsushima, K. Imai, K. Yamashita, and T. Kato, Accurate numerical simulation of the far-field tsunami caused by the 2011 Tohoku earthquake, including the effects of Boussinesq dispersion, seawater density stratification, elastic loading, and gravitational potential change, Ocean Modelling, 111, 46-54, doi:10.1016/j.ocemod.2017.01.002, 2017.
+
 - Baba, T., K. Ando, D. Matsuoka, M. Hyodo, T. Hori, N. Takahashi, R. Obayashi, Y. Imato, D. Kitamura, H. Uehara, T. Kato, R. Saka, “Large-scale, high-speed tsunami prediction for the great Nankai trough earthquake on the K computer”, Inter. Jour. of High Per. Comp. App., 30, 71-84, doi:10.1177/1094342015584090, 2016.
 
 - Baba, T., N. Takahashi, Y. Kaneda, K. Ando, D. Matsuoka, and T. Kato, “Parallel implementation of dispersive tsunami wave modeling with a nesting algorithm for the 2011 Tohoku tsunami”, Pure appl. Geophys., doi:10.1007/s00024-015-1049-2, 2015.
