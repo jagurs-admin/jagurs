@@ -104,9 +104,11 @@ contains
 #endif
          allocate(x(num_lines))
          allocate(y(num_lines))
+#ifdef CARTESIAN
 #ifdef BANKFILEREAL
          allocate(xin(num_lines))
          allocate(yin(num_lines))
+#endif
 #endif
 #ifdef OLDFORMAT
          allocate(val(num_lines))
@@ -198,8 +200,8 @@ contains
 #endif
             y(n) = ny - y(n) + 1
 #else
-            x(n) = floor((xin(n) - mlon0)/dh) + 1
-            y(n) = floor((yin(n) - mlat0)/dh) + 1
+            x(n) = floor((xin(n) - mlon0 + 0.5d0*dh)/dh) + 1
+            y(n) = floor((yin(n) - mlat0 + 0.5d0*dh)/dh) + 1
 #endif
 
 #ifdef MPI
@@ -276,9 +278,11 @@ contains
 #endif
          deallocate(x)
          deallocate(y)
+#ifdef CARTESIAN
 #ifdef BANKFILEREAL
          deallocate(xin)
          deallocate(yin)
+#endif
 #endif
 #ifdef OLDFORMAT
          deallocate(val)
