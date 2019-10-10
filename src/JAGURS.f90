@@ -1811,6 +1811,8 @@ program JAGURS
                                  dgrid(ig)%my%mlat0,dgrid(ig)%my%mlon0,dgrid(ig)%my%dh, &
 #if !defined(MPI) || !defined(ONEFILE)
                                  ruptgrd(irupt),program_name)
+#elif defined(MULTI)
+                                 trim(input_dirname) // ruptgrd(irupt),program_name,dgrid(ig),myrank)
 #else
                                  ruptgrd(irupt),program_name,dgrid(ig),myrank)
 #endif
