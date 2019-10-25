@@ -137,18 +137,31 @@ contains
    end subroutine mygmt_grdio_d
 
    subroutine read_gmt_grd_hdr(infilename, nx, ny, dx, dy, &
+#ifndef PIXELIN
                                west, east, south, north, zmin, zmax)
+#else
+                               west, east, south, north, zmin, zmax, nxorg, nyorg)
+      use mod_params, only : RUDEF, IUDEF
+#endif
       character(len=256), intent(in) :: infilename
       integer(kind=4), intent(out) :: nx, ny
       real(kind=REAL_BYTE), intent(out) :: dx, dy, west, east, south, north, zmin, zmax
 
+#ifndef PIXELIN
       integer(kind=4) :: ncid, err
       integer(kind=4) :: side_id, xysize_id, side_len, xysize_len, side_dim, xysize_dim
       real(kind=8), allocatable, dimension(:) :: x_range, y_range, z_range, spacing
       integer(kind=4), allocatable, dimension(:) :: dimension
       integer(kind=4) :: x_range_id, y_range_id, z_range_id, spacing_id, dimension_id
+#else
+      integer(kind=4), intent(out) :: nxorg, nyorg
+      character(len=256) :: descfile
+      namelist /desc/ west, east, south, north, dx, dy, zmin, zmax, nx, ny
+      real(kind=REAL_BYTE) :: westorg, eastorg, southorg, northorg
+#endif
 
       !*** open the file and inquire about the dimensions ***
+#ifndef PIXELIN
       err = nf_open(infilename, NF_NOWRITE, ncid)
       if(err /= NF_NOERR) then
          write(0,'(a,i0,a,a)') 'netcdf err=', err, ' nonexistent file=', trim(infilename)
@@ -222,8 +235,45 @@ contains
       deallocate(z_range)
       deallocate(spacing)
       deallocate(dimension)
+#else
+      descfile = trim(infilename) // '.desc'
+      open(1,file=trim(descfile),action='read',status='old',form='formatted',err=100)
+      west = RUDEF; east = RUDEF; south = RUDEF; north = RUDEF
+      dx   = RUDEF; dy   = RUDEF; nx    = IUDEF; ny    = IUDEF
+      read(1,desc)
+      if((west == RUDEF) .or. (east == RUDEF) .or. (south == RUDEF) .or. (north == RUDEF) .or. &
+         (dx   == RUDEF) .or. (dy   == RUDEF) .or. (nx    == IUDEF) .or. (ny    == IUDEF)) goto 101
+      nxorg = nx
+      nyorg = ny
+      nx = (nxorg-1)/3; nx = 3*nx+1
+      ny = (nyorg-1)/3; ny = 3*ny+1
+      westorg = west; eastorg = east; northorg = north; southorg = south
+      west  = west  + 1.5d0*dx
+      east  = east  - 1.5d0*dx
+      north = north - 1.5d0*dy
+      south = south + 1.5d0*dy
+      close(1)
+      write(6,'(a,a,a)') '[pixcel format] 1 grid on each edge is ignored on "', trim(infilename), """!"
+      write(6,'(a,i6,a,i6)') '[pixcel format] Grid size is dealt as ', nx, ' x ', ny
+      write(6,'(a,i6,a,i6,a)') '[pixcel format]    instead of it''s original gird size ', nxorg, ' x ', nyorg, '.'
+      write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] West edge is changed from ', westorg, ' to ', west, '.'
+      write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] East edge is changed from ', eastorg, ' to ', east, '.'
+      write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] South edge is changed from ', southorg, ' to ', south, '.'
+      write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] North edge is changed from ', northorg, ' to ', north, '.'
+#ifdef PIXCELOUT
+      write(6,'(a)') '[pixcel format] Note that the value on truncated area is zero!'
+#endif
+#endif
 
       return
+#ifdef PIXELIN
+ 100  continue
+      write(0,'(a,a,a)') 'Error! Descriptor file "', trim(descfile), '" does not exist!'
+      stop
+ 101  continue
+      write(0,'(a,a,a)') 'Error! Invalid description on descriptor file "', trim(descfile), '"!'
+      stop
+#endif
    end subroutine read_gmt_grd_hdr
 
    subroutine read_gmt_grd(infilename,z,nx,ny)

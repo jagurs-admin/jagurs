@@ -23,8 +23,13 @@ integer(kind=4), parameter :: DPT = 4
 #endif
 
 !*** check undefined values ***
+#ifndef PIXELIN
 integer(kind=4),   private, parameter :: IUDEF = 999999
 real(kind=REAL_BYTE),      private, parameter :: RUDEF = 999999.9d0
+#else
+integer(kind=4),            parameter :: IUDEF = 999999
+real(kind=REAL_BYTE),               parameter :: RUDEF = 999999.9d0
+#endif
 character(len=32), private, parameter :: SUDEF = ''
 
 character(len=256) :: program_name
@@ -40,18 +45,30 @@ integer(kind=4) :: coriolis = IUDEF ! coriolis=1: coriolis force included
                                     ! coriolis=0: coriolis force neglected
 ! === Output file name should be optional. =====================================
 !character(len=128) :: maxgrdfn = SUDEF, max_grid_file_name
+#ifndef PIXELOUT
 character(len=128) :: maxgrdfn = 'zmax.grd', max_grid_file_name
+#else
+character(len=128) :: maxgrdfn = 'zmax.dat', max_grid_file_name
+#endif
 ! ==============================================================================
 #ifdef HZMINOUT
 ! === Output file name should be optional. =====================================
 !character(len=128) :: mingrdfn = SUDEF, min_grid_file_name
+#ifndef PIXELOUT
 character(len=128) :: mingrdfn = 'zmin.grd', min_grid_file_name
+#else
+character(len=128) :: mingrdfn = 'zmin.dat', min_grid_file_name
+#endif
 ! ==============================================================================
 #endif
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 ! === Output file name should be optional. =====================================
 !character(len=128) :: vmaxgrdfn = SUDEF, vmax_grid_file_name
+#ifndef PIXELOUT
 character(len=128) :: vmaxgrdfn = 'vmax.grd', vmax_grid_file_name
+#else
+character(len=128) :: vmaxgrdfn = 'vmax.dat', vmax_grid_file_name
+#endif
 ! ==============================================================================
 ! ==============================================================================
 character(len=128) :: tgstafn = SUDEF, tg_station_file_name
@@ -590,6 +607,12 @@ contains
 #else
       write(6,'(a)') '- Snapshot output: Orignal GMT output'
 #endif
+#endif
+#ifdef PIXELIN
+      write(6,'(a)') '- Input files with pixel format: ON (-DPIXELIN)'
+#endif
+#ifdef PIXELOUT
+      write(6,'(a)') '- Output files with pixel format: ON (-DPIXELOUT)'
 #endif
 ! ========================================================================================
       write(6,'(/,a)') '[Run-time configurations]'

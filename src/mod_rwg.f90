@@ -1211,9 +1211,17 @@ contains
 #endif
 
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELIN
    subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld)
 #else
+   subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELIN
    subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,dg,myrank)
+#else
+   subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,dg,myrank,nxorg,nyorg)
+#endif
 #endif
       type(wave_arrays), target, intent(inout) :: wfld
       type(depth_arrays), target, intent(in) :: dfld
@@ -1228,6 +1236,9 @@ contains
       integer(kind=4), intent(in) :: nlon, nlat
       character(len=256), intent(in) :: fname
       real(kind=REAL_BYTE), target, dimension(nlon,nlat), intent(inout) :: wodfld
+#ifdef PIXELIN
+      integer(kind=4), intent(in) :: nxorg, nyorg
+#endif
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz, dz, wod
 ! === Arrival time =============================================================
@@ -1240,6 +1251,9 @@ contains
       integer(kind=4), intent(in) :: myrank
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: wod_all
 #endif
+#ifdef PIXELIN
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: wodorg
+#endif
 
       hz => wfld%hz
       dz => dfld%dz
@@ -1248,9 +1262,13 @@ contains
       arrivedat => wfld%arrivedat
 ! ==============================================================================
 
+#ifndef __NEC__
 !$omp parallel
+#endif
       if(trim(fname) == 'NO_WETORDRY_FILE_GIVEN') then
+#ifndef __NEC__
 !$omp single
+#endif
 #if defined(MPI) && defined(ONEFILE)
          if(myrank == 0) then
 #endif
@@ -1258,8 +1276,12 @@ contains
 #if defined(MPI) && defined(ONEFILE)
          end if
 #endif
+#ifndef __NEC__
 !$omp end single
 !$omp do private(i)
+#else
+!$omp parallel do private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                if(dz(i,j) > zap) then ! wet
@@ -1272,23 +1294,47 @@ contains
             end do
          end do
       else
+#ifndef __NEC__
 !$omp single
+#endif
 #if !defined(MPI) || !defined(ONEFILE)
          write(6,'(8x,a,a)') 'WETORDRY_FILE_GIVEN:', trim(fname)
+#ifndef PIXELIN
          call read_gmt_grd(fname, wod, nlon, nlat)
+#else
+         allocate(wodorg(0:nxorg-1,0:nyorg-1))
+         open(1,file=trim(fname),action='read',status='old',form='formatted')
+         read(1,'(10f8.2)') wodorg
+         close(1)
+         wod(1:nlon,1:nlat) = wodorg(1:nlon,1:nlat)
+         deallocate(wodorg)
+#endif
 #else
          if(myrank == 0) then
             allocate(wod_all(dg%my%totalNx,dg%my%totalNy))
             write(6,'(8x,a,a)') 'WETORDRY_FILE_GIVEN:', trim(fname)
+#ifndef PIXELIN
             call read_gmt_grd(fname, wod_all, dg%my%totalNx,dg%my%totalNy)
+#else
+            allocate(wodorg(0:nxorg-1,0:nyorg-1))
+            open(1,file=trim(fname),action='read',status='old',form='formatted')
+            read(1,'(10f8.2)') wodorg
+            close(1)
+            wod_all(1:dg%my%totalNx,1:dg%my%totalNy) = wodorg(1:dg%my%totalNx,1:dg%my%totalNy)
+         deallocate(wodorg)
+#endif
          else
             allocate(wod_all(1,1))
          end if
          call onefile_scatter_array(wod_all,wod,dg)
          deallocate(wod_all)
 #endif
+#ifndef __NEC__
 !$omp end single
 !$omp do private(i)
+#else
+!$omp parallel do private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                if(dz(i,j) > zap .and. wod(i,j) > zap) then ! wet
@@ -1312,7 +1358,11 @@ contains
       end if
 ! === Arrival time =============================================================
       if(check_arrival_time == 1) then
+#ifndef __NEC__
 !$omp do private(i)
+#else
+!$omp parallel do private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                if(ifz(i,j) == 1) then ! wet first
@@ -1324,7 +1374,9 @@ contains
          end do
       end if
 ! ==============================================================================
+#ifndef __NEC__
 !$omp end parallel
+#endif
 
       return
    end subroutine wet_or_dry
@@ -1342,6 +1394,9 @@ contains
 ! ==============================================================================
       use mpi
 #endif
+#ifdef _OPENMP
+      use omp_lib
+#endif
       integer(kind=4), intent(in) :: nx, ny
       real(kind=REAL_BYTE), dimension(nx,ny), intent(in) :: a
       real(kind=REAL_BYTE), intent(out) :: zmax, zmin
@@ -1357,6 +1412,18 @@ contains
 #ifdef MPI
       integer(kind=4) :: ierr
 #endif
+#ifdef _OPENMP
+#ifndef __NEC__
+      integer(kind=4), parameter :: mt = 64
+#else
+      integer(kind=4), parameter :: mt = 8
+#endif
+#ifndef MPI
+      integer(kind=4), dimension(0:mt-1) :: imin_, jmin_, imax_, jmax_
+#endif
+      real(kind=REAL_BYTE), dimension(0:mt-1) :: min_, max_
+      integer(kind=4) :: t
+#endif
    
 #ifndef MPI
       imin = 1
@@ -1365,6 +1432,7 @@ contains
       jmax = 1
 #endif
 
+#ifndef _OPENMP
 ! === For negative max. height =================================================
       if(present(flag_missing_value) .and. flag_missing_value) then
 ! ==============================================================================
@@ -1418,6 +1486,99 @@ contains
 ! === For negative max. height =================================================
       end if
 ! ==============================================================================
+#else
+      if(present(flag_missing_value) .and. flag_missing_value) then
+         min = -missing_value
+         max =  missing_value
+         min_ = min
+         max_ = max
+
+!$omp parallel private(t)
+         t = omp_get_thread_num()
+!$omp do private(i)
+         do j = 1, ny
+            do i = 1, nx
+               if(a(i,j) /= missing_value) then
+                  if(a(i,j) < min_(t)) then
+                     min_(t) = a(i,j)
+#ifndef MPI
+                     imin_(t) = i
+                     jmin_(t) = j
+#endif
+                  end if
+                  if(a(i,j) > max_(t)) then
+                     max_(t) = a(i,j)
+#ifndef MPI
+                     imax_(t) = i
+                     jmax_(t) = j
+#endif
+                  end if
+               end if
+            end do
+         end do
+!$omp end parallel
+         do t = 0, mt-1
+            if(min_(t) < min) then
+               min = min_(t)
+#ifndef MPI
+               imin = imin_(t)
+               jmin = jmin_(t)
+#endif
+            end if
+            if(max_(t) > max) then
+               max = max_(t)
+#ifndef MPI
+               imax = imax_(t)
+               jmax = jmax_(t)
+#endif
+            end if
+         end do
+      else
+         min = a(1,1)
+         max = a(1,1)
+         min_ = min
+         max_ = max
+
+!$omp parallel private(t)
+         t = omp_get_thread_num()
+!$omp do private(i)
+         do j = 1, ny
+            do i = 1, nx
+               if(a(i,j) < min_(t)) then
+                  min_(t) = a(i,j)
+#ifndef MPI
+                  imin_(t) = i
+                  jmin_(t) = j
+#endif
+               end if
+               if(a(i,j) > max_(t)) then
+                  max_(t) = a(i,j)
+#ifndef MPI
+                  imax_(t) = i
+                  jmax_(t) = j
+#endif
+               end if
+            end do
+         end do
+!$omp end parallel
+         do t = 0, mt-1
+            if(min_(t) < min) then
+               min = min_(t)
+#ifndef MPI
+               imin = imin_(t)
+               jmin = jmin_(t)
+#endif
+            end if
+            if(max_(t) > max) then
+               max = max_(t)
+#ifndef MPI
+               imax = imax_(t)
+               jmax = jmax_(t)
+#endif
+            end if
+         end do
+      end if
+#endif
 
 #ifndef MPI
       zmin = min

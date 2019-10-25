@@ -90,14 +90,25 @@ contains
       return
    end subroutine add_suffix_to_grid_filenames
 #endif
+#ifndef PIXELIN
    subroutine read_bathymetry_gmt_grdhdr(fname,nx,ny,dxdy,mlon0,mlat0)
+#else
+   subroutine read_bathymetry_gmt_grdhdr(fname,nx,ny,dxdy,mlon0,mlat0,nxorg,nyorg)
+#endif
       character(len=256), intent(in) :: fname
       integer(kind=4), intent(out) :: nx, ny
       real(kind=REAL_BYTE), intent(out) :: dxdy, mlon0, mlat0
       integer(kind=4) :: nlon, nlat
       real(kind=REAL_BYTE) :: dx, dy, west, east, south, north, zmin, zmax
+#ifdef PIXELIN
+      integer(kind=4), intent(out) :: nxorg, nyorg
+#endif
 
+#ifndef PIXELIN
       call read_gmt_grd_hdr(fname,nlon,nlat,dx,dy,west,east,south,north,zmin,zmax)
+#else
+      call read_gmt_grd_hdr(fname,nlon,nlat,dx,dy,west,east,south,north,zmin,zmax,nxorg,nyorg)
+#endif
 
       write(6,'(/,8x,a,a)') 'read_bathymetry_gmt_grdhdr(newsub.o): file name=', trim(fname)
       write(6,'(8x,a,i0,a,i0)') 'nx=', nlon, ' ny=', nlat
@@ -140,19 +151,33 @@ contains
    end subroutine read_bathymetry_gmt_grdhdr
 
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELIN
    subroutine read_friction_gmt_grd(fname,ffld,nx,ny)
 #else
+   subroutine read_friction_gmt_grd(fname,ffld,nx,ny,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELIN
    subroutine read_friction_gmt_grd(fname,ffld,nx,ny,dg,myrank)
+#else
+   subroutine read_friction_gmt_grd(fname,ffld,nx,ny,dg,myrank,nxorg,nyorg)
+#endif
 #endif
       character(len=256), intent(in) :: fname
       real(kind=REAL_BYTE), target, dimension(nx,ny), intent(inout) :: ffld
       integer(kind=4), intent(in) :: nx, ny
+#ifdef PIXELIN
+      integer(kind=4), intent(in) :: nxorg, nyorg
+#endif
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: bcf
 #if defined(MPI) && defined(ONEFILE)
       type(data_grids), target, intent(inout) :: dg
       integer(kind=4), intent(in) :: myrank
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: bcf_all
+#endif
+#ifdef PIXELIN
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: bcforg
 #endif
 
       bcf => ffld
@@ -169,7 +194,16 @@ contains
       else
 #if !defined(MPI) || !defined(ONEFILE)
          write(6,'(8x,a,a)') 'FRICTION_FILE_GIVEN:', trim(fname)
+#ifndef PIXELIN
          call read_gmt_grd(fname,bcf,nx,ny)
+#else
+         allocate(bcforg(0:nxorg-1,0:nyorg-1))
+         open(1,file=trim(fname),action='read',status='old',form='formatted')
+         read(1,'(10f8.4)') bcforg
+         close(1)
+         bcf(1:nx,1:ny) = bcforg(1:nx,1:ny)
+         deallocate(bcforg)
+#endif
 #else
          if(myrank == 0) then
             allocate(bcf_all(dg%my%totalNx,dg%my%totalNy))
@@ -178,7 +212,16 @@ contains
          end if
          if(myrank == 0) then
             write(6,'(8x,a,a)') 'FRICTION_FILE_GIVEN:', trim(fname)
+#ifndef PIXELIN
             call read_gmt_grd(fname,bcf_all,dg%my%totalNx,dg%my%totalNy)
+#else
+            allocate(bcforg(0:nxorg-1,0:nyorg-1))
+            open(1,file=trim(fname),action='read',status='old',form='formatted')
+            read(1,'(10f8.4)') bcforg
+            close(1)
+            bcf_all(1:dg%my%totalNx,1:dg%my%totalNy) = bcforg(1:dg%my%totalNx,1:dg%my%totalNy)
+            deallocate(bcforg)
+#endif
          end if
          call onefile_scatter_array(bcf_all,bcf,dg) 
          deallocate(bcf_all)
@@ -189,9 +232,17 @@ contains
    end subroutine read_friction_gmt_grd
 
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELIN
    subroutine read_bathymetry_gmt_grd(fname,dfld,nx,ny,linear)
 #else
+   subroutine read_bathymetry_gmt_grd(fname,dfld,nx,ny,linear,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELIN
    subroutine read_bathymetry_gmt_grd(fname,dfld,nx,ny,linear,dg,myrank)
+#else
+   subroutine read_bathymetry_gmt_grd(fname,dfld,nx,ny,linear,dg,myrank,nxorg,nyorg)
+#endif
 #endif
       character(len=256), intent(in) :: fname
       type(depth_arrays), target, intent(inout) :: dfld
@@ -208,6 +259,11 @@ contains
       integer(kind=4), intent(in) :: myrank
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: dz_all
 #endif
+#ifdef PIXELIN
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: dzorg
+      integer(kind=4), intent(in) :: nxorg, nyorg
+      allocate(dzorg(0:nxorg-1,0:nyorg-1))
+#endif
 
       dx => dfld%dx
       dy => dfld%dy
@@ -222,9 +278,27 @@ contains
 #endif
       allocate(dz_tmp(nx,ny))
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELIN
       call read_gmt_grd(fname,dz_tmp,nx,ny)
 #else
+      open(1,file=trim(fname),action='read',status='old',form='formatted')
+      read(1,'(10f8.2)') dzorg
+      close(1)
+      dz_tmp(1:nx,1:ny) = dzorg(1:nx,1:ny)
+      deallocate(dzorg)
+#endif
+#else
+#ifndef PIXELIN
       if(myrank == 0) call read_gmt_grd(fname,dz_all,dg%my%totalNx,dg%my%totalNy)
+#else
+      if(myrank == 0) then
+        open(1,file=trim(fname),action='read',status='old',form='formatted')
+        read(1,'(10f8.2)') dzorg
+        close(1)
+        dz_all(1:dg%my%totalNx,1:dg%my%totalNy) = dzorg(1:dg%my%totalNx,1:dg%my%totalNy)
+        deallocate(dzorg)
+      end if
+#endif
       call onefile_scatter_array(dz_all,dz_tmp,dg)
 #endif
       do j = 1, ny
@@ -308,9 +382,17 @@ contains
 !  subroutine maxgrd_write_gmt(hzmax,nlon,nlat,mlon0,mlat0,dxdy,fname)
    subroutine maxgrd_write_gmt(hzmax,nlon,nlat,mlon0,mlat0,dxdy,fname, &
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
                                flag_missing_value)
 #else
+                               flag_missing_value,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELOUT
                                flag_missing_value,dg,myrank)
+#else
+                               flag_missing_value,dg,myrank,nxorg,nyorg)
+#endif
 #endif
 ! ==============================================================================
 #else
@@ -318,9 +400,17 @@ contains
 !  subroutine maxgrd_write_gmt(hzmax,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname)
    subroutine maxgrd_write_gmt(hzmax,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname, &
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
                                flag_missing_value)
 #else
+                               flag_missing_value,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELOUT
                                flag_missing_value,dg,myrank)
+#else
+                               flag_missing_value,dg,myrank,nxorg,nyorg)
+#endif
 #endif
 ! ==============================================================================
 #endif
@@ -331,6 +421,9 @@ contains
 ! === For negative max. height =================================================
       logical, intent(in) :: flag_missing_value
 ! ==============================================================================
+#ifdef PIXELOUT
+      integer(kind=4), intent(in) :: nxorg, nyorg
+#endif
 
       real(kind=REAL_BYTE) :: zmax, zmin
 #ifndef MPI
@@ -341,6 +434,9 @@ contains
       type(data_grids), target, intent(inout) :: dg
       integer(kind=4), intent(in) :: myrank
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzmax_all
+#endif
+#ifdef PIXELOUT
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzmaxorg
 #endif
 #ifdef DIROUT
       character(len=128), intent(in) :: dirname
@@ -427,6 +523,7 @@ contains
 #endif
       !*** write a GMT grid file using libnetcdf.a routines ***
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
       call mygmt_grdio_d(hzmax, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
 ! === For negative max. height =================================================
@@ -440,11 +537,38 @@ contains
 ! ==============================================================================
 #endif
 #else
+      allocate(hzmaxorg(0:nxorg-1,0:nyorg-1))
+      hzmaxorg = 0.0d0
+      hzmaxorg(1:nlon,1:nlat) = hzmax(1:nlon,1:nlat)
+#ifndef DIROUT
+      open(1,file=trim(fname),action='write',status='new',form='formatted')
+#else
+      open(1,file=trim(fname_dir),action='write',status='new',form='formatted')
+#endif
+      write(1,'(10e15.6)') hzmaxorg
+      close(1)
+      deallocate(hzmaxorg)
+#endif
+#else
+#ifndef PIXELOUT
       call mygmt_grdio_d(hzmax_all, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname, flag_missing_value)
 #else
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir, flag_missing_value)
+#endif
+#else
+      allocate(hzmaxorg(0:nxorg-1,0:nyorg-1))
+      hzmaxorg = 0.0d0
+      hzmaxorg(1:dg%my%totalNx,1:dg%my%totalNy) = hzmax_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#ifndef DIROUT
+      open(1,file=trim(fname),action='write',status='new',form='formatted')
+#else
+      open(1,file=trim(fname_dir),action='write',status='new',form='formatted')
+#endif
+      write(1,'(10e15.6)') hzmaxorg
+      close(1)
+      deallocate(hzmaxorg)
 #endif
       end if
       deallocate(hzmax_all)
@@ -458,9 +582,17 @@ contains
 !  subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,fname)
    subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,fname, &
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
                                flag_missing_value)
 #else
+                               flag_missing_value,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELOUT
                                flag_missing_value,dg,myrank)
+#else
+                               flag_missing_value,dg,myrank,nxorg,nyorg)
+#endif
 #endif
 ! ==============================================================================
 #else
@@ -468,9 +600,17 @@ contains
 !  subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname)
    subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname, &
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
                                flag_missing_value)
 #else
+                               flag_missing_value,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELOUT
                                flag_missing_value,dg,myrank)
+#else
+                               flag_missing_value,dg,myrank,nxorg,nyorg)
+#endif
 #endif
 ! ==============================================================================
 #endif
@@ -481,6 +621,9 @@ contains
 ! === For negative min. height =================================================
       logical, intent(in) :: flag_missing_value
 ! ==============================================================================
+#ifdef PIXELOUT
+      integer(kind=4), intent(in) :: nxorg, nyorg
+#endif
 
       real(kind=REAL_BYTE) :: zmax, zmin
 #ifndef MPI
@@ -491,6 +634,9 @@ contains
       type(data_grids), target, intent(inout) :: dg
       integer(kind=4), intent(in) :: myrank
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzmin_all
+#endif
+#ifdef PIXELOUT
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzminorg
 #endif
 #ifdef DIROUT
       character(len=128), intent(in) :: dirname
@@ -577,6 +723,7 @@ contains
 #endif
       !*** write a GMT grid file using libnetcdf.a routines ***
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
       call mygmt_grdio_d(hzmin, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
 ! === For negative min. height =================================================
@@ -590,11 +737,38 @@ contains
 ! ==============================================================================
 #endif
 #else
+      allocate(hzminorg(0:nxorg-1,0:nyorg-1))
+      hzminorg = 0.0d0
+      hzminorg(1:nlon,1:nlat) = hzmin(1:nlon,1:nlat)
+#ifndef DIROUT
+      open(1,file=trim(fname),action='write',status='new',form='formatted')
+#else
+      open(1,file=trim(fname_dir),action='write',status='new',form='formatted')
+#endif
+      write(1,'(10e15.6)') hzminorg
+      close(1)
+      deallocate(hzminorg)
+#endif
+#else
+#ifndef PIXELOUT
       call mygmt_grdio_d(hzmin_all, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname, flag_missing_value)
 #else
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir, flag_missing_value)
+#endif
+#else
+      allocate(hzminorg(0:nxorg-1,0:nyorg-1))
+      hzminorg = 0.0d0
+      hzminorg(1:dg%my%totalNx,1:dg%my%totalNy) = hzmin_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#ifndef DIROUT
+      open(1,file=trim(fname),action='write',status='new',form='formatted')
+#else
+      open(1,file=trim(fname_dir),action='write',status='new',form='formatted')
+#endif
+      write(1,'(10e15.6)') hzminorg
+      close(1)
+      deallocate(hzminorg)
 #endif
       end if
       deallocate(hzmin_all)
@@ -606,21 +780,40 @@ contains
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 #ifndef DIROUT
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
    subroutine maxgrd_v_write_gmt(vmax,nlon,nlat,mlon0,mlat0,dxdy,fname)
 #else
+   subroutine maxgrd_v_write_gmt(vmax,nlon,nlat,mlon0,mlat0,dxdy,fname,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELOUT
    subroutine maxgrd_v_write_gmt(vmax,nlon,nlat,mlon0,mlat0,dxdy,fname,dg,myrank)
+#else
+   subroutine maxgrd_v_write_gmt(vmax,nlon,nlat,mlon0,mlat0,dxdy,fname,dg,myrank,nxorg,nyorg)
+#endif
 #endif
 #else
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
    subroutine maxgrd_v_write_gmt(vmax,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname)
 #else
+   subroutine maxgrd_v_write_gmt(vmax,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELOUT
    subroutine maxgrd_v_write_gmt(vmax,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname,dg,myrank)
+#else
+   subroutine maxgrd_v_write_gmt(vmax,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname,dg,myrank,nxorg,nyorg)
+#endif
 #endif
 #endif
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(inout) :: vmax
       integer(kind=4), intent(in) :: nlon, nlat
       real(kind=REAL_BYTE), intent(in) :: mlon0, mlat0, dxdy
       character(len=512), intent(in) :: fname
+#ifdef PIXELOUT
+      integer(kind=4), intent(in) :: nxorg, nyorg
+#endif
 
       real(kind=REAL_BYTE) :: zmax, zmin
 #ifndef MPI
@@ -631,6 +824,9 @@ contains
       type(data_grids), target, intent(inout) :: dg
       integer(kind=4), intent(in) :: myrank
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: vmax_all
+#endif
+#ifdef PIXELOUT
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: vmaxorg
 #endif
 #ifdef DIROUT
       character(len=128), intent(in) :: dirname
@@ -708,6 +904,7 @@ contains
 #endif
       !*** write a GMT grid file using libnetcdf.a routines ***
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
       call mygmt_grdio_d(vmax, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
                          dx, dy, zmin, zmax, nlon, nlat, fname)
@@ -715,11 +912,38 @@ contains
                          dx, dy, zmin, zmax, nlon, nlat, fname_dir)
 #endif
 #else
+      allocate(vmaxorg(0:nxorg-1,0:nyorg-1))
+      vmaxorg = 0.0d0
+      vmaxorg(1:nlon,1:nlat) = vmax(1:nlon,1:nlat)
+#ifndef DIROUT
+      open(1,file=trim(fname),action='write',status='new',form='formatted')
+#else
+      open(1,file=trim(fname_dir),action='write',status='new',form='formatted')
+#endif
+      write(1,'(10e15.6)') vmaxorg
+      close(1)
+      deallocate(vmaxorg)
+#endif
+#else
+#ifndef PIXELOUT
       call mygmt_grdio_d(vmax_all, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname)
 #else
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir)
+#endif
+#else
+      allocate(vmaxorg(0:nxorg-1,0:nyorg-1))
+      vmaxorg = 0.0d0
+      vmaxorg(1:dg%my%totalNx,1:dg%my%totalNy) = vmax_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#ifndef DIROUT
+      open(1,file=trim(fname),action='write',status='new',form='formatted')
+#else
+      open(1,file=trim(fname_dir),action='write',status='new',form='formatted')
+#endif
+      write(1,'(10e15.6)') vmaxorg
+      close(1)
+      deallocate(vmaxorg)
 #endif
 #endif
 #if defined(MPI) && defined(ONEFILE)
@@ -733,13 +957,21 @@ contains
 
 #ifndef MPI
    subroutine dump_gmt_nl(wfld,dfld,tfld,nlon,nlat,wod, &
+#ifndef PIXELOUT
                           mlat0,mlon0,dxdy,t,istep,base,mode)
+#else
+                          mlat0,mlon0,dxdy,t,istep,base,mode,nxorg,nyorg)
+#endif
 #else
    subroutine dump_gmt_nl(wfld,dfld,tfld,nlon,nlat,wod, &
 #ifndef ONEFILE
                           mlat0,mlon0,dxdy,t,istep,myrank,base,mode,bflag)
 #else
+#ifndef PIXELOUT
                           mlat0,mlon0,dxdy,t,istep,myrank,base,mode,bflag,dg)
+#else
+                          mlat0,mlon0,dxdy,t,istep,myrank,base,mode,bflag,dg,nxorg,nyorg)
+#endif
 #endif
 #endif
       use mod_params, only : VEL, HGT, velgrd_flag, speedgrd_flag
@@ -767,6 +999,9 @@ contains
       integer(kind=4), intent(in) :: bflag
 #endif
 ! ==============================================================================
+#ifdef PIXELOUT
+      integer(kind=4), intent(in) :: nxorg, nyorg
+#endif
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz, dz, tp, fx, fy
       character(len=512) :: fname
@@ -792,9 +1027,16 @@ contains
       type(data_grids), target, intent(inout) :: dg
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: tp_all
 #endif
+#ifdef PIXELOUT
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: tporg
+#endif
 #ifdef DIROUT
       character(len=128) :: dirname = '', command = ''
+#ifndef PIXELOUT
       write(dirname,'(i8.8,a)') istep, '.grd'
+#else
+      write(dirname,'(i8.8,a)') istep, '.dat'
+#endif
 #ifdef MULTI
       dirname = trim(members_dir) // trim(dirname)
 #endif
@@ -849,7 +1091,11 @@ contains
 #ifndef MPI
 ! === To support over 1M steps. by tkato 2012/11/27 ============================
 !     write(fname,'(a,a,i6.6,a)') trim(base), '.', istep, '.grd'
+#ifndef PIXELOUT
       write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '.grd'
+#else
+      write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '.dat'
+#endif
 ! ==============================================================================
 #else
 ! === To support over 1M steps. by tkato 2012/11/27 ============================
@@ -857,7 +1103,11 @@ contains
 #ifndef ONEFILE
       write(fname,'(a,a,i8.8,a,i6.6)') trim(base), '.', istep, '.grd.', myrank
 #else
+#ifndef PIXELOUT
       write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '.grd'
+#else
+      write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '.dat'
+#endif
 #endif
 ! ==============================================================================
 #endif
@@ -946,14 +1196,34 @@ contains
       fname = trim(dirname) // '/' // trim(fname)
 #endif
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
       call mygmt_grdio_d(tp,lon_west,lon_east,lat_south,lat_north, &
 ! === Wave height should be missing value on dry cell. =========================
 !                        dx,dy,zmin,zmax,nlon,nlat,fname)
                          dx,dy,zmin,zmax,nlon,nlat,fname,.true.)
 ! ==============================================================================
 #else
+      allocate(tporg(0:nxorg-1,0:nyorg-1))
+      tporg = 0.0d0
+      tporg(1:nlon,1:nlat) = tp(1:nlon,1:nlat)
+      open(1,file=trim(fname),action='write',status='unknown',form='formatted')
+      write(1,'(10e15.6)') tporg
+      close(1)
+      deallocate(tporg)
+#endif
+#else
+#ifndef PIXELOUT
       call mygmt_grdio_d(tp_all,lon_west,lon_east,lat_south,lat_north, &
                          dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,.true.)
+#else
+      allocate(tporg(0:nxorg-1,0:nyorg-1))
+      tporg = 0.0d0
+      tporg(1:dg%my%totalNx,1:dg%my%totalNy) = tp_all(1:dg%my%totalNx,1:dg%my%totalNy)
+      open(1,file=trim(fname),action='write',status='unknown',form='formatted')
+      write(1,'(10e15.6)') tporg
+      close(1)
+      deallocate(tporg)
+#endif
       end if
       deallocate(tp_all)
 #endif
@@ -995,7 +1265,11 @@ contains
 #ifndef MPI
 ! === To support over 1M steps. by tkato 2012/11/27 ============================
 !        write(fname,'(a,a,i6.6,a)') trim(base), '.', istep, '-vx.grd'
+#ifndef PIXELOUT
          write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-vx.grd'
+#else
+         write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-vx.dat'
+#endif
 ! ==============================================================================
          call minmax_rwg(nlon,nlat,tp,zmax,zmin,imin,jmin,imax,jmax)
 #else
@@ -1004,7 +1278,11 @@ contains
 #ifndef ONEFILE
          write(fname,'(a,a,i8.8,a,i6.6)') trim(base), '.', istep, '-vx.grd.', myrank
 #else
+#ifndef PIXELOUT
          write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-vx.grd'
+#else
+         write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-vx.dat'
+#endif
 #endif
 ! ==============================================================================
          call minmax_rwg(nlon,nlat,tp,zmax,zmin)
@@ -1044,11 +1322,31 @@ contains
          fname = trim(dirname) // '/' // trim(fname)
 #endif
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
          call mygmt_grdio_d(tp,lon_west,lon_east,lat_south,lat_north, &
                             dx,dy,zmin,zmax,nlon,nlat,fname)
 #else
+         allocate(tporg(0:nxorg-1,0:nyorg-1))
+         tporg = 0.0d0
+         tporg(1:nlon,1:nlat) = tp(1:nlon,1:nlat)
+         open(1,file=trim(fname),action='write',status='unknown',form='formatted')
+         write(1,'(10e15.6)') tporg
+         close(1)
+         deallocate(tporg)
+#endif
+#else
+#ifndef PIXELOUT
          call mygmt_grdio_d(tp_all,lon_west,lon_east,lat_south,lat_north, &
                             dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname)
+#else
+         allocate(tporg(0:nxorg-1,0:nyorg-1))
+         tporg = 0.0d0
+         tporg(1:dg%my%totalNx,1:dg%my%totalNy) = tp_all(1:dg%my%totalNx,1:dg%my%totalNy)
+         open(1,file=trim(fname),action='write',status='unknown',form='formatted')
+         write(1,'(10e15.6)') tporg
+         close(1)
+         deallocate(tporg)
+#endif
          end if
          deallocate(tp_all)
 #endif
@@ -1082,7 +1380,11 @@ contains
 #ifndef MPI
 ! === To support over 1M steps. by tkato 2012/11/27 ============================
 !        write(fname,'(a,a,i6.6,a)') trim(base), '.', istep, '-vy.grd'
+#ifndef PIXELOUT
          write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-vy.grd'
+#else
+         write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-vy.dat'
+#endif
 ! ==============================================================================
 
          call minmax_rwg(nlon,nlat,tp,zmax,zmin,imin,jmin,imax,jmax)
@@ -1092,7 +1394,11 @@ contains
 #ifndef ONEFILE
          write(fname,'(a,a,i8.8,a,i6.6)') trim(base), '.', istep, '-vy.grd.', myrank
 #else
+#ifndef PIXELOUT
          write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-vy.grd'
+#else
+         write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-vy.dat'
+#endif
 #endif
 ! ==============================================================================
 
@@ -1133,11 +1439,31 @@ contains
          fname = trim(dirname) // '/' // trim(fname)
 #endif
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
          call mygmt_grdio_d(tp,lon_west,lon_east,lat_south,lat_north, &
                             dx,dy,zmin,zmax,nlon,nlat,fname)
 #else
+         allocate(tporg(0:nxorg-1,0:nyorg-1))
+         tporg = 0.0d0
+         tporg(1:nlon,1:nlat) = tp(1:nlon,1:nlat)
+         open(1,file=trim(fname),action='write',status='unknown',form='formatted')
+         write(1,'(10e15.6)') tporg
+         close(1)
+         deallocate(tporg)
+#endif
+#else
+#ifndef PIXELOUT
          call mygmt_grdio_d(tp_all,lon_west,lon_east,lat_south,lat_north, &
                             dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname)
+#else
+         allocate(tporg(0:nxorg-1,0:nyorg-1))
+         tporg = 0.0d0
+         tporg(1:dg%my%totalNx,1:dg%my%totalNy) = tp_all(1:dg%my%totalNx,1:dg%my%totalNy)
+         open(1,file=trim(fname),action='write',status='unknown',form='formatted')
+         write(1,'(10e15.6)') tporg
+         close(1)
+         deallocate(tporg)
+#endif
          end if
          deallocate(tp_all)
 #endif
@@ -1191,13 +1517,21 @@ contains
             end do
 
 #ifndef MPI
+#ifndef PIXELOUT
             write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-speed.grd'
+#else
+            write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-speed.dat'
+#endif
             call minmax_rwg(nlon,nlat,tp,zmax,zmin,imin,jmin,imax,jmax)
 #else
 #ifndef ONEFILE
             write(fname,'(a,a,i8.8,a,i6.6)') trim(base), '.', istep, '-speed.grd.', myrank
 #else
+#ifndef PIXELOUT
             write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-speed.grd'
+#else
+            write(fname,'(a,a,i8.8,a)') trim(base), '.', istep, '-speed.dat'
+#endif
 #endif
             call minmax_rwg(nlon,nlat,tp,zmax,zmin)
 #endif
@@ -1229,11 +1563,31 @@ contains
             fname = trim(dirname) // '/' // trim(fname)
 #endif
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
             call mygmt_grdio_d(tp,lon_west,lon_east,lat_south,lat_north, &
                                dx,dy,zmin,zmax,nlon,nlat,fname)
 #else
+            allocate(tporg(0:nxorg-1,0:nyorg-1))
+            tporg = 0.0d0
+            tporg(1:nlon,1:nlat) = tp(1:nlon,1:nlat)
+            open(1,file=trim(fname),action='write',status='unknown',form='formatted')
+            write(1,'(10e15.6)') tporg
+            close(1)
+            deallocate(tporg)
+#endif
+#else
+#ifndef PIXELOUT
             call mygmt_grdio_d(tp_all,lon_west,lon_east,lat_south,lat_north, &
                                dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname)
+#else
+            allocate(tporg(0:nxorg-1,0:nyorg-1))
+            tporg = 0.0d0
+            tporg(1:dg%my%totalNx,1:dg%my%totalNy) = tp_all(1:dg%my%totalNx,1:dg%my%totalNy)
+            open(1,file=trim(fname),action='write',status='unknown',form='formatted')
+            write(1,'(10e15.6)') tporg
+            close(1)
+            deallocate(tporg)
+#endif
             end if
             deallocate(tp_all)
 #endif
@@ -1272,14 +1626,29 @@ contains
    !           for use in multiple rupture version where reading in of rupture field
    !           must occur inside the loop, but initialising of wave field must not
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELIN
    subroutine read_rupture(zz,nlon,nlat,mlat0,mlon0,dxdy,fname,pname)
 #else
+   subroutine read_rupture(zz,nlon,nlat,dxdy,fname,pname,nxorg,nyorg)
+#endif
+#else
+#ifndef PIXELIN
    subroutine read_rupture(zz,nlon,nlat,mlat0,mlon0,dxdy,fname,pname,dg,myrank)
+#else
+   subroutine read_rupture(zz,nlon,nlat,dxdy,fname,pname,dg,myrank,nxorg,nyorg)
+#endif
 #endif
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(inout) :: zz
       integer(kind=4), intent(in) :: nlon, nlat
+#ifndef PIXELIN
       real(kind=REAL_BYTE), intent(in) :: mlat0, mlon0, dxdy
+#else
+      real(kind=REAL_BYTE), intent(in) :: dxdy
+#endif
       character(len=256), intent(in) :: fname, pname
+#ifdef PIXELIN
+      integer(kind=4), intent(in) :: nxorg, nyorg
+#endif
 
       integer(kind=4) :: i, j
 #if !defined(MPI) || !defined(ONEFILE)
@@ -1290,10 +1659,16 @@ contains
 #ifndef MPI
       integer(kind=4) :: imax, jmax, imin, jmin
 #endif
+#ifndef PIXELIN
       real(kind=REAL_BYTE) :: zmax, zmin, west, east, south, north, slat0, slon0, dx, dy
+#else
+      real(kind=REAL_BYTE) :: zmax, zmin, dx, dy
+#endif
       integer(kind=4) :: snx, sny
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: zz_tmp
+#ifndef PIXELIN
       real(kind=REAL_BYTE) :: east_chk, west_chk, north_chk, south_chk
+#endif
 #if defined(MPI) && defined(ONEFILE)
       type(data_grids), target, intent(inout) :: dg
       integer(kind=4), intent(in) :: myrank
@@ -1303,12 +1678,16 @@ contains
       ! RWG
       if(trim(fname) == 'NO_DISPLACEMENT_FILE_GIVEN') return
 
+#ifndef PIXELIN
 #if defined(MPI) && defined(ONEFILE)
       if(myrank == 0) then
 #endif
       call read_gmt_grd_hdr(fname, snx, sny, dx, dy, west, east, south, north, zmin, zmax)
 #if defined(MPI) && defined(ONEFILE)
       end if
+#endif
+#else
+      snx = nlon; sny = nlat; dx = dxdy; dy = dxdy
 #endif
       ! Burbidge : Use a tolerance here instead
 #ifdef MPI
@@ -1337,6 +1716,7 @@ contains
 
       write(6,'(8x,a,a)') 'read_rupture(newsubs.o): file name=', trim(fname)
       write(6,'(8x,a,i0,a,i0,a,e14.6,a,e14.6)') 'snx=', snx, ' sny=', sny, ' dx=', dx, ' dy=', dy
+#ifndef PIXELIN
       write(6,'(8x,a,f0.3,a,f0.3,a,f0.3,a,f0.3,a,f0.6,a,f0.6)') &
          'west=', west, ' east=', east, ' south=', south, ' north=', north, &
          ' zmin=', zmin, ' zmax=', zmax
@@ -1403,13 +1783,23 @@ contains
       ! Burbidge - Changed this to stdout so redirect works
       write(6,'(a,a,i0,a,i0,a,i0,a,i0)') &
          trim(pname), ': read_rupture(): is=', is, ' ie=', ie, ' js=', js, ' je=', je
+#else
+      is = 1; ie = snx; js = 1; je = sny
+#endif
 #if defined(MPI) && defined(ONEFILE)
       end if
 #endif
 
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELIN
       allocate(zz_tmp(snx,sny))
       call read_gmt_grd(fname,zz_tmp,snx,sny)
+#else
+      allocate(zz_tmp(0:nxorg-1,0:nyorg-1))
+      open(1,file=trim(fname),action='read',status='old',form='formatted')
+      read(1,'(10f8.4)') zz_tmp
+      close(1)
+#endif
 
       !** map zz_tmp into zz **
       j = 1
@@ -1433,8 +1823,20 @@ contains
       else
          allocate(zz_all(1,1))
       end if
+#ifndef PIXELIN
       allocate(zz_tmp(nlon,nlat))
       if(myrank == 0) call read_gmt_grd(fname,zz_all,snx,sny)
+#else
+      if(myrank == 0) Then
+         allocate(zz_tmp(0:nxorg-1,0:nyorg-1))
+         open(1,file=trim(fname),action='read',status='old',form='formatted')
+         read(1,'(10f8.4)') zz_tmp
+         close(1)
+         zz_all(1:dg%my%totalNx,1:dg%my%totalNy) = zz_tmp(1:dg%my%totalNx,1:dg%my%totalNy)
+         deallocate(zz_tmp)
+      end if
+      allocate(zz_tmp(nlon,nlat))
+#endif
       call onefile_scatter_array(zz_all,zz_tmp,dg)
 
       !** map zz_tmp into zz **

@@ -1532,6 +1532,10 @@ contains
       real(kind=REAL_BYTE) :: tmp
       integer(kind=4) :: i_, j_
 ! ==============================================================================
+#ifdef __NEC__
+      integer(kind=4), parameter :: blksz = 256
+      integer(kind=4) :: k_
+#endif
 
       fxc => cg%wave_field%fx
       fyc => cg%wave_field%fy
@@ -1813,18 +1817,28 @@ contains
 
          if(mode == HGT) then
 #ifndef MPI
+#ifndef __NEC__
 !$omp parallel
 !$omp do private(i, j, ic, jc, tmp, i_, j_)
 !cdir nodep
             do k = 1, hzo%np
+#else
+!$omp parallel
+!$omp do private(i, j, ic, jc, tmp, i_, j_, k)
+            do k_ = 1, hzo%np, blksz
+!$NEC ivdep
+               do k = k_, min(k_+blksz-1,hzo%np)
+#endif
                i = hzo%fndx(k,1)
                j = hzo%fndx(k,2)
                ic = hzo%cndx0(k,1)
                jc = hzo%cndx0(k,2)
                if(wodc(ic,jc) == 1) then ! Only coarse domain is wet
                   tmp = 0.0d0
+!$NEC unroll(3)
 !cdir unroll=3
                   do j_ = -1, 1
+!$NEC unroll(3)
 !cdir expand=3
                      do i_ = -1, 1
                         if(wodf(i+i_, j+j_) == 1) then ! Only fine domain is wet
@@ -1839,6 +1853,9 @@ contains
                      wodc(ic,jc) = -1
                   end if
                end if
+#ifdef __NEC__
+               end do
+#endif
             end do
 !$omp end parallel
 #else
@@ -1934,8 +1951,10 @@ contains
                i = hzo%fndx0_l(k,1)
                j = hzo%fndx0_l(k,2)
                tmp = 0.0d0
+!$NEC unroll(3)
 !cdir unroll=3
                do j_ = -1, 1
+!$NEC unroll(3)
 !cdir expand=3
                   do i_ = -1, 1
                      if(wodf(i+i_, j+j_) == 1) then ! Only fine domain is wet
@@ -1962,6 +1981,7 @@ contains
             !*==============*
             !*  buf2coarce  * must write to edges.
             !*==============*
+!$NEC ivdep
 !cdir nodep
             do k = 1, hzo%rnp0
                i = hzo%cndx0_l(k,1)
@@ -2083,6 +2103,7 @@ contains
 ! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
          lfac = 1.0d0/REAL_FUNC(fg%my%nr)
 
+!$NEC ivdep
          do j = 1, fg%my%ny-1
             imod = mod(j-1,fg%my%nr)
             ind0 = j - imod
@@ -2093,6 +2114,7 @@ contains
             fxf(fg%my%nx,j) = fxf(fg%my%nx,ind0)*fac0 + fxf(fg%my%nx,ind1)*fac1
          end do
 
+!$NEC ivdep
          do i = 1, fg%my%nx-1
             imod = mod(i-1,fg%my%nr)
             ind0 = i - imod
@@ -2123,6 +2145,7 @@ contains
          fxf(nx-1, ny+1) = fxf(nx-2,ny+1)*fac1 + fxf(nx,ny+1)*fac0
          fxf(nx,     -1) = fxf(nx-2,  -1)*fac0 + fxf(nx,  -1)*fac1
          fxf(nx,   ny+1) = fxf(nx-2,ny+1)*fac0 + fxf(nx,ny+1)*fac1
+!$NEC ivdep
          do i = 2, nx - fg%my%nr
             imod = mod(i-2,fg%my%nr)
             ind0 = i - imod
@@ -2133,6 +2156,7 @@ contains
             fxf(i,ny+1) = fxf(ind0,ny+1)*fac0 + fxf(ind1,ny+1)*fac1
          end do
 
+!$NEC ivdep
          do j = 1, ny - 1
             imod = mod(j-1,fg%my%nr)
             ind0 = j - imod
@@ -2150,6 +2174,7 @@ contains
          fyf(nx+1, ny-1) = fyf(nx+1,ny-2)*fac1 + fyf(nx+1,ny)*fac0
          fyf(-1,     ny) = fyf(-1,  ny-2)*fac0 + fyf(-1,  ny)*fac1
          fyf(nx+1,   ny) = fyf(nx+1,ny-2)*fac0 + fyf(nx+1,ny)*fac1
+!$NEC ivdep
          do j = 2, ny - fg%my%nr
             imod = mod(j-2,fg%my%nr)
             ind0 = j - imod
@@ -2160,6 +2185,7 @@ contains
             fyf(nx+1,j) = fyf(nx+1,ind0)*fac0 + fyf(nx+1,ind1)*fac1
          end do
 
+!$NEC ivdep
          do i = 1, nx - 1
             imod = mod(i-1,fg%my%nr)
             ind0 = i - imod
@@ -2413,6 +2439,7 @@ contains
             fxf(i,j) = yfbuf1(fxi%rmap0(k))
 #endif
          end do
+!$NEC ivdep
          do k = 1, fxi%rnp1
             i = fxi%fndx1_l(k,1)
             j = fxi%fndx1_l(k,2)
@@ -2431,6 +2458,7 @@ contains
             fyf(i,j) = yfbuf1(fyi%rmap0(k))
 #endif
          end do
+!$NEC ivdep
          do k = 1, fyi%rnp1
             i = fyi%fndx1_l(k,1)
             j = fyi%fndx1_l(k,2)
@@ -2709,6 +2737,7 @@ contains
 ! ==============================================================================
 
             ! Calc. others.
+!$NEC ivdep
             do j = jst, jen-1
                iy = j + fg%my%ky - 1
                imod = mod(iy-1,fg%my%nr)
@@ -2722,6 +2751,7 @@ contains
 ! ==============================================================================
             end do
 ! === Upwind3 ==================================================================
+!$NEC ivdep
             do j = jst2, jen2-1
                iy = j + fg%my%ky - 1
                imod = mod(iy-2,fg%my%nr)
@@ -2735,6 +2765,7 @@ contains
 
             ! Calc. north boundary elemnts.
             call MPI_Waitall(2, ireq11, stat11, ierr)
+!$NEC ivdep
             do j = jst-shift_st, jst-1
                iy = j + fg%my%ky - 1
                imod = mod(iy-1,fg%my%nr)
@@ -2750,6 +2781,7 @@ contains
             end do
 ! === Upwind3 ==================================================================
             if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) then
+!$NEC ivdep
                do j = jst2-shift_st2, jst2-1
                   iy = j + fg%my%ky - 1
                   imod = mod(iy-2,fg%my%nr)
@@ -2763,6 +2795,7 @@ contains
 ! ==============================================================================
             ! Calc. south boundary elemnts.
             call MPI_Waitall(2, ireq21, stat21, ierr)
+!$NEC ivdep
             do j = jen+1, jen+shift_en
                iy = j + fg%my%ky - 1
                imod = mod(iy-1,fg%my%nr)
@@ -2778,6 +2811,7 @@ contains
             end do
 ! === Upwind3 ==================================================================
             if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) then
+!$NEC ivdep
                do j = jen2+1, jen2+shift_en2
                   iy = j + fg%my%ky - 1
                   imod = mod(iy-2,fg%my%nr)
@@ -2804,6 +2838,7 @@ contains
 ! ==============================================================================
 
             ! Calc. others.
+!$NEC ivdep
             do j = jst, jen-1
                iy = j + fg%my%ky - 1
                imod = mod(iy-1,fg%my%nr)
@@ -2814,6 +2849,7 @@ contains
                fxf(fg%my%nx,j) = fxf(fg%my%nx,ind0)*fac0 + fxf(fg%my%nx,ind1)*fac1
             end do
 ! === Upwind3 ==================================================================
+!$NEC ivdep
             do j = jst2, jen2-1
                iy = j + fg%my%ky - 1
                imod = mod(iy-2,fg%my%nr)
@@ -2827,6 +2863,7 @@ contains
 
             ! Calc. north boundary elemnts.
             call MPI_Waitall(2, ireq12, stat12, ierr)
+!$NEC ivdep
             do j = jst-shift_st, jst-1
                iy = j + fg%my%ky - 1
                imod = mod(iy-1,fg%my%nr)
@@ -2841,6 +2878,7 @@ contains
             end do
 ! === Upwind3 ==================================================================
             if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) then
+!$NEC ivdep
                do j = jst2-shift_st2, jst2-1
                   iy = j + fg%my%ky - 1
                   imod = mod(iy-2,fg%my%nr)
@@ -2854,6 +2892,7 @@ contains
 ! ==============================================================================
             ! Calc. south boundary elemnts.
             call MPI_Waitall(2, ireq22, stat22, ierr)
+!$NEC ivdep
             do j = jen+1, jen+shift_en
                iy = j + fg%my%ky - 1
                imod = mod(iy-1,fg%my%nr)
@@ -2868,6 +2907,7 @@ contains
             end do
 ! === Upwind3 ==================================================================
             if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) then
+!$NEC ivdep
                do j = jen2+1, jen2+shift_en2
                   iy = j + fg%my%ky - 1
                   imod = mod(iy-2,fg%my%nr)
@@ -2906,6 +2946,7 @@ contains
 ! ==============================================================================
 
             ! Calc. others.
+!$NEC ivdep
             do i = ist, ien-1
                ix = i + fg%my%kx - 1
                imod = mod(ix-1,fg%my%nr)
@@ -2919,6 +2960,7 @@ contains
 ! ==============================================================================
             end do
 ! === Upwind3 ==================================================================
+!$NEC ivdep
             do i = ist2, ien2-1
                ix = i + fg%my%kx - 1
                imod = mod(ix-2,fg%my%nr)
@@ -2932,6 +2974,7 @@ contains
 
             ! Calc. west boundary elemnts.
             call MPI_Waitall(2, ireq13, stat13, ierr)
+!$NEC ivdep
             do i = ist-shift_st, ist-1
                ix = i + fg%my%kx - 1
                imod = mod(ix-1,fg%my%nr)
@@ -2947,6 +2990,7 @@ contains
             end do
 ! === Upwind3 ==================================================================
             if(iand(fg%my%has_boundary, WEST_BOUND) == 0) then
+!$NEC ivdep
                do i = ist2-shift_st2, ist2-1
                   ix = i + fg%my%kx - 1
                   imod = mod(ix-2,fg%my%nr)
@@ -2960,6 +3004,7 @@ contains
 ! ==============================================================================
             ! Calc. east boundary elemnts.
             call MPI_Waitall(2, ireq23, stat23, ierr)
+!$NEC ivdep
             do i = ien+1, ien+shift_en
                ix = i + fg%my%kx - 1
                imod = mod(ix-1,fg%my%nr)
@@ -2975,6 +3020,7 @@ contains
             end do
 ! === Upwind3 ==================================================================
             if(iand(fg%my%has_boundary, EAST_BOUND) == 0) then
+!$NEC ivdep
                do i = ien2+1, ien2+shift_en2
                   ix = i + fg%my%kx - 1
                   imod = mod(ix-2,fg%my%nr)
@@ -3001,6 +3047,7 @@ contains
 ! ==============================================================================
 
             ! Calc. others.
+!$NEC ivdep
             do i = ist, ien-1
                ix = i + fg%my%kx - 1
                imod = mod(ix-1,fg%my%nr)
@@ -3011,6 +3058,7 @@ contains
                fyf(i,fg%my%ny) = fyf(ind0,fg%my%ny)*fac0 + fyf(ind1,fg%my%ny)*fac1
             end do
 ! === Upwind3 ==================================================================
+!$NEC ivdep
             do i = ist2, ien2-1
                ix = i + fg%my%kx - 1
                imod = mod(ix-2,fg%my%nr)
@@ -3024,6 +3072,7 @@ contains
 
             ! Calc. west boundary elemnts.
             call MPI_Waitall(2, ireq14, stat14, ierr)
+!$NEC ivdep
             do i = ist-shift_st, ist-1
                ix = i + fg%my%kx - 1
                imod = mod(ix-1,fg%my%nr)
@@ -3038,6 +3087,7 @@ contains
             end do
 ! === Upwind3 ==================================================================
             if(iand(fg%my%has_boundary, WEST_BOUND) == 0) then
+!$NEC ivdep
                do i = ist2-shift_st2, ist2-1
                   ix = i + fg%my%kx - 1
                   imod = mod(ix-2,fg%my%nr)
@@ -3051,6 +3101,7 @@ contains
 ! ==============================================================================
             ! Calc. east boundary elemnts.
             call MPI_Waitall(2, ireq24, stat24, ierr)
+!$NEC ivdep
             do i = ien+1, ien+shift_en
                ix = i + fg%my%kx - 1
                imod = mod(ix-1,fg%my%nr)
@@ -3065,6 +3116,7 @@ contains
             end do
 ! === Upwind3 ==================================================================
             if(iand(fg%my%has_boundary, EAST_BOUND) == 0) then
+!$NEC ivdep
                do i = ien2+1, ien2+shift_en2
                   ix = i + fg%my%kx - 1
                   imod = mod(ix-2,fg%my%nr)
@@ -3323,6 +3375,7 @@ contains
             hzf(i,j) = zfbuf1(hzi%rmap0(k))
 #endif
          end do
+!$NEC ivdep
          do k = 1, hzi%rnp1
             i = hzi%fndx1_l(k,1)
             j = hzi%fndx1_l(k,2)
@@ -4270,6 +4323,10 @@ contains
 ! ==============================================================================
 #endif
       real(kind=REAL_BYTE) :: t0, t1
+#ifdef __NEC__
+      integer(kind=4), parameter :: blksz = 256
+      integer(kind=4) :: i_, j_
+#endif
 
       dzc => cg%depth_field%dz
       dzf => fg%depth_field%dz
@@ -4288,23 +4345,41 @@ contains
       t0 = 1.0d0/REAL_FUNC(fg%my%nr)
       t1 = 1.0d0 - t0
 !$omp end single
+#ifndef __NEC__
 !$omp do
       do i = 1, fg%my%nx
+#else
+!$omp do private(i)
+      do i_ = 1, fg%my%nx, blksz
+         do i = i_, min(i_+blksz-1,fg%my%nx)
+#endif
 ! === Upwind3 ==================================================================
          dzf(i,-1        ) = dzf(i,0         )*t1 + dzf(i,1       )*t0
          dzf(i,fg%my%ny+2) = dzf(i,fg%my%ny+1)*t1 + dzf(i,fg%my%ny)*t0
 ! ==============================================================================
          dzf(i,0         ) = dzf(i,0         )*t0 + dzf(i,1       )*t1
          dzf(i,fg%my%ny+1) = dzf(i,fg%my%ny+1)*t0 + dzf(i,fg%my%ny)*t1
+#ifdef __NEC__
+         end do
+#endif
       end do
+#ifndef __NEC__
 !$omp do
       do j = 0, fg%my%ny+1
+#else
+!$omp do private(j)
+      do j_ = 0, fg%my%ny+1, blksz
+         do j = j_, min(j_+blksz-1,fg%my%ny+1)
+#endif
 ! === Upwind3 ==================================================================
          dzf(-1,        j) = dzf(0,         j)*t1 + dzf(1,       j)*t0
          dzf(fg%my%nx+2,j) = dzf(fg%my%nx+1,j)*t1 + dzf(fg%my%nx,j)*t0
 ! ==============================================================================
          dzf(0,         j) = dzf(0,         j)*t0 + dzf(1,       j)*t1
          dzf(fg%my%nx+1,j) = dzf(fg%my%nx+1,j)*t0 + dzf(fg%my%nx,j)*t1
+#ifdef __NEC__
+         end do
+#endif
       end do
 !$omp end parallel
 #else

@@ -101,6 +101,11 @@ ONEFILE=ON
 # HZMINOUT=ON: Min. height is output.
 #HZMINOUT=ON
 
+# PIXELIN=ON: Format of input files is changed into pixel format.
+#PIXELIN=ON
+# PIXELOUT=ON: Format of output files is changed into pixel format.
+#PIXELOUT=ON
+
 #DUMP1D=ON
 
 ################################################################################
@@ -239,6 +244,13 @@ endif
 
 ifeq ($(DUMP1D),ON)
    FFLAGS+=-DDUMP1D
+endif
+
+ifeq ($(PIXELIN),ON)
+   FFLAGS+=-DPIXELIN
+endif
+ifeq ($(PIXELOUT),ON)
+   FFLAGS+=-DPIXELOUT
 endif
 
 ################################################################################

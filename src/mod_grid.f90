@@ -36,6 +36,10 @@ type grid_info
    real(kind=REAL_BYTE) :: dth
    integer(kind=4) :: nx
    integer(kind=4) :: ny
+#ifdef PIXELIN
+   integer(kind=4) :: nxorg
+   integer(kind=4) :: nyorg
+#endif
    integer(kind=4) :: linear_flag
    character(len=256) :: base_name
    character(len=256) :: bath_file

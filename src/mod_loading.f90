@@ -152,7 +152,11 @@ contains
 
    subroutine loading_initialize(dg)
 #ifndef __SX__
+#ifndef __NEC__
       include 'fftw3.f'
+#else
+      include 'aslfftw3.f'
+#endif
 #endif
       type(data_grids), target, intent(inout) :: dg 
       
@@ -665,11 +669,13 @@ contains
 
       ! dfftw_plan* is NOT thread-safe!
       do it = 0, nthreads-1
+         if(jtng(it) /= 0) &
          call dfftw_plan_many_dft_r2c(xgreen_planZ(it), 1, N_X, jtng(it),      &
                                       greenZdouble(1,jtsg(it)), 0, 1, N_X,     &
                                       green_in_Z(1,jtsg(it)),   0, 1, N_X/2+1, &
                                       FFTW_ESTIMATE)
 
+         if(itn2(it) /= 0) &
          call dfftw_plan_many_dft(ygreen_planZ(it), 1, N_Y, itn2(it), &
                                   green_out_Z(1,its2(it)), 0, 1, N_Y, &
                                   green_out_Z(1,its2(it)), 0, 1, N_Y, &
@@ -692,6 +698,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(jtng(it) /= 0) &
          call dfftw_execute_dft_r2c(xgreen_planZ(it),greenZdouble(1,jtsg(it)),green_in_Z(1,jtsg(it)))
       end do
 #else
@@ -760,6 +767,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(itn2(it) /= 0) &
          call dfftw_execute(ygreen_planZ(it))
       end do
 #else
@@ -781,7 +789,9 @@ contains
 #ifndef __SX__
 !$omp single
       do it = 0, nthreads-1
+         if(jtng(it) /= 0) &
          call dfftw_destroy_plan(xgreen_planZ(it))
+         if(itn2(it) /= 0) &
          call dfftw_destroy_plan(ygreen_planZ(it))
       end do
 #else
@@ -859,21 +869,25 @@ contains
       ! dfftw_plan* is NOT thread-safe!
       do it = 0, nthreads-1
 #ifndef __SX__
+         if(jtn1(it) /= 0) &
          call dfftw_plan_many_dft_r2c(xplan_forward(it), 1, N_X, jtn1(it), &
                                       realbuf(1,jts1(it)), 0, 1, N_X,      &
                                       xfftbuf(1,jts1(it)), 0, 1, N_X/2+1,  &
                                       FFTW_MEASURE)
 
+         if(itn2(it) /= 0) &
          call dfftw_plan_many_dft(yplan_forward(it), 1, N_Y, itn2(it), &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,      &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,      &
                                   FFTW_FORWARD, FFTW_MEASURE)
 
+         if(jtn1(it) /= 0) &
          call dfftw_plan_many_dft_c2r(xplan_backward(it), 1, N_X, jtn1(it), &
                                       xfftbuf(1,jts1(it)), 0, 1, N_X/2+1,   &
                                       realbuf(1,jts1(it)), 0, 1, N_X,       &
                                       FFTW_MEASURE)
 
+         if(itn2(it) /= 0) &
          call dfftw_plan_many_dft(yplan_backward(it), 1, N_Y, itn2(it), &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,       &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,       &
@@ -920,12 +934,21 @@ contains
 
    subroutine loading_finalize(dg)
 #ifndef __SX__
+#ifndef __NEC__
       include 'fftw3.f'
+#else
+      include 'aslfftw3.f'
+#endif
 #endif
       type(data_grids), target, intent(inout) :: dg 
 ! === OpenMP ===================================================================
       integer(kind=4) :: it, nthreads
 ! ==============================================================================
+#ifndef __SX__
+      integer(kind=4), pointer, dimension(:) :: itn2, jtn1
+      itn2 => dg%loading%itn2
+      jtn1 => dg%loading%jtn1
+#endif
 #ifdef _OPENMP
       nthreads = omp_get_max_threads()
 #else
@@ -937,9 +960,13 @@ contains
 
 #ifndef __SX__
       do it = 0, nthreads-1
+         if(jtn1(it) /= 0) &
          call dfftw_destroy_plan(dg%loading%xplan_forward(it))
+         if(itn2(it) /= 0) &
          call dfftw_destroy_plan(dg%loading%yplan_forward(it))
+         if(jtn1(it) /= 0) &
          call dfftw_destroy_plan(dg%loading%xplan_backward(it))
+         if(itn2(it) /= 0) &
          call dfftw_destroy_plan(dg%loading%yplan_backward(it))
       end do
 
@@ -995,7 +1022,11 @@ contains
 
    subroutine loading_run(dg)
 #ifndef __SX__
+#ifndef __NEC__
       include 'fftw3.f'
+#else
+      include 'aslfftw3.f'
+#endif
 #endif
       type(data_grids), target, intent(inout) :: dg 
 
@@ -1149,6 +1180,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(jtn1(it) /= 0) &
          call dfftw_execute_dft_r2c(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
       end do
 #else
@@ -1176,6 +1208,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(itn2(it) /= 0) &
          call dfftw_execute(yplan_forward(it))
       end do
 #else
@@ -1198,6 +1231,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(itn2(it) /= 0) &
          call dfftw_execute(yplan_backward(it))
       end do
 #else
@@ -1226,6 +1260,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(jtn1(it) /= 0) &
          call dfftw_execute_dft_c2r(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
       end do
 #else
@@ -1309,6 +1344,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(jtn1(it) /= 0) &
          call dfftw_execute_dft_r2c(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
       end do
 #else
@@ -1375,6 +1411,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(itn2(it) /= 0) &
          call dfftw_execute(yplan_forward(it))
       end do
 #else
@@ -1398,6 +1435,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(itn2(it) /= 0) &
          call dfftw_execute(yplan_backward(it))
       end do
 #else
@@ -1454,6 +1492,7 @@ contains
 #ifndef __SX__
 !$omp do
       do it = 0, nthreads-1
+         if(jtn1(it) /= 0) &
          call dfftw_execute_dft_c2r(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
       end do
 #else

@@ -277,6 +277,9 @@ contains
 #if defined(MPI) && defined(ONEFILE)
       integer(kind=4) :: dummynx, dummyny
 #endif
+#ifdef PIXELIN
+      integer(kind=4) :: nxorg, nyorg
+#endif
 
       write(6,'(a)') '[displacement] Initial displacement with fault calculation.'
 
@@ -299,7 +302,11 @@ contains
 #endif
 
 #if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELIN
       call read_gmt_grd_hdr(dg%my%bath_file,nlon,nlat,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
+#else
+      call read_gmt_grd_hdr(dg%my%bath_file,nlon,nlat,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg)
+#endif
 #ifdef MPI
 #ifndef MULTI
       call MPI_Bcast(x_inc, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
@@ -319,7 +326,11 @@ contains
 #endif
 #else
       if(myrank == 0) then
+#ifndef PIXELIN
          call read_gmt_grd_hdr(dg%my%bath_file,dummynx,dummyny,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
+#else
+         call read_gmt_grd_hdr(dg%my%bath_file,dummynx,dummyny,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg)
+#endif
       end if
 #ifndef MULTI
       call MPI_Bcast(x_inc, 1, REAL_MPI, 0, MPI_COMM_WORLD, ierr)
@@ -752,7 +763,11 @@ contains
    subroutine displacement_apply_kj_filter(dg, zz, nlon, nlat, h0)
 #endif
 #ifndef __SX__
+#ifndef __NEC__
       include 'fftw3.f'
+#else
+      include 'aslfftw3.f'
+#endif
 #endif
       type(data_grids), target, intent(inout) :: dg 
       real(kind=8), dimension(nlon,nlat), intent(inout) :: zz
@@ -816,6 +831,9 @@ contains
 #endif
 #ifndef CARTESIAN
       real(kind=8) :: x, lon1, lat2, lon2
+#endif
+#ifdef PIXELIN
+      integer(kind=4) :: nxorg, nyorg
 #endif
 
       write(6,'(a)') '[displacement] Kajiura filter is applied!'
@@ -1081,7 +1099,11 @@ contains
 #ifdef MPI
       if(myrank == 0) then
 #endif
+#ifndef PIXELIN
       call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
+#else
+      call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg)
+#endif
 #ifdef MPI
       end if
 #endif
@@ -1593,6 +1615,9 @@ contains
 #endif
       real(kind=REAL_BYTE) :: x_inc, y_inc, x_min, x_max, y_min, y_max, z_min, z_max
       integer(kind=4) :: nlon_dummy, nlat_dummy, num, i, j
+#ifdef PIXELIN
+      integer(kind=4) :: nxorg, nyorg
+#endif
 
 #ifdef MPI
       ix = dg%my%ix
@@ -1627,7 +1652,11 @@ contains
 #ifdef MPI
       if(myrank == 0) then
 #endif
+#ifndef PIXELIN
       call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
+#else
+      call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg)
+#endif
 #ifdef MPI
       end if
 #endif

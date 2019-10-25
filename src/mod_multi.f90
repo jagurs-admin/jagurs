@@ -63,8 +63,13 @@ contains
              end if
          end do
          if(invalid) goto 200
+#ifndef __GFORTRAN__
          read(arg(1:j-1), '(i)', err=200) istart(num_paramset)
          read(arg(j+1:len_arg), '(i)', err=200) iend(num_paramset)
+#else
+         read(arg(1:j-1), *, err=200) istart(num_paramset)
+         read(arg(j+1:len_arg), *, err=200) iend(num_paramset)
+#endif
 
          i = i + 1
          call  GET_COMMAND_ARGUMENT(i, filenames(num_paramset))
