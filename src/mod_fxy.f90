@@ -721,7 +721,7 @@ contains
                         if(hz(i+1,j) + ddx(i,j) > hz(i,j) + ddx(i,j)) discharge = -discharge
                         fx(i,j) = discharge
                         if(brokenx(i,j) == 0) then
-                           btx(i,j) = broken_rate*(btx(i,j) - dhigh) + dhigh
+                           btx(i,j) = broken_rate*(btx(i,j) + dhigh) - dhigh
                            brokenx(i,j) = 1
                         end if
                      end if
@@ -784,7 +784,7 @@ contains
                         if(hz(i,j+1) + ddy(i,j) > hz(i,j) + ddy(i,j)) discharge = -discharge
                         fy(i,j) = discharge
                         if(brokeny(i,j) == 0) then
-                           bty(i,j) = broken_rate*(bty(i,j) - dhigh) + dhigh
+                           bty(i,j) = broken_rate*(bty(i,j) + dhigh) - dhigh
                            brokeny(i,j) = 1
                         end if
                      end if
