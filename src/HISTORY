@@ -574,4 +574,18 @@ DEBUG about the problem on "MULTI=ON", "init_disp_fault=0" and "multrupt=1" is a
 (contributed by J.Taniguchi. Thanks!).
 
 --------------------------------------------------------------------------------
+2020.01.10 V0515
+
+- DEBUG for wall breaking calculations. Plus and minus sign of "dhigh" was wrong.
+
+  [Before]
+  bt[xy](i,j) = broken_rate*(bt[xy](i,j) - dhigh) + dhigh
+
+  [After]
+  bt[xy](i,j) = broken_rate*(bt[xy](i,j) + dhigh) - dhigh
+
+- Modification to use newer PROJ.4 (version 6.0.0 or later) library has been applied
+(contributed by naotaka-chikasada. Thanks!).
+
+--------------------------------------------------------------------------------
 
