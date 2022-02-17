@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#define ACCEPT_USE_OF_DEPRECATED_PROJ_API_H // for newer proj.4 version 6.0.0
 #include <proj_api.h>
 
 static  projPJ pj_tmerc, pj_latlong;

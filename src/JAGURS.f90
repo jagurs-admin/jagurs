@@ -934,6 +934,9 @@ program JAGURS
       jen = njz + 2
       if(iand(has_boundary, NORTH_BOUND) /= 0) jst = -1
       allocate(dgrid(ig)%wave_field%hz    (ist:ien,jst:jen))
+#ifndef NONESTDEBUG
+      allocate(dgrid(ig)%wave_field%noi2f (ist:ien,jst:jen))
+#endif
       allocate(dgrid(ig)%wave_field%hz_old(ist:ien,jst:jen))
       allocate(dgrid(ig)%depth_field%dz   (ist:ien,jst:jen))
 #ifdef BANKFILE

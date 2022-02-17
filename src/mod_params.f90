@@ -23,7 +23,7 @@ integer(kind=4), parameter :: DPT = 4
 #endif
 
 !*** check undefined values ***
-#ifndef PIXELIN
+#if !defined(PIXELIN) && defined(NONESTDEBUG)
 integer(kind=4),   private, parameter :: IUDEF = 999999
 real(kind=REAL_BYTE),      private, parameter :: RUDEF = 999999.9d0
 #else

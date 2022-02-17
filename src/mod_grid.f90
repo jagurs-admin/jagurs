@@ -142,6 +142,9 @@ type wave_arrays
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fx
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fy
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hz
+#ifndef NONESTDEBUG
+   integer(kind=4), allocatable, dimension(:,:) :: noi2f
+#endif
 ! === Flood Change =============================================================
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hz_old
 ! ==============================================================================

@@ -588,5 +588,11 @@ DEBUG about the problem on "MULTI=ON", "init_disp_fault=0" and "multrupt=1" is a
 (contributed by naotaka-chikasada. Thanks!).
 
 --------------------------------------------------------------------------------
-2020.04.02
-- Upload again to get a DOI badge
+2022.01.28 V0516
+
+DEBUG for interpolation from coarse domain to fine domain (interp2fine).
+Interpolation is NOT performed if one of the two referred coarse grids is "dry" state.
+If you want the old version to work, specify "-DNONESTDEBUG" on Makefile and make again.
+
+--------------------------------------------------------------------------------
+

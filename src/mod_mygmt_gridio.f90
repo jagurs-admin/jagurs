@@ -260,7 +260,7 @@ contains
       write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] East edge is changed from ', eastorg, ' to ', east, '.'
       write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] South edge is changed from ', southorg, ' to ', south, '.'
       write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] North edge is changed from ', northorg, ' to ', north, '.'
-#ifdef PIXCELOUT
+#ifdef PIXELOUT
       write(6,'(a)') '[pixcel format] Note that the value on truncated area is zero!'
 #endif
 #endif

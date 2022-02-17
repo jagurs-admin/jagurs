@@ -12,7 +12,11 @@ use mod_multi, only : MPI_MEMBER_WORLD
 use mod_grid
 ! === 1-way nest ===============================================================
 !use mod_params, only : VEL, HGT
+#ifdef NONESTDEBUG
 use mod_params, only : VEL, HGT, nest_1way
+#else
+use mod_params, only : VEL, HGT, nest_1way, RUDEF
+#endif
 ! ==============================================================================
 implicit none
 
@@ -2069,6 +2073,9 @@ contains
 ! === Upwind3 ==================================================================
       integer(kind=4) :: nx, ny
 ! ==============================================================================
+#ifndef NONESTDEBUG
+      integer(kind=4), pointer, dimension(:,:) :: wodc, noi2f
+#endif
    
       fxc => cg%wave_field%fx
       fyc => cg%wave_field%fy
@@ -2083,6 +2090,11 @@ contains
       fxi => fg%fxi
       fyi => fg%fyi
       hzi => fg%hzi
+
+#ifndef NONESTDEBUG
+      wodc => cg%wod_flags
+      noi2f => fg%wave_field%noi2f
+#endif
 
       if(mode == VEL) then
 #ifndef MPI
@@ -3187,9 +3199,17 @@ contains
 !$omp parallel
 !$omp do
          do k = 1, hzi%np
+#ifdef NONESTDEBUG
             hzf(hzi%fndx(k,1),hzi%fndx(k,2)) = &
                hzc(hzi%cndx0(k,1),hzi%cndx0(k,2))*hzi%wt0(k) + &
                hzc(hzi%cndx1(k,1),hzi%cndx1(k,2))*hzi%wt1(k)
+#else
+            if((wodc(hzi%cndx0(k,1),hzi%cndx0(k,2)) == 1) .and. (wodc(hzi%cndx1(k,1),hzi%cndx1(k,2)) == 1)) then
+               hzf(hzi%fndx(k,1),hzi%fndx(k,2)) = &
+                  hzc(hzi%cndx0(k,1),hzi%cndx0(k,2))*hzi%wt0(k) + &
+                  hzc(hzi%cndx1(k,1),hzi%cndx1(k,2))*hzi%wt1(k)
+            endif
+#endif
          end do
 !$omp end parallel
          t0 = 1.0d0/REAL_FUNC(fg%my%nr)
@@ -3232,7 +3252,15 @@ contains
             if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
                i = ix - cg%my%kx + 1
                j = iy - cg%my%ky + 1
+#ifndef NONESTDEBUG
+               if(wodc(i,j) == 1) then
+#endif
                zcbuf(k) = zcbuf(k) + hzc(i,j)*hzi%wt0(k)
+#ifndef NONESTDEBUG
+               else
+                  zcbuf(k) = RUDEF
+               end if
+#endif
             end if
          end do
 !$omp do private(ix, iy, i, j)
@@ -3242,7 +3270,15 @@ contains
             if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
                i = ix - cg%my%kx + 1 ! with edges
                j = iy - cg%my%ky + 1 ! with edges
+#ifndef NONESTDEBUG
+               if((wodc(i,j) == 1) .and. (zcbuf(k) /= RUDEF)) then
+#endif
                zcbuf(k) = zcbuf(k) + hzc(i,j)*hzi%wt1(k)
+#ifndef NONESTDEBUG
+               else
+                  zcbuf(k) = RUDEF
+               end if
+#endif
             end if
          end do
          !*==============*
@@ -3294,6 +3330,9 @@ contains
          do k = 1, hzi%np
             ix = hzi%fndx(k,1)
             iy = hzi%fndx(k,2)
+#ifndef NONESTDEBUG
+            if(zfbuf(k) < RUDEF) then
+#endif
 ! === Upwind3 ==================================================================
 !           if(ist <= ix .and. ix <= fg%my%kxend+1 .and. jst <= iy .and. iy <= fg%my%kyend+1) then
             if(ist <= ix .and. ix <= ien .and. jst <= iy .and. iy <= jen) then
@@ -3302,6 +3341,9 @@ contains
                j = iy - fg%my%ky + 1 ! with edges
                hzf(i,j) = zfbuf(k)
             end if
+#ifndef NONESTDEBUG
+            end if
+#endif
          end do
 !$omp end parallel
 #else
@@ -3321,19 +3363,43 @@ contains
          do k = 1, hzi%snp0
             i = hzi%cndx0_l(k,1)
             j = hzi%cndx0_l(k,2)
+#ifndef NONESTDEBUG
+            if(wodc(i,j) == 1) then
+#endif
 #ifndef SINGLE_A2A
             zcbuf0(k) = hzc(i,j)*hzi%wt0_l(k)
 #else
             zcbuf1(hzi%smap0(k)) = hzc(i,j)*hzi%wt0_l(k)
 #endif
+#ifndef NONESTDEBUG
+            else
+#ifndef SINGLE_A2A
+               zcbuf0(k) = RUDEF
+#else
+               zcbuf1(hzi%smap0(k)) = RUDEF
+#endif
+            end if
+#endif
          end do
          do k = 1, hzi%snp1
             i = hzi%cndx1_l(k,1)
             j = hzi%cndx1_l(k,2)
+#ifndef NONESTDEBUG
+            if(wodc(i,j) == 1) then
+#endif
 #ifndef SINGLE_A2A
             zcbuf1(k) = hzc(i,j)*hzi%wt1_l(k)
 #else
             zcbuf1(hzi%smap1(k)) = hzc(i,j)*hzi%wt1_l(k)
+#endif
+#ifndef NONESTDEBUG
+            else
+#ifndef SINGLE_A2A
+               zcbuf1(k) = RUDEF
+#else
+               zcbuf1(hzi%smap1(k)) = RUDEF
+#endif
+            end if
 #endif
          end do
          !*==============*
@@ -3366,23 +3432,58 @@ contains
          !*==============*
          !*  buf2fine    * write to edges
          !*==============*
+#ifndef NONESTDEBUG
+         noi2f = 0
+
          do k = 1, hzi%rnp0
             i = hzi%fndx0_l(k,1)
             j = hzi%fndx0_l(k,2)
 #ifndef SINGLE_A2A
+            if(zfbuf0(k) == RUDEF) noi2f(i,j) = 1
+#else
+            if(zfbuf1(hzi%rmap0(k)) == RUDEF) noi2f(i,j) = 1
+#endif
+         end do
+
+         do k = 1, hzi%rnp1
+            i = hzi%fndx1_l(k,1)
+            j = hzi%fndx1_l(k,2)
+#ifndef SINGLE_A2A
+            if(zfbuf1(k) == RUDEF) noi2f(i,j) = 1
+#else
+            if(zfbuf1(hzi%rmap1(k)) == RUDEF) noi2f(i,j) = 1
+#endif
+         end do
+#endif
+         do k = 1, hzi%rnp0
+            i = hzi%fndx0_l(k,1)
+            j = hzi%fndx0_l(k,2)
+#ifndef NONESTDEBUG
+            if(noi2f(i,j) == 0) then
+#endif
+#ifndef SINGLE_A2A
             hzf(i,j) = zfbuf0(k)
 #else
             hzf(i,j) = zfbuf1(hzi%rmap0(k))
+#endif
+#ifndef NONESTDEBUG
+            end if
 #endif
          end do
 !$NEC ivdep
          do k = 1, hzi%rnp1
             i = hzi%fndx1_l(k,1)
             j = hzi%fndx1_l(k,2)
+#ifndef NONESTDEBUG
+            if(noi2f(i,j) == 0) then
+#endif
 #ifndef SINGLE_A2A
             hzf(i,j) = hzf(i,j) + zfbuf1(k)
 #else
             hzf(i,j) = hzf(i,j) + zfbuf1(hzi%rmap1(k))
+#endif
+#ifndef NONESTDEBUG
+            end if
 #endif
          end do
 ! === USE_MPI_ALLTOALLV ========================================================
