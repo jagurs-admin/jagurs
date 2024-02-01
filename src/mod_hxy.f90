@@ -41,7 +41,7 @@ contains
       hz => wfld%hz
 #ifndef CARTESIAN
 ! === Density ==================================================================
-      m_rhoC => wfld%m_rhoC
+      if(with_density == 1) m_rhoC => wfld%m_rhoC
 ! ==============================================================================
 #endif
 
@@ -138,7 +138,7 @@ contains
       dz  => dfld%dz
 #ifndef CARTESIAN
 ! === Density ==================================================================
-      m_rhoC => wfld%m_rhoC
+      if(with_density == 1) m_rhoC => wfld%m_rhoC
 ! ==============================================================================
 #endif
 

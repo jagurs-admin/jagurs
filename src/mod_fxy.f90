@@ -1,3 +1,4 @@
+!#define OLD_SCHEME
 #ifdef DBLE_MATH
 #include "dble_math.h"
 #endif
@@ -96,7 +97,11 @@ contains
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: fx, fy, hz, ddx, ddy, dz
       real(kind=REAL_BYTE) :: dtds, gdtds, bcf, theta, sint, invst, gdtdss, crls
       real(kind=REAL_BYTE) :: dvdx, dvdy, fric, dh, advc
+#ifdef OLD_SCHEME
       real(kind=REAL_BYTE) :: cf
+#else
+      real(kind=REAL_BYTE) :: cf, bcf2, cf2, fric2
+#endif
 
       real(kind=REAL_BYTE), parameter :: rote = 6371000.0d0
       real(kind=REAL_BYTE), parameter :: g = 9.8d0
@@ -817,9 +822,17 @@ contains
                   end if
                   ! explicit 
 !                 fric = dt*bcf*fx_old(i,j)*sqrt(fx_old(i,j)*fx_old(i,j) + fybar*fybar)/ddx_tmp**2
+#ifdef OLD_SCHEME
                   ! semi-implicit added on 14/04/2019, Baba
                   fric = dt*bcf*half*sqrt(fx_old(i,j)*fx_old(i,j)+fybar*fybar)/ddx_tmp/ddx_tmp
                   fx(i,j) = (fx(i,j)-fric*fx_old(i,j))/(1.0d0+fric)
+#else
+                  ! cobined semi-implicit added on 14/04/2019, Baba
+!                 fric = dt*bcf*half*sqrt(fx_old(i,j)*fx_old(i,j)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  ! simple emi-implicit added on 16/05/2023, Minami
+                  fric = dt*bcf*sqrt(fx_old(i,j)*fx_old(i,j)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(i,j) = fx(i,j)/(1.0d0+fric)
+#endif
                else
                   fx(i,j) = zap
 !                  fric = zap
@@ -864,9 +877,17 @@ contains
                   end if
                   ! explicit
 !                 fric = dt*bcf*fy_old(i,j)*sqrt(fy_old(i,j)*fy_old(i,j) + fxbar*fxbar)/ddy_tmp**2
+#ifdef OLD_SCHEME
                   ! semi-implicit added on 14/04/2019, Baba
                   fric = dt*bcf*half*sqrt(fy_old(i,j)*fy_old(i,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
                   fy(i,j) = (fy(i,j)-fric*fy_old(i,j))/(1.0d0+fric)
+#else
+                  ! conbined semi-implicit added on 14/04/2019, Baba
+                  !fric = dt*bcf*half*sqrt(fy_old(i,j)*fy_old(i,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  ! simple emi-implicit added on 16/05/2023, Minami
+                  fric = dt*bcf*sqrt(fy_old(i,j)*fy_old(i,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(i,j) = fy(i,j)/(1.0d0+fric)
+#endif
                else
                   fy(i,j) = zap
 !                  fric = zap
@@ -921,13 +942,21 @@ contains
 #endif
 
       if(gflag == 1) then
+#ifdef OLD_SCHEME
          ! do linear calc along edges (i=0,nlon-2;j=0,nlat-2) of grid
+#else
+
+         ! do non-linear calc without advection term along edges (i=0,nlon-2;j=0,nlat-2) of grid
+#endif
          ! note that fx,fy updates are moved in 1 grid along maximal edges
 
          ! north
 #ifndef MPI
 !$omp single
          sint = sin(th0)
+#ifndef OLD_SCHEME
+         crls = 2.0d0*cflag*cfreq*cos(th0)*dt
+#endif
 #else
          if(iand(bflag, NORTH_BOUND) /= 0) then
 !$omp single
@@ -935,20 +964,82 @@ contains
             ind = nlon - 1
             if(iand(bflag, EAST_BOUND) /= 0) ind = nlon - 1
             sint = sin(th0+joff*dth)
+#ifndef OLD_SCHEME
+            crls = 2.0d0*cflag*cfreq*cos(th0+joff*dth)*dt
+#endif
 #endif
          gdtdss = gdtds/sint
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do
+#else
+!$omp do  private(fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
 #ifndef MPI
          do i = 1, nlon-1
 #else
          do i = ist, ind
 #endif
+#ifdef OLD_SCHEME
             if(dz(i,1) > zap) then
                fx(i,1) = fx(i,1) - (0.5d0*(dz(i+1,1)+dz(i,1)))*gdtdss*(hz_old(i+1,1)-hz_old(i,1))
                fy(i,1) = fy(i,1) - (0.5d0*(dz(i,  2)+dz(i,1)))*gdtds *(hz_old(i,  2)-hz_old(i,1))
+#else
+            ddx_tmp = half*(hz(i+1,1) + hz(i,1) + dz(i+1,1) + dz(i,1))
+            if(dz(i,1) > zap .AND. dz(i+1,1) > zap .AND. ddx_tmp > zap) then
+               fybar = half*(fy_old(i,1) + fy_old(i+1,1))
+               fx(i,1) = fx_old(i,1) - ddx_tmp*gdtdss*(hz_old(i+1,1)-hz_old(i,1))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(i,1) == 0.0d0) then 
+                     if(half*(dz(i+1,1)+dz(i,1)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(i,1)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(i,1)*fx_old(i,1)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(i,1) = fx(i,1)/(1.0d0+fric)
+               end if
+#endif
             else
                fx(i,1) = zap
+#ifndef OLD_SCHEME
+            end if
+            ddy_tmp = half*(hz(i,2) + hz(i,1) + dz(i,2) + dz(i,1))
+            if(dz(i,1) > zap .AND. dz(i,2) > zap .AND. ddy_tmp > zap) then
+               if (i > 1) then
+                  fxbar = quart*(fx_old(i,1) + fx_old(i-1,1) + fx_old(i-1,2) + fx_old(i,2))
+               else
+                  fxbar = half *(fx_old(i,1) + fx_old(i,2))
+               end if
+               fy(i,1) = fy_old(i,1) - ddy_tmp*gdtds*(hz_old(i,2)-hz_old(i,1))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(i,1) == 0.0d0) then 
+                     if(half*(dz(i,2)+dz(i,1)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(i,1)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(i,1)*fy_old(i,1)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(i,1) = fy(i,1)/(1.0d0+fric2)
+               end if
+            else
+#endif
                fy(i,1) = zap
             end if
          end do
@@ -958,6 +1049,9 @@ contains
 #ifndef MPI
 !$omp single
          sint = sin(th0 + dth)
+#ifndef OLD_SCHEME
+         crls = 2.0d0*cflag*cfreq*cos(th0+dth)*dt
+#endif
 #else
          if(iand(bflag, NORTH_BOUND) /= 0) then
 !$omp single
@@ -965,20 +1059,82 @@ contains
             ind = nlon - 1
             if(iand(bflag, EAST_BOUND) /= 0) ind = nlon - 1
             sint = sin(th0+(joff+1)*dth)
+#ifndef OLD_SCHEME
+            crls = 2.0d0*cflag*cfreq*cos(th0+(joff+1)*dth)*dt
+#endif
 #endif
          gdtdss = gdtds/sint
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do
+#else
+!$omp do  private(fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
 #ifndef MPI
          do i = 1, nlon-1
 #else
          do i = ist, ind
 #endif
+#ifdef OLD_SCHEME
             if(dz(i,2) > zap) then
                fx(i,2) = fx(i,2) - (0.5d0*(dz(i+1,2)+dz(i,2)))*gdtdss*(hz_old(i+1,2)-hz_old(i,2))
                fy(i,2) = fy(i,2) - (0.5d0*(dz(i,  3)+dz(i,2)))*gdtds *(hz_old(i,  3)-hz_old(i,2))
+#else
+            ddx_tmp = half*(hz(i+1,2) + hz(i,2) + dz(i+1,2) + dz(i,2))
+            if(dz(i,2) > zap .AND. dz(i+1,2) > zap .AND. ddx_tmp > zap) then
+               fybar = quart*(fy_old(i,2) + fy_old(i+1,2) + fy_old(i,1) + fy_old(i+1,1))
+               fx(i,2) = fx_old(i,2) - ddx_tmp*gdtdss*(hz_old(i+1,2)-hz_old(i,2))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(i,2) == 0.0d0) then 
+                     if(half*(dz(i+1,2)+dz(i,2)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(i,2)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(i,2)*fx_old(i,2)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(i,2) = fx(i,2)/(1.0d0+fric)
+               end if
+#endif
             else
                fx(i,2) = zap
+#ifndef OLD_SCHEME
+            end if
+            ddy_tmp = half*(hz(i,3) + hz(i,2) + dz(i,3) + dz(i,2))
+            if(dz(i,2) > zap .AND. dz(i,3) > zap .AND. ddy_tmp > zap) then
+               if (i > 1) then
+                  fxbar = quart*(fx_old(i,2) + fx_old(i-1,2) + fx_old(i-1,3) + fx_old(i,3))
+               else
+                  fxbar =  half*(fx_old(i,2) + fx_old(i,3))
+               end if
+               fy(i,2) = fy_old(i,2) - ddy_tmp*gdtds*(hz_old(i,3)-hz_old(i,2))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(i,2) == 0.0d0) then 
+                     if(half*(dz(i,3)+dz(i,2)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(i,2)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(i,2)*fy_old(i,2)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(i,2) = fy(i,2)/(1.0d0+fric2)
+               end if
+            else
+#endif
                fy(i,2) = zap
             end if
          end do
@@ -989,6 +1145,9 @@ contains
 #ifndef MPI
 !$omp single
          sint = sin(th0 + 2*dth)
+#ifndef OLD_SCHEME
+         crls = 2.0d0*cflag*cfreq*cos(th0 + 2*dth)*dt
+#endif
 #else
          if(iand(bflag, NORTH_BOUND) /= 0) then
 !$omp single
@@ -996,20 +1155,83 @@ contains
             ind = nlon - 1
             if(iand(bflag, EAST_BOUND) /= 0) ind = nlon - 1
             sint = sin(th0+(joff+2)*dth)
+#ifndef OLD_SCHEME
+            crls = 2.0d0*cflag*cfreq*cos(th0+(joff+2)*dth)*dt
+#endif
 #endif
          gdtdss = gdtds/sint
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do
+#else
+!$omp do  private(fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
 #ifndef MPI
          do i = 1, nlon-1
 #else
          do i = ist, ind
 #endif
+#ifdef OLD_SCHEME
             if(dz(i,3) > zap) then
                fx(i,3) = fx(i,3) - (0.5d0*(dz(i+1,3)+dz(i,3)))*gdtdss*(hz_old(i+1,3)-hz_old(i,3))
                fy(i,3) = fy(i,3) - (0.5d0*(dz(i,  4)+dz(i,3)))*gdtds *(hz_old(i,  4)-hz_old(i,3))
+#else
+            ddx_tmp = half*(hz(i+1,3) + hz(i,3) + dz(i+1,3) + dz(i,3))
+            if(dz(i,3) > zap .AND. dz(i+1,3) > zap .AND. ddx_tmp > zap) then
+               fybar = quart*(fy_old(i,3) + fy_old(i+1,3) + fy_old(i,2) + fy_old(i+1,2))
+               fx(i,3) = fx_old(i,3) - ddx_tmp*gdtdss*(hz_old(i+1,3)-hz_old(i,3))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(i,3) == 0.0d0) then 
+                     if(half*(dz(i+1,3)+dz(i,3)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(i,3)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(i,2)*fx_old(i,3)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(i,3) = fx(i,3)/(1.0d0+fric)
+               end if
             else
+            fx(i,3) = zap
+            end if
+            ddy_tmp = half*(hz(i,4) + hz(i,3) + dz(i,4) + dz(i,3))
+            if(dz(i,3) > zap .AND. dz(i,4) > zap .AND. ddy_tmp > zap) then
+               if (i > 1) then
+                  fxbar = quart*(fx_old(i,3) + fx_old(i-1,3) + fx_old(i-1,4) + fx_old(i,4))
+               else
+                  fxbar = half*(fx_old(i,3) + fx_old(i,4))
+               end if
+               fy(i,3) = fy_old(i,3) - ddy_tmp*gdtds*(hz_old(i,4)-hz_old(i,3))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(i,3) == 0.0d0) then 
+                     if(half*(dz(i,4)+dz(i,3)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(i,3)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(i,3)*fy_old(i,3)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(i,3) = fy(i,3)/(1.0d0+fric2)
+               end if
+#endif
+            else
+#ifdef OLD_SCHEME
                fx(i,3) = zap
+#endif
                fy(i,3) = zap
             end if
          end do
@@ -1022,6 +1244,9 @@ contains
 #ifndef MPI
 !$omp single
          sint = sin(th0 + (nlat-2)*dth)
+#ifndef OLD_SCHEME
+         crls = 2.0d0*cflag*cfreq*cos(th0 + (nlat-2)*dth)*dt
+#endif
 #else
          if(iand(bflag, SOUTH_BOUND) /= 0) then
 !$omp single
@@ -1030,20 +1255,82 @@ contains
             if(iand(bflag, WEST_BOUND) /= 0) ist = 1
             if(iand(bflag, EAST_BOUND) /= 0) ind = nlon - 1
             sint = sin(th0 + (nlat-2+joff)*dth)
+#ifndef OLD_SCHEME
+            crls = 2.0d0*cflag*cfreq*cos(th0 + (nlat-2+joff)*dth)*dt
+#endif
 #endif
          gdtdss = gdtds/sint
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do
+#else
+!$omp do  private(fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
 #ifndef MPI
          do i = 1, nlon-1
 #else
          do i = ist, ind
 #endif
+#ifdef OLD_SCHEME
             if(dz(i,nlat-1) > zap) then
                fx(i,nlat-1) = fx(i,nlat-1) - (0.5d0*(dz(i+1,nlat-1)+dz(i,nlat-1)))*gdtdss*(hz_old(i+1,nlat-1)-hz_old(i,nlat-1))
                fy(i,nlat-1) = fy(i,nlat-1) - (0.5d0*(dz(i,  nlat)  +dz(i,nlat-1)))*gdtds *(hz_old(i,  nlat)  -hz_old(i,nlat-1))
+#else
+            ddx_tmp = half*(hz(i+1,nlat-1) + hz(i,nlat-1) + dz(i+1,nlat-1) + dz(i,nlat-1))
+            if(dz(i,nlat-1) > zap .AND. dz(i+1,nlat-1) > zap .AND. ddx_tmp > zap) then
+               fybar = quart*(fy_old(i,nlat-1) + fy_old(i+1,nlat-1) + fy_old(i,nlat-2) + fy_old(i+1,nlat-2))
+               fx(i,nlat-1) = fx_old(i,nlat-1) - ddx_tmp*gdtdss*(hz_old(i+1,nlat-1)-hz_old(i,nlat-1))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(i,nlat-1) == 0.0d0) then 
+                     if(half*(dz(i+1,nlat-1)+dz(i,nlat-1)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(i,nlat-1)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(i,nlat-1)*fx_old(i,nlat-1)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(i,nlat-1) = fx(i,nlat-1)/(1.0d0+fric)
+               end if
+#endif
             else
                fx(i,nlat-1) = zap
+#ifndef OLD_SCHEME
+            end if
+            ddy_tmp = half*(hz(i,nlat) + hz(i,nlat-1) + dz(i,nlat) + dz(i,nlat-1))
+            if(dz(i,nlat-1) > zap .AND. dz(i,nlat) > zap .AND. ddy_tmp > zap) then
+               if (i > 1) then
+                  fxbar = quart*(fx_old(i,nlat-1) + fx_old(i-1,nlat-1) + fx_old(i-1,nlat) + fx_old(i,nlat))
+               else
+                  fxbar = half *(fx_old(i,nlat-1) + fx_old(i,nlat))
+               end if
+               fy(i,nlat-1) = fy_old(i,nlat-1) - ddy_tmp*gdtds *(hz_old(i,nlat)-hz_old(i,nlat-1))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(i,nlat-1) == 0.0d0) then 
+                     if(half*(dz(i,nlat)+dz(i,nlat-1)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(i,nlat-1)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(i,nlat-1)*fy_old(i,nlat-1)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(i,nlat-1) = fy(i,nlat-1)/(1.0d0+fric2)
+               end if
+            else
+#endif
                fy(i,nlat-1) = zap
             end if
          end do
@@ -1054,6 +1341,9 @@ contains
 #ifndef MPI
 !$omp single
          sint = sin(th0 + (nlat-3)*dth)
+#ifndef OLD_SCHEME
+         crls = 2.0d0*cflag*cfreq*cos(th0 + (nlat-3)*dth)*dt
+#endif
 #else
          if(iand(bflag, SOUTH_BOUND) /= 0) then
 !$omp single
@@ -1062,20 +1352,82 @@ contains
             if(iand(bflag, WEST_BOUND) /= 0) ist = 1
             if(iand(bflag, EAST_BOUND) /= 0) ind = nlon - 1
             sint = sin(th0 + (nlat-3+joff)*dth)
+#ifndef OLD_SCHEME
+            crls = 2.0d0*cflag*cfreq*cos((th0 + (nlat-3+joff)*dth)*dt
+#endif
 #endif
          gdtdss = gdtds/sint
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do
+#else
+!$omp do  private(fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
 #ifndef MPI
          do i = 1, nlon-1
 #else
          do i = ist, ind
 #endif
+#ifdef OLD_SCHEME
             if(dz(i,nlat-2) > zap) then
                fx(i,nlat-2) = fx(i,nlat-2) - (0.5d0*(dz(i+1,nlat-2)+dz(i,nlat-2)))*gdtdss*(hz_old(i+1,nlat-2)-hz_old(i,nlat-2))
                fy(i,nlat-2) = fy(i,nlat-2) - (0.5d0*(dz(i,  nlat-1)+dz(i,nlat-2)))*gdtds *(hz_old(i,  nlat-1)-hz_old(i,nlat-2))
+#else
+            ddx_tmp = half*(hz(i+1,nlat-2) + hz(i,nlat-2) + dz(i+1,nlat-2) + dz(i,nlat-2))
+            if(dz(i,nlat-2) > zap .AND. dz(i+1,nlat-2) > zap .AND. ddx_tmp > zap) then
+               fybar = quart*(fy_old(i,nlat-2) + fy_old(i+1,nlat-2) + fy_old(i,nlat-3) + fy_old(i+1,nlat-3))
+               fx(i,nlat-2) = fx_old(i,nlat-2) - ddx_tmp*gdtdss*(hz_old(i+1,nlat-2)-hz_old(i,nlat-2))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(i,nlat-2) == 0.0d0) then 
+                     if(half*(dz(i+1,nlat-2)+dz(i,nlat-2)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(i,nlat-2)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(i,nlat-2)*fx_old(i,nlat-2)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(i,nlat-2) = fx(i,nlat-2)/(1.0d0+fric)
+               end if
+#endif
             else
                fx(i,nlat-2) = zap
+#ifndef OLD_SCHEME
+            end if
+            ddy_tmp = half*(hz(i,nlat-1) + hz(i,nlat-2) + dz(i,nlat-1) + dz(i,nlat-2))
+            if(dz(i,nlat-2) > zap .AND. dz(i,nlat-1) > zap .AND. ddy_tmp > zap) then
+               if (i > 1) then
+                  fxbar = quart*(fx_old(i,nlat-2) + fx_old(i-1,nlat-2) + fx_old(i-1,nlat-1) + fx_old(i,nlat-1))
+               else
+                  fxbar = half *(fx_old(i,nlat-2) + fx_old(i,nlat-1))
+               end if
+               fy(i,nlat-2) = fy_old(i,nlat-2) - ddy_tmp*gdtds *(hz_old(i,nlat-1)-hz_old(i,nlat-2))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(i,nlat-2) == 0.0d0) then 
+                     if(half*(dz(i,nlat)+dz(i,nlat-2)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(i,nlat-2)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(i,nlat-2)*fy_old(i,nlat-2)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(i,nlat-2) = fy(i,nlat-2)/(1.0d0+fric2)
+               end if
+            else
+#endif
                fy(i,nlat-2) = zap
             end if
          end do
@@ -1085,7 +1437,11 @@ contains
 #endif
 
 #ifndef MPI
+#ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
+#else
+!$omp do private(theta, sint, gdtdss, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
 #ifndef UPWIND3
          do j = 2, nlat-2
 #else
@@ -1105,19 +1461,81 @@ contains
             if(iand(bflag, SOUTH_BOUND) /= 0) jnd = nlat - 3
 #endif
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
+#else
+!$omp do private(theta, sint, gdtdss, crls, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
             do j = jst, jnd
                theta = th0 + (j+joff-1)*dth
 #endif
             sint = sin(theta)
             gdtdss = gdtds/sint
+#ifndef OLD_SCHEME
+            crls = 2.0d0*cflag*cfreq*cos(theta)*dt
+#endif
 
             ! east
+#ifdef OLD_SCHEME
             if(dz(nlon-1,j) > zap) then
                fx(nlon-1,j) = fx(nlon-1,j) - (0.5d0*(dz(nlon,  j)  +dz(nlon-1,j)))*gdtdss*(hz_old(nlon,  j)  -hz_old(nlon-1,j))
                fy(nlon-1,j) = fy(nlon-1,j) - (0.5d0*(dz(nlon-1,j+1)+dz(nlon-1,j)))*gdtds *(hz_old(nlon-1,j+1)-hz_old(nlon-1,j))
+#else
+            ddx_tmp = half*(hz(nlon,j) + hz(nlon-1,j) + dz(nlon,j) + dz(nlon-1,j))
+            if(dz(nlon-1,j) > zap .AND. dz(nlon,j) > zap .AND. ddx_tmp > zap) then
+               if (j > 1) then
+                  fybar = quart*(fy_old(nlon-1,j) + fy_old(nlon,j) + fy_old(nlon-1,j-1) + fy_old(nlon,j-1))
+               else
+                  fybar = half*(fy_old(nlon-1,j) + fy_old(nlon,j))
+               end if
+               fx(nlon-1,j) = fx_old(nlon-1,j) - ddx_tmp*gdtdss*(hz_old(nlon,j)-hz_old(nlon-1,j))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(nlon-1,j) == 0.0d0) then 
+                     if(half*(dz(nlon,j)+dz(nlon-1,j)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(nlon-1,j)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(nlon-1,j)*fx_old(nlon-1,j)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(nlon-1,j) = fx(nlon-1,j)/(1.0d0+fric)
+               end if
+#endif
             else
                fx(nlon-1,j) = zap
+#ifndef OLD_SCHEME
+            end if
+            ddy_tmp = half*(hz(nlon-1,j+1) + hz(nlon-1,j) + dz(nlon-1,j+1) + dz(nlon-1,j))
+            if(dz(nlon-1,j) > zap .AND. dz(nlon-1,j+1) > zap .AND. ddy_tmp > zap) then
+               fxbar = quart*(fx_old(nlon-1,j) + fx_old(nlon-2,j) + fx_old(nlon-2,j+1) + fx_old(nlon-1,j+1))
+               fy(nlon-1,j) = fy_old(nlon-1,j) - ddy_tmp*gdtds *(hz_old(nlon-1,j+1)-hz_old(nlon-1,j))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(nlon-1,j) == 0.0d0) then 
+                     if(half*(dz(nlon-1,j+1)+dz(nlon-1,j)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(nlon-1,j)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(nlon-1,j)*fy_old(nlon-1,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(nlon-1,j) = fy(nlon-1,j)/(1.0d0+fric2)
+               end if
+            else
+#endif
                fy(nlon-1,j) = zap
             end if
 #ifdef MPI
@@ -1136,19 +1554,81 @@ contains
             if(iand(bflag, SOUTH_BOUND) /= 0) jnd = nlat - 3
 #endif
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
+#else
+!$omp do private(theta, sint, gdtdss, crls, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
             do j = jst, jnd
                theta = th0 + (j+joff-1)*dth
                sint = sin(theta)
                gdtdss = gdtds/sint
+#ifndef OLD_SCHEME
+               crls = 2.0d0*cflag*cfreq*cos(theta)*dt
+#endif
 #endif
 
             ! west
+#ifdef OLD_SCHEME
             if(dz(1,j) > zap) then
                fx(1,j) = fx(1,j) - (0.5d0*(dz(2,j)  +dz(1,j)))*gdtdss*(hz_old(2,j)  -hz_old(1,j))
                fy(1,j) = fy(1,j) - (0.5d0*(dz(1,j+1)+dz(1,j)))*gdtds *(hz_old(1,j+1)-hz_old(1,j))
+#else
+            ddx_tmp = half*(hz(2,j) + hz(1,j) + dz(2,j) + dz(1,j))
+            if(dz(1,j) > zap .AND. dz(2,j) > zap .AND. ddx_tmp > zap) then
+               if (j > 1) then
+                  fybar = quart*(fy_old(1,j) + fy_old(2,j) + fy_old(1,j-1) + fy_old(2,j-1))
+               else
+                  fybar = half*(fy_old(1,j) + fy_old(2,j))
+               end if
+               fx(1,j) = fx_old(1,j) - ddx_tmp*gdtdss*(hz_old(2,j)-hz_old(1,j))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(1,j) == 0.0d0) then 
+                     if(half*(dz(2,j)+dz(1,j)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(1,j)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(1,j)*fx_old(1,j)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(1,j) = fx(1,j)/(1.0d0+fric)
+               end if
+#endif
             else
                fx(1,j) = zap
+#ifndef OLD_SCHEME
+            end if
+            ddy_tmp = half*(hz(1,j+1) + hz(1,j) + dz(1,j+1) + dz(1,j))
+            if(dz(1,j) > zap .AND. dz(1,j+1) > zap .AND. ddy_tmp > zap) then
+               fxbar = half*(fx_old(1,j) + fx_old(1,j+1))
+               fy(1,j) = fy_old(1,j) - ddy_tmp*gdtds *(hz_old(1,j+1)-hz_old(1,j))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(1,j) == 0.0d0) then 
+                     if(half*(dz(1,j+1)+dz(1,j)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(1,j)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(1,j)*fy_old(1,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(1,j) = fy(1,j)/(1.0d0+fric2)
+               end if
+            else
+#endif
                fy(1,j) = zap
             end if
          end do
@@ -1156,7 +1636,11 @@ contains
          end if
 #endif
 #ifndef MPI
+#ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
+#else
+!$omp do private(theta, sint, gdtdss, crls, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
 #ifndef UPWIND3
          do j = 2, nlat-2
 #else
@@ -1165,15 +1649,70 @@ contains
             theta = th0 + (j-1)*dth
             sint = sin(theta)
             gdtdss = gdtds/sint
+#ifndef OLD_SCHEME
+            crls = 2.0d0*cflag*cfreq*cos(theta)*dt
+#endif
             ! west
+#ifdef OLD_SCHEME
             if(dz(2,j) > zap) then
                fx(2,j) = fx(2,j) - (0.5d0*(dz(3,j)  +dz(2,j)))*gdtdss*(hz_old(3,j)  -hz_old(2,j))
                fy(2,j) = fy(2,j) - (0.5d0*(dz(2,j+1)+dz(2,j)))*gdtds *(hz_old(2,j+1)-hz_old(2,j))
+#else
+            ddx_tmp = half*(hz(3,j) + hz(2,j) + dz(3,j) + dz(2,j))
+            if(dz(2,j) > zap .AND. dz(3,j) > zap .AND. ddx_tmp > zap) then
+               fybar = quart*(fy_old(2,j) + fy_old(3,j) + fy_old(2,j-1) + fy_old(3,j-1))
+               fx(2,j) = fx_old(2,j) - ddx_tmp*gdtdss*(hz_old(3,j)-hz_old(2,j))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(2,j) == 0.0d0) then 
+                     if(half*(dz(3,j)+dz(2,j)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(2,j)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(2,j)*fx_old(2,j)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(2,j) = fx(2,j)/(1.0d0+fric)
+               end if
+#endif
             else
                fx(2,j) = zap
+#ifndef OLD_SCHEME
+            end if
+            ddy_tmp = half*(hz(2,j+1) + hz(2,j) + dz(2,j+1) + dz(2,j))
+            if(dz(2,j) > zap .AND. dz(2,j+1) > zap .AND. ddy_tmp > zap) then
+               fxbar = quart*(fx_old(2,j) + fx_old(1,j) + fx_old(1,j+1) + fx_old(2,j+1))
+               fy(2,j) = fy_old(2,j) - ddy_tmp*gdtds *(hz_old(2,j+1)-hz_old(2,j))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(2,j) == 0.0d0) then 
+                     if(half*(dz(2,j+1)+dz(2,j)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(2,j)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(2,j)*fy_old(2,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(2,j) = fy(2,j)/(1.0d0+fric2)
+               end if
+            else
+#endif
                fy(2,j) = zap
             end if
          end do
+
 #else
          if(iand(bflag, WEST_BOUND) /= 0) then
 !$omp single
@@ -1187,12 +1726,20 @@ contains
             if(iand(bflag, SOUTH_BOUND) /= 0) jnd = nlat - 3
 #endif
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
+#else
+!$omp do private(theta, sint, gdtdss, crls, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
             do j = jst, jnd
                theta = th0 + (j+joff-1)*dth
                sint = sin(theta)
                gdtdss = gdtds/sint
+#ifndef OLD_SCHEME
+               crls = 2.0d0*cflag*cfreq*cos(theta)*dt
+#endif
                ! west
+#ifdef OLD_SCHEME
                if(dz(2,j) > zap) then
                   fx(2,j) = fx(2,j) - (0.5d0*(dz(3,j)  +dz(2,j)))*gdtdss*(hz_old(3,j)  -hz_old(2,j))
                   fy(2,j) = fy(2,j) - (0.5d0*(dz(2,j+1)+dz(2,j)))*gdtds *(hz_old(2,j+1)-hz_old(2,j))
@@ -1200,12 +1747,72 @@ contains
                   fx(2,j) = zap
                   fy(2,j) = zap
                end if
+#else
+            ddx_tmp = half*(hz(3,j) + hz(2,j) + dz(3,j) + dz(2,j))
+            if(dz(2,j) > zap .AND. dz(3,j) > zap .AND. ddx_tmp > zap) then
+               if (j > 1) then
+                  fybar = quart*(fy_old(2,j) + fy_old(3,j) + fy_old(2,j-1) + fy_old(3,j-1))
+               else
+                  fybar = half*(fy_old(2,j) + fy_old(3,j))
+               end if
+               fx(2,j) = fx_old(2,j) - ddx_tmp*gdtdss*(hz_old(3,j)-hz_old(2,j))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(2,j) == 0.0d0) then 
+                     if(half*(dz(3,j)+dz(2,j)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(2,j)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(2,j)*fx_old(2,j)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(2,j) = fx(2,j)/(1.0d0+fric)
+               end if
+            else
+               fx(2,j) = zap
+            end if
+            ddy_tmp = half*(hz(2,j+1) + hz(2,j) + dz(2,j+1) + dz(2,j))
+            if(dz(2,j) > zap .AND. dz(2,j+1) > zap .AND. ddy_tmp > zap) then
+               fxbar = quart*(fx_old(2,j) + fx_old(1,j) + fx_old(1,j+1) + fx_old(2,j+1))
+               fy(2,j) = fy_old(2,j) - ddy_tmp*gdtds *(hz_old(2,j+1)-hz_old(2,j))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(2,j) == 0.0d0) then 
+                     if(half*(dz(2,j+1)+dz(2,j)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(2,j)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(2,j)*fy_old(2,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(2,j) = fy(2,j)/(1.0d0+fric2)
+               end if
+            else
+               fy(2,j) = zap
+            end if
+#endif
             end do
          end if
 #endif
 #ifdef UPWIND3
 #ifndef MPI
+#ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
+#else
+!$omp do private(theta, sint, gdtdss, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
          do j = 4, nlat-3
             theta = th0 + (j-1)*dth
 #else
@@ -1216,19 +1823,81 @@ contains
             if(iand(bflag, NORTH_BOUND) /= 0) jst = 4
             if(iand(bflag, SOUTH_BOUND) /= 0) jnd = nlat - 3
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
+#else
+!$omp do private(theta, sint, gdtdss, crls, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
             do j = jst, jnd
                theta = th0 + (j+joff-1)*dth
 #endif
             sint = sin(theta)
             gdtdss = gdtds/sint
+#ifndef OLD_SCHEME
+            crls = 2.0d0*cflag*cfreq*cos(theta)*dt
+#endif
 
             ! east
+#ifdef OLD_SCHEME
             if(dz(nlon-2,j) > zap) then
                fx(nlon-2,j) = fx(nlon-2,j) - (0.5d0*(dz(nlon-1,j)  +dz(nlon-2,j)))*gdtdss*(hz_old(nlon-1,j)  -hz_old(nlon-2,j))
                fy(nlon-2,j) = fy(nlon-2,j) - (0.5d0*(dz(nlon-2,j+1)+dz(nlon-2,j)))*gdtds *(hz_old(nlon-2,j+1)-hz_old(nlon-2,j))
+#else
+            ddx_tmp = half*(hz(nlon-1,j) + hz(nlon-2,j) + dz(nlon-1,j) + dz(nlon-2,j))
+            if(dz(nlon-1,j) > zap .AND. dz(nlon-2,j) > zap .AND. ddx_tmp > zap) then
+               if (j > 1) then
+                  fybar = quart*(fy_old(nlon-2,j) + fy_old(nlon-1,j) + fy_old(nlon-2,j-1) + fy_old(nlon-1,j-1))
+               else
+                  fybar = half*(fy_old(nlon-2,j) + fy_old(nlon-1,j))
+               end if
+               fx(nlon-2,j) = fx_old(nlon-2,j) - ddx_tmp*gdtdss*(hz_old(nlon-2,j)-hz_old(nlon-1,j))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(nlon-2,j) == 0.0d0) then 
+                     if(half*(dz(nlon,j)+dz(nlon-2,j)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(nlon-2,j)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(nlon-2,j)*fx_old(nlon-2,j)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(nlon-2,j) = fx(nlon-2,j)/(1.0d0+fric)
+               end if
+#endif
             else
                fx(nlon-2,j) = zap
+#ifndef OLD_SCHEME
+            end if
+            ddy_tmp = half*(hz(nlon-2,j+1) + hz(nlon-2,j) + dz(nlon-2,j+1) + dz(nlon-2,j))
+            if(dz(nlon-2,j) > zap .AND. dz(nlon-2,j+1) > zap .AND. ddy_tmp > zap) then
+               fxbar = quart*(fx_old(nlon-2,j) + fx_old(nlon-3,j) + fx_old(nlon-3,j+1) + fx_old(nlon-2,j+1))
+               fy(nlon-2,j) = fy_old(nlon-2,j) - ddy_tmp*gdtds *(hz_old(nlon-2,j+1)-hz_old(nlon-2,j))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(nlon-2,j) == 0.0d0) then 
+                     if(half*(dz(nlon-2,j+1)+dz(nlon-2,j)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(nlon-2,j)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(nlon-2,j)*fy_old(nlon-2,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(nlon-2,j) = fy(nlon-2,j)/(1.0d0+fric2)
+               end if
+            else
+#endif
                fy(nlon-2,j) = zap
             end if
 #ifdef MPI
@@ -1242,19 +1911,81 @@ contains
             if(iand(bflag, NORTH_BOUND) /= 0) jst = 4
             if(iand(bflag, SOUTH_BOUND) /= 0) jnd = nlat - 3
 !$omp end single
+#ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
+#else
+!$omp do private(theta, sint, gdtdss, crls, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+#endif
             do j = jst, jnd
                theta = th0 + (j+joff-1)*dth
                sint = sin(theta)
                gdtdss = gdtds/sint
+#ifndef OLD_SCHEME
+               crls = 2.0d0*cflag*cfreq*cos(theta)*dt
+#endif
 #endif
 
             ! west
+#ifdef OLD_SCHEME
             if(dz(3,j) > zap) then
                fx(3,j) = fx(3,j) - (0.5d0*(dz(4,j)  +dz(3,j)))*gdtdss*(hz_old(4,j)  -hz_old(3,j))
                fy(3,j) = fy(3,j) - (0.5d0*(dz(3,j+1)+dz(3,j)))*gdtds *(hz_old(3,j+1)-hz_old(3,j))
+#else
+            ddx_tmp = half*(hz(4,j) + hz(3,j) + dz(4,j) + dz(3,j))
+            if(dz(3,j) > zap .AND. dz(4,j) > zap .AND. ddx_tmp > zap) then
+               if (j > 1) then
+                  fybar = quart*(fy_old(3,j) + fy_old(4,j) + fy_old(3,j-1) + fy_old(4,j-1))
+               else
+                  fybar = half*(fy_old(3,j) + fy_old(4,j))
+               end if
+               fx(3,j) = fx_old(3,j) - ddx_tmp*gdtdss*(hz_old(4,j)-hz_old(3,j))-crls*fybar
+               if(ddx_tmp < 100.0d0) then
+                  if(ffld(3,j) == 0.0d0) then 
+                     if(half*(dz(4,j)+dz(3,j)) > 0.0d0) then
+                        cf = cfs
+                     else
+                        cf = cfl
+                     end if
+                  else 
+                     cf = ffld(3,j)
+                  end if
+                  if(cf > 0.0d0) then 
+                     bcf = cf
+                  else  
+                     bcf = cf*cf*9.8d0*ddx_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric = dt*bcf*sqrt(fx_old(3,j)*fx_old(3,j)+fybar*fybar)/ddx_tmp/ddx_tmp
+                  fx(3,j) = fx(3,j)/(1.0d0+fric)
+               end if
+#endif
             else
                fx(3,j) = zap
+#ifndef OLD_SCHEME
+            end if
+            ddy_tmp = half*(hz(3,j+1) + hz(3,j) + dz(3,j+1) + dz(3,j))
+            if(dz(3,j) > zap .AND. dz(3,j+1) > zap .AND. ddy_tmp > zap) then
+               fxbar = quart*(fx_old(3,j) + fx_old(2,j) + fx_old(2,j+1) + fx_old(3,j+1))
+               fy(3,j) = fy_old(3,j) - ddy_tmp*gdtds *(hz_old(3,j+1)-hz_old(3,j))+crls*fxbar
+               if(ddy_tmp < 100.0d0) then
+                  if(ffld(3,j) == 0.0d0) then 
+                     if(half*(dz(3,j+1)+dz(3,j)) > 0.0d0) then 
+                        cf2 = cfs
+                     else 
+                        cf2 = cfl
+                     end if
+                  else 
+                     cf2 = ffld(3,j)
+                  end if
+                  if(cf2 > 0.0d0) then
+                     bcf2 = cf2
+                  else 
+                     bcf2 = cf2*cf2*9.8d0*ddy_tmp**(-1.0d0/3.0d0)
+                  end if
+                  fric2 = dt*bcf2*sqrt(fy_old(3,j)*fy_old(3,j)+fxbar*fxbar)/ddy_tmp/ddy_tmp
+                  fy(3,j) = fy(3,j)/(1.0d0+fric2)
+               end if
+            else
+#endif
                fy(3,j) = zap
             end if
          end do

@@ -252,6 +252,7 @@ endif
 ifeq ($(PIXELOUT),ON)
    FFLAGS+=-DPIXELOUT
 endif
+FFLAGS+=-DNFSUPPORT
 
 ################################################################################
 ### Make rules                                                               ###

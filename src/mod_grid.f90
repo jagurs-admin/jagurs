@@ -94,6 +94,9 @@ type grid_info
    real(kind=4), allocatable, dimension(:,:) :: buf_l_ncdio
 #endif
 #endif
+#ifdef NFSUPPORT
+   integer(kind=4) :: formatid
+#endif
 end type grid_info
 
 type interp_info

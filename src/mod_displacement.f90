@@ -260,7 +260,7 @@ contains
 #else
       real(kind=8) :: cd, sd, ct, st, dep
 #endif
-#ifndef __SX__
+#if !defined(__SX__) && !defined(__NEC__)
       real(kind=8) :: x, y, u1, u2, u3, dumm
 #else
       real(kind=8) :: x, y, u1, u2, u3
@@ -279,6 +279,9 @@ contains
 #endif
 #ifdef PIXELIN
       integer(kind=4) :: nxorg, nyorg
+#endif
+#ifdef NFSUPPORT
+      integer(kind=4) :: formatid
 #endif
 
       write(6,'(a)') '[displacement] Initial displacement with fault calculation.'
@@ -303,9 +306,17 @@ contains
 
 #if !defined(MPI) || !defined(ONEFILE)
 #ifndef PIXELIN
+#ifndef NFSUPPORT
       call read_gmt_grd_hdr(dg%my%bath_file,nlon,nlat,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
 #else
+      call read_gmt_grd_hdr(dg%my%bath_file,nlon,nlat,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,formatid)
+#endif
+#else
+#ifndef NFSUPPORT
       call read_gmt_grd_hdr(dg%my%bath_file,nlon,nlat,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg)
+#else
+      call read_gmt_grd_hdr(dg%my%bath_file,nlon,nlat,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg,formatid)
+#endif
 #endif
 #ifdef MPI
 #ifndef MULTI
@@ -327,9 +338,17 @@ contains
 #else
       if(myrank == 0) then
 #ifndef PIXELIN
+#ifndef NFSUPPORT
          call read_gmt_grd_hdr(dg%my%bath_file,dummynx,dummyny,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
 #else
+         call read_gmt_grd_hdr(dg%my%bath_file,dummynx,dummyny,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,formatid)
+#endif
+#else
+#ifndef NFSUPPORT
          call read_gmt_grd_hdr(dg%my%bath_file,dummynx,dummyny,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg)
+#else
+         call read_gmt_grd_hdr(dg%my%bath_file,dummynx,dummyny,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg,formatid)
+#endif
 #endif
       end if
 #ifndef MULTI
@@ -563,7 +582,7 @@ contains
          st  = dsin(strike(n)*DEG2RAD)
 !$omp end single
 
-#ifndef __SX__
+#if !defined(__SX__) && !defined(__NEC__)
 !$omp do private(i, x, y, u1, u2, u3, dumm)
 #else
 !$omp do private(i, x, y, u1, u2, u3)
@@ -575,7 +594,7 @@ contains
 #endif
                   x =  (xy(i,j,1)-xref(n))/1000.0d0*st + (xy(i,j,2)-yref(n))/1000.0d0*ct
                   y = -(xy(i,j,1)-xref(n))/1000.0d0*ct + (xy(i,j,2)-yref(n))/1000.0d0*st + width(n)*cd
-#ifndef __SX__
+#if !defined(__SX__) && !defined(__NEC__)
                   call srectf(ALP, x, y, dep, length(n), width(n), sd, cd, us(n), ud(n), ut(n), &
                      u1, u2, u3, dumm, dumm, dumm, dumm, dumm, dumm)
 #else
@@ -834,6 +853,9 @@ contains
 #endif
 #ifdef PIXELIN
       integer(kind=4) :: nxorg, nyorg
+#endif
+#ifdef NFSUPPORT
+      integer(kind=4) :: formatid
 #endif
 
       write(6,'(a)') '[displacement] Kajiura filter is applied!'
@@ -1096,13 +1118,24 @@ contains
 ! ==============================================================================
 ! === Calc. m_dx and m_dy Begin ================================================
 ! ==============================================================================
+! === DEBUG by tkato on 2023/10/11 BEGIN =======================================
+      x_min = huge(x_min)
+! === DEBUG by tkato on 2023/10/11 END =========================================
 #ifdef MPI
       if(myrank == 0) then
 #endif
 #ifndef PIXELIN
+#ifndef NFSUPPORT
       call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
 #else
+      call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,formatid)
+#endif
+#else
+#ifndef NFSUPPORT
       call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg)
+#else
+      call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg,formatid)
+#endif
 #endif
 #ifdef MPI
       end if
@@ -1215,6 +1248,7 @@ contains
          do i = its2(it), ite2(it)
             k_x = (i - 1)*dk_x
             if(i > N_X/2 + 1) k_x = (N_X - i + 1)*dk_x
+!NEC$ novector
             do j = 1, N_Y
                k_y = (j - 1)*dk_y
                if(j > N_Y/2 + 1) k_y = (N_Y - j + 1)*dk_y
@@ -1413,6 +1447,7 @@ contains
             i_ = ist + i - 1
             k_x = (i_ - 1)*dk_x
             if(i_ > N_X/2 + 1) k_x = (N_X - i_ + 1)*dk_x
+!NEC$ novector
             do j = 1, N_Y
                k_y = (j - 1)*dk_y
                if(j > N_Y/2 + 1) k_y = (N_Y - j + 1)*dk_y
@@ -1618,6 +1653,9 @@ contains
 #ifdef PIXELIN
       integer(kind=4) :: nxorg, nyorg
 #endif
+#ifdef NFSUPPORT
+      integer(kind=4) :: formatid
+#endif
 
 #ifdef MPI
       ix = dg%my%ix
@@ -1649,13 +1687,24 @@ contains
 #endif
 #endif
 
+! === DEBUG by tkato on 2023/10/11 BEGIN =======================================
+      y_min = huge(y_min)
+! === DEBUG by tkato on 2023/10/11 END =========================================
 #ifdef MPI
       if(myrank == 0) then
 #endif
 #ifndef PIXELIN
+#ifndef NFSUPPORT
       call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max)
 #else
+      call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,formatid)
+#endif
+#else
+#ifndef NFSUPPORT
       call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg)
+#else
+      call read_gmt_grd_hdr(dg%my%bath_file,nlon_dummy,nlat_dummy,x_inc,y_inc,x_min,x_max,y_min,y_max,z_min,z_max,nxorg,nyorg,formatid)
+#endif
 #endif
 #ifdef MPI
       end if

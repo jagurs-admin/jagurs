@@ -16,7 +16,7 @@ integer(kind=4), private :: nprocs, myrank, npx, npy, rankx, ranky
 integer(kind=4), private :: MPI_X_WORLD, MPI_Y_WORLD
 #endif
 
-private :: spline_inerpolation, tri, linear_inerpolation
+private :: spline_interpolation, tri, linear_interpolation
 
 contains
 
@@ -186,12 +186,12 @@ contains
       if(use_linear == 1) then
 !$omp do
          do i = 1, bigNX
-            call linear_inerpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
+            call linear_interpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
          end do
       else
 !$omp do
          do i = 1, bigNX
-            call spline_inerpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
+            call spline_interpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
          end do
       end if
 !$omp do private(i)
@@ -204,12 +204,12 @@ contains
       if(use_linear == 1) then
 !$omp do
          do j = 1, ny
-            call linear_inerpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
+            call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
          end do
       else
 !$omp do
          do j = 1, ny
-            call spline_inerpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
+            call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
          end do
       end if
 
@@ -293,12 +293,12 @@ contains
       if(use_linear == 1) then
 !$omp do
          do i = 1, nx0
-            call linear_inerpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
+            call linear_interpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
          end do
       else
 !$omp do
          do i = 1, nx0
-            call spline_inerpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
+            call spline_interpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
          end do
       end if
 !$omp single
@@ -348,12 +348,12 @@ contains
       if(use_linear == 1) then
 !$omp do
          do j = 1, ny1
-            call linear_inerpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
+            call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
          end do
       else
 !$omp do
          do j = 1, ny1
-            call spline_inerpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
+            call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
          end do
       end if
 !$omp single
@@ -411,7 +411,7 @@ contains
       return
    end subroutine interp2fine_init_disp 
 
-   subroutine spline_inerpolation(r, n_in, y, n_out, yo)
+   subroutine spline_interpolation(r, n_in, y, n_out, yo)
       ! Arguments
       integer(kind=4), intent(in) :: r, n_in, n_out
       real(kind=REAL_BYTE), intent(in), dimension(n_in) :: y
@@ -471,7 +471,7 @@ contains
       yo(n_out) = y(n_in)
 
       return
-   end subroutine spline_inerpolation
+   end subroutine spline_interpolation
 
    subroutine tri(n, d, b)
       implicit none
@@ -491,7 +491,7 @@ contains
       return
    end subroutine tri
 
-   subroutine linear_inerpolation(r, n_in, y, n_out, yo)
+   subroutine linear_interpolation(r, n_in, y, n_out, yo)
       ! Arguments
       integer(kind=4), intent(in) :: r, n_in, n_out
       real(kind=REAL_BYTE), intent(in), dimension(n_in) :: y
@@ -509,7 +509,7 @@ contains
       end do
       yo(n_out) = y(n_in)
       return
-   end subroutine linear_inerpolation
+   end subroutine linear_interpolation
 
 ! === Elastic loading with interpolation =======================================
 !  subroutine interp2fine_init_disp(cg,fg)
@@ -652,12 +652,12 @@ contains
       if(use_linear == 1) then
 !$omp do
          do i = 1, bigNX
-            call linear_inerpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
+            call linear_interpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
          end do
       else
 !$omp do
          do i = 1, bigNX
-            call spline_inerpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
+            call spline_interpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
          end do
       end if
 !$omp do private(i)
@@ -671,16 +671,16 @@ contains
 !$omp do
          do j = 1, ny
 ! === Elastic loading with interpolation =======================================
-!           call linear_inerpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
-            call linear_inerpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%loading%delta(1,j))
+!           call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
+            call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%loading%delta(1,j))
 ! ==============================================================================
          end do
       else
 !$omp do
          do j = 1, ny
 ! === Elastic loading with interpolation =======================================
-!           call spline_inerpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
-            call spline_inerpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%loading%delta(1,j))
+!           call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
+            call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%loading%delta(1,j))
 ! ==============================================================================
          end do
       end if
@@ -776,12 +776,12 @@ contains
       if(use_linear == 1) then
 !$omp do
          do i = 1, nx0
-            call linear_inerpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
+            call linear_interpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
          end do
       else
 !$omp do
          do i = 1, nx0
-            call spline_inerpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
+            call spline_interpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
          end do
       end if
 !$omp single
@@ -831,12 +831,12 @@ contains
       if(use_linear == 1) then
 !$omp do
          do j = 1, ny1
-            call linear_inerpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
+            call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
          end do
       else
 !$omp do
          do j = 1, ny1
-            call spline_inerpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
+            call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
          end do
       end if
 !$omp single

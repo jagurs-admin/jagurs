@@ -268,6 +268,9 @@ program JAGURS
 #ifdef PIXELIN
    integer(kind=4) :: nxorg, nyorg
 #endif
+#ifdef NFSUPPORT
+   integer(kind=4) :: formatid
+#endif
    TIMER_START('All')
 
 #ifdef MULTI
@@ -647,9 +650,17 @@ program JAGURS
       !*** first read the header values ***
       TIMER_START('read_bathymetry_gmt_grdhdr')
 #ifndef PIXELIN
+#ifndef NFSUPPORT
       call read_bathymetry_gmt_grdhdr(dgrid(ig)%my%bath_file,niz,njz,dxdy,mlon0,mlat0)
 #else
+      call read_bathymetry_gmt_grdhdr(dgrid(ig)%my%bath_file,niz,njz,dxdy,mlon0,mlat0,formatid)
+#endif
+#else
+#ifndef NFSUPPORT
       call read_bathymetry_gmt_grdhdr(dgrid(ig)%my%bath_file,niz,njz,dxdy,mlon0,mlat0,nxorg,nyorg)
+#else
+      call read_bathymetry_gmt_grdhdr(dgrid(ig)%my%bath_file,niz,njz,dxdy,mlon0,mlat0,nxorg,nyorg,formatid)
+#endif
 #endif
       TIMER_STOP('read_bathymetry_gmt_grdhdr')
 #if defined(MPI) && defined(ONEFILE)
@@ -665,6 +676,9 @@ program JAGURS
       call MPI_Bcast(nxorg, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
       call MPI_Bcast(nyorg, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 #endif
+#ifdef NFSUPPORT
+      call MPI_Bcast(formatid, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+#endif
 #else
       call MPI_Bcast(niz,   1, MPI_INTEGER, 0, MPI_MEMBER_WORLD, ierr)
       call MPI_Bcast(njz,   1, MPI_INTEGER, 0, MPI_MEMBER_WORLD, ierr)
@@ -674,6 +688,9 @@ program JAGURS
 #ifdef PIXELIN
       call MPI_Bcast(nxorg, 1, MPI_INTEGER, 0, MPI_MEMBER_WORLD, ierr)
       call MPI_Bcast(nyorg, 1, MPI_INTEGER, 0, MPI_MEMBER_WORLD, ierr)
+#endif
+#ifdef NFSUPPORT
+      call MPI_Bcast(formatid, 1, MPI_INTEGER, 0, MPI_MEMBER_WORLD, ierr)
 #endif
 #endif
 
@@ -726,6 +743,9 @@ program JAGURS
 #ifdef PIXELIN
       dgrid(ig)%my%nxorg = nxorg
       dgrid(ig)%my%nyorg = nyorg
+#endif
+#ifdef NFSUPPORT
+      dgrid(ig)%my%formatid = formatid
 #endif
  
 #ifdef MPI
@@ -2214,24 +2234,25 @@ program JAGURS
 #ifdef MPI
                has_boundary          =  dgrid(ig)%my%has_boundary
 #endif
+               linear_flag           =  dgrid(ig)%my%linear_flag
 #ifndef NCDIO
                TIMER_START('dump_gmt_nl_vel')
 #ifndef MPI
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
 #ifndef PIXELOUT
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,VEL)
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,VEL,linear_flag)
 #else
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,VEL,nxorg,nyorg)
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,VEL,nxorg,nyorg,linear_flag)
 #endif
 #else
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
 #ifndef ONEFILE
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,VEL,has_boundary)
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,VEL,has_boundary,linear_flag)
 #else
 #ifndef PIXELOUT
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,VEL,has_boundary,dgrid(ig))
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,VEL,has_boundary,dgrid(ig),linear_flag)
 #else
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,VEL,has_boundary,dgrid(ig),nxorg,nyorg)
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,VEL,has_boundary,dgrid(ig),nxorg,nyorg,linear_flag)
 #endif
 #endif
 #endif
@@ -2240,19 +2261,19 @@ program JAGURS
 #ifndef MPI
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
 #ifndef PIXELOUT
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,HGT)
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,HGT,linear_flag)
 #else
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,HGT,nxorg,nyorg)
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,base,HGT,nxorg,nyorg,linear_flag)
 #endif
 #else
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
 #ifndef ONEFILE
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,HGT,has_boundary)
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,HGT,has_boundary,linear_flag)
 #else
 #ifndef PIXELOUT
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,HGT,has_boundary,dgrid(ig))
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,HGT,has_boundary,dgrid(ig),linear_flag)
 #else
-                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,HGT,has_boundary,dgrid(ig),nxorg,nyorg)
+                                mlat0,mlon0,dxdy,REAL_FUNC(0),0,myrank,base,HGT,has_boundary,dgrid(ig),nxorg,nyorg,linear_flag)
 #endif
 #endif
 #endif
@@ -2260,15 +2281,15 @@ program JAGURS
 #else
                TIMER_START('write_snapshot')
 #ifndef MPI
-               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL)
-               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT)
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL,linear_flag)
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT,linear_flag)
 #else
 #ifndef ONEFILE
-               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL,has_boundary)
-               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT,has_boundary)
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL,has_boundary,linear_flag)
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT,has_boundary,linear_flag)
 #else
-               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL,has_boundary,myrank)
-               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT,has_boundary,myrank)
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,VEL,has_boundary,myrank,linear_flag)
+               call write_snapshot(dgrid(ig),REAL_FUNC(0),0,HGT,has_boundary,myrank,linear_flag)
 #endif
 #endif
                TIMER_STOP('write_snapshot')
@@ -2361,13 +2382,14 @@ program JAGURS
 #ifdef MPI
          has_boundary          =  dgrid(ig)%my%has_boundary
 #endif
+         linear_flag           =  dgrid(ig)%my%linear_flag
 
 #ifndef SKIP_MAX_VEL
          TIMER_START('maxgrd_v_check_nl')
 #ifndef MPI
-         call maxgrd_v_check_nl(vmax,wave_field,depth_field,wod_flags,niz,njz)
+         call maxgrd_v_check_nl(vmax,wave_field,depth_field,wod_flags,niz,njz,linear_flag)
 #else
-         call maxgrd_v_check_nl(vmax,wave_field,depth_field,wod_flags,niz,njz,has_boundary)
+         call maxgrd_v_check_nl(vmax,wave_field,depth_field,wod_flags,niz,njz,has_boundary,linear_flag)
 #endif
          TIMER_STOP('maxgrd_v_check_nl')
 #endif
@@ -2379,19 +2401,19 @@ program JAGURS
 #ifndef MPI
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
 #ifndef PIXELOUT
-                                mlat0,mlon0,dxdy,t,istep,base,VEL)
+                                mlat0,mlon0,dxdy,t,istep,base,VEL,linear_flag)
 #else
-                                mlat0,mlon0,dxdy,t,istep,base,VEL,nxorg,nyorg)
+                                mlat0,mlon0,dxdy,t,istep,base,VEL,nxorg,nyorg,linear_flag)
 #endif
 #else
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
 #ifndef ONEFILE
-                                mlat0,mlon0,dxdy,t,istep,myrank,base,VEL,has_boundary)
+                                mlat0,mlon0,dxdy,t,istep,myrank,base,VEL,has_boundary,linear_flag)
 #else
 #ifndef PIXELOUT
-                                mlat0,mlon0,dxdy,t,istep,myrank,base,VEL,has_boundary,dgrid(ig))
+                                mlat0,mlon0,dxdy,t,istep,myrank,base,VEL,has_boundary,dgrid(ig),linear_flag)
 #else
-                                mlat0,mlon0,dxdy,t,istep,myrank,base,VEL,has_boundary,dgrid(ig),nxorg,nyorg)
+                                mlat0,mlon0,dxdy,t,istep,myrank,base,VEL,has_boundary,dgrid(ig),nxorg,nyorg,linear_flag)
 #endif
 #endif
 #endif
@@ -2399,12 +2421,12 @@ program JAGURS
 #else
                TIMER_START('write_snapshot_vel')
 #ifndef MPI
-               call write_snapshot(dgrid(ig),t,istep,VEL)
+               call write_snapshot(dgrid(ig),t,istep,VEL,linear_flag)
 #else
 #ifndef ONEFILE
-               call write_snapshot(dgrid(ig),t,istep,VEL,has_boundary)
+               call write_snapshot(dgrid(ig),t,istep,VEL,has_boundary,linear_flag)
 #else
-               call write_snapshot(dgrid(ig),t,istep,VEL,has_boundary,myrank)
+               call write_snapshot(dgrid(ig),t,istep,VEL,has_boundary,myrank,linear_flag)
 #endif
 #endif
                TIMER_STOP('write_snapshot_vel')
@@ -2483,6 +2505,7 @@ program JAGURS
 #ifdef MPI
          has_boundary          =  dgrid(ig)%my%has_boundary
 #endif
+         linear_flag           =  dgrid(ig)%my%linear_flag
 ! ==============================================================================
 #ifdef DUMP1D
          TIMER_START('dump1d')
@@ -2560,19 +2583,19 @@ program JAGURS
 #ifndef MPI
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
 #ifndef PIXELOUT
-                                mlat0,mlon0,dxdy,t,istep,base,HGT)
+                                mlat0,mlon0,dxdy,t,istep,base,HGT,linear_flag)
 #else
-                                mlat0,mlon0,dxdy,t,istep,base,HGT,nxorg,nyorg)
+                                mlat0,mlon0,dxdy,t,istep,base,HGT,nxorg,nyorg,linear_flag)
 #endif
 #else
                call dump_gmt_nl(wave_field,depth_field,ts_field,niz,njz,wod_flags, &
 #ifndef ONEFILE
-                                mlat0,mlon0,dxdy,t,istep,myrank,base,HGT,has_boundary)
+                                mlat0,mlon0,dxdy,t,istep,myrank,base,HGT,has_boundary,linear_flag)
 #else
 #ifndef PIXELOUT
-                                mlat0,mlon0,dxdy,t,istep,myrank,base,HGT,has_boundary,dgrid(ig))
+                                mlat0,mlon0,dxdy,t,istep,myrank,base,HGT,has_boundary,dgrid(ig),linear_flag)
 #else
-                                mlat0,mlon0,dxdy,t,istep,myrank,base,HGT,has_boundary,dgrid(ig),nxorg,nyorg)
+                                mlat0,mlon0,dxdy,t,istep,myrank,base,HGT,has_boundary,dgrid(ig),nxorg,nyorg,linear_flag)
 #endif
 #endif
 #endif
@@ -2585,12 +2608,12 @@ program JAGURS
 !              call write_snapshot(dgrid(ig),t,istep)
                TIMER_START('write_snapshot_hgt')
 #ifndef MPI
-               call write_snapshot(dgrid(ig),t,istep,HGT)
+               call write_snapshot(dgrid(ig),t,istep,HGT,linear_flag)
 #else
 #ifndef ONEFILE
-               call write_snapshot(dgrid(ig),t,istep,HGT,has_boundary)
+               call write_snapshot(dgrid(ig),t,istep,HGT,has_boundary,linear_flag)
 #else
-               call write_snapshot(dgrid(ig),t,istep,HGT,has_boundary,myrank)
+               call write_snapshot(dgrid(ig),t,istep,HGT,has_boundary,myrank,linear_flag)
 #endif
 #endif
                TIMER_STOP('write_snapshot_hgt')

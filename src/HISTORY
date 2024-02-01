@@ -595,4 +595,27 @@ Interpolation is NOT performed if one of the two referred coarse grids is "dry" 
 If you want the old version to work, specify "-DNONESTDEBUG" on Makefile and make again.
 
 --------------------------------------------------------------------------------
+2024.01.01 V0520
+
+- "nf"-format is supported as GMT netCDF format. Note that the format may vary across
+   different domains, but the file format for a single domain must be consistent.
+
+- A friction term is added to the boundary calculation of the flow rate
+  (contributed by M.Minami @ MRI. Thanks!). If you want to disable this modification,
+  specify "-DOLD_SCHEME" on Makefile and make again.
+
+- Performance optimizations for NEC SX-Aurora TSUBASA are applied.
+
+- The following DEBUGs are applied.
+
+   - A bug for the flow-rate to velocity conversion during linear calculation to
+     outputting velocity grid file is corrected.
+
+   - Typos are corrected (contributed by T.Miyashita @ Kyoto Univ. Thanks!).
+
+   - Uninitialized references on Kajiura-filter application are corrected.
+
+   - Other minor bugs are corrected.
+
+--------------------------------------------------------------------------------
 

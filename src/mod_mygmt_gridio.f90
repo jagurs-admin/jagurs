@@ -11,7 +11,11 @@ contains
 ! === For negative max. height =================================================
 !  subroutine mygmt_grdio_d(z,x0,x1,y0,y1,dx,dy,zmin,zmax,nx,ny,filename)
    subroutine mygmt_grdio_d(z,x0,x1,y0,y1,dx,dy,zmin,zmax,nx,ny,filename, &
+#ifndef NFSUPPORT
                             flag_missing_value)
+#else
+                            formatid,flag_missing_value)
+#endif
 ! ==============================================================================
       real(kind=REAL_BYTE), dimension(nx,ny), intent(in) :: z
       real(kind=8), intent(in) :: x0, x1, y0, y1, dx, dy
@@ -40,6 +44,17 @@ contains
       real(kind=4), allocatable, dimension(:,:) :: z_tmp
 ! ==============================================================================
 #endif
+      logical :: missing_value_is_available
+#ifdef NFSUPPORT
+      integer(kind=4), intent(in) :: formatid
+      real(kind=8), allocatable, dimension(:) :: tmp
+#ifndef __NEC__
+      real(kind=4), parameter :: NaN = transfer(Z'FFFFFFFF', 0.e0)
+#else
+      real(kind=4), parameter :: NaN = Z'FFFFFFFF'
+#endif
+      integer(kind=4) :: x_dim, y_dim, i
+#endif
 
       xysize_len = nx*ny
       side_len = 2 ! 2 sides
@@ -50,6 +65,9 @@ contains
       allocate(spacing(side_len))
       allocate(dimension(side_len))
 
+#ifdef NFSUPPORT
+      if(formatid == nf_format_classic) then
+#endif
       ! enter define mode
       stat = nf_create(filename, NF_CLOBBER, ncid)
 
@@ -81,7 +99,14 @@ contains
       z_add_offset(1) = 0
       stat = nf_put_att_double(ncid, z_id, 'add_offset', NF_DOUBLE, 1, z_add_offset)
 ! === For negative max. height =================================================
-      if(present(flag_missing_value) .and. flag_missing_value) then
+      missing_value_is_available = .false.
+      if(present(flag_missing_value)) then
+         if(flag_missing_value) then
+            missing_value_is_available = .true.
+         end if
+      end if
+
+      if(missing_value_is_available) then
          stat = nf_put_att_real(ncid, z_id, '_FillValue', NF_REAL, 1, &
                                 real(missing_value))
       end if
@@ -113,6 +138,59 @@ contains
       stat = nf_put_var_double(ncid, spacing_id, spacing)
       ! store dimension
       stat = nf_put_var_int(ncid, dimension_id, dimension)
+#ifdef NFSUPPORT
+      else
+         ! enter define mode
+         stat = nf_create(filename, NF_NETCDF4, ncid)
+
+         ! define 2 dimensions return dimension id's
+         stat = nf_def_dim(ncid, 'x', nx, x_dim)
+         stat = nf_def_dim(ncid, 'y', ny, y_dim)
+
+         ! define variables
+         z_dims(1) = x_dim
+         z_dims(2) = y_dim
+
+         stat = nf_def_var(ncid, 'x', NF_DOUBLE, 1, x_dim, x_range_id )
+         stat = nf_def_var(ncid, 'y', NF_DOUBLE, 1, y_dim, y_range_id )
+         stat = nf_def_var(ncid, 'z', NF_REAL, 2, z_dims, z_id )
+
+         ! assign attributes
+         stat = nf_put_att_text(ncid, x_range_id, 'long_name', 1, 'x')
+         x_range(1) = dble(x0)
+         x_range(2) = dble(x1)
+         stat = nf_put_att_double(ncid, x_range_id, 'actual_range', NF_DOUBLE, 2, x_range)
+
+         stat = nf_put_att_text(ncid, y_range_id, 'long_name', 1, 'y')
+         y_range(1) = dble(y0)
+         y_range(2) = dble(y1)
+         stat = nf_put_att_double(ncid, y_range_id, 'actual_range', NF_DOUBLE, 2, y_range)
+
+         stat = nf_put_att_text(ncid, z_id, 'long_name', 1, 'z')
+         stat = nf_put_att_real(ncid, z_id, '_FillValue', NF_REAL, 1, NaN)
+         z_range(1) = dble(zmin)
+         z_range(2) = dble(zmax)
+         stat = nf_put_att_double(ncid, z_id, 'actual_range', NF_DOUBLE, 2, z_range)
+
+         ! leave define mode
+         stat = nf_enddef(ncid)
+
+         ! store x y and z range spacing
+         allocate(tmp(nx))
+         do i = 1, nx
+            tmp(i) = dble(x0) + dble(dx)*(i - 1)
+         end do
+         stat = nf_put_var_double(ncid, x_range_id, tmp)
+         deallocate(tmp)
+
+         allocate(tmp(ny))
+         do i = 1, ny
+            tmp(i) = dble(y0) + dble(dy)*(i - 1)
+         end do
+         stat = nf_put_var_double(ncid, y_range_id, tmp)
+         deallocate(tmp)
+      end if
+#endif
 
       ! store z
 #ifndef REAL_DBLE
@@ -138,9 +216,17 @@ contains
 
    subroutine read_gmt_grd_hdr(infilename, nx, ny, dx, dy, &
 #ifndef PIXELIN
+#ifndef NFSUPPORT
                                west, east, south, north, zmin, zmax)
 #else
+                               west, east, south, north, zmin, zmax, formatid)
+#endif
+#else
+#ifndef NFSUPPORT
                                west, east, south, north, zmin, zmax, nxorg, nyorg)
+#else
+                               west, east, south, north, zmin, zmax, nxorg, nyorg, formatid)
+#endif
       use mod_params, only : RUDEF, IUDEF
 #endif
       character(len=256), intent(in) :: infilename
@@ -159,6 +245,9 @@ contains
       namelist /desc/ west, east, south, north, dx, dy, zmin, zmax, nx, ny
       real(kind=REAL_BYTE) :: westorg, eastorg, southorg, northorg
 #endif
+#ifdef NFSUPPORT
+      integer(kind=4), intent(out) :: formatid
+#endif
 
       !*** open the file and inquire about the dimensions ***
 #ifndef PIXELIN
@@ -171,6 +260,11 @@ contains
          stop
       end if
 
+#ifdef NFSUPPORT
+      err = nf_inq_format(ncid, formatid)
+
+      if(formatid == nf_format_classic) then
+#endif
       err = nf_inq_dimid(ncid, 'side', side_id)
       err = nf_inq_dimid(ncid, 'xysize', xysize_id)
 
@@ -179,6 +273,11 @@ contains
       err = nf_inq_dimlen(ncid, xysize_id, xysize_len)
       side_dim = int(side_len)
       xysize_dim = int(xysize_len)
+#ifdef NFSUPPORT
+      else
+         side_dim = 2
+      end if
+#endif
 
       !*** allocate space for variables ***
       allocate(x_range(side_dim))
@@ -187,6 +286,9 @@ contains
       allocate(spacing(side_dim))
       allocate(dimension(side_dim))
 
+#ifdef NFSUPPORT
+      if(formatid == nf_format_classic) then
+#endif
       !*** get the variable id's - these variable names are common in GMT ***
       err = nf_inq_varid(ncid, 'x_range', x_range_id)
       err = nf_inq_varid(ncid, 'y_range', y_range_id)
@@ -200,6 +302,27 @@ contains
       err = nf_get_var_double(ncid, z_range_id, z_range)
       err = nf_get_var_double(ncid, spacing_id, spacing)
       err = nf_get_var_int(ncid, dimension_id, dimension)
+#ifdef NFSUPPORT
+      else
+         err = nf_inq_varid(ncid, 'x', x_range_id)
+         err = nf_get_att_double(ncid, x_range_id, 'actual_range', x_range)
+
+         err = nf_inq_varid(ncid, 'y', y_range_id)
+         err = nf_get_att_double(ncid, y_range_id, 'actual_range', y_range)
+
+         err = nf_inq_varid(ncid, 'z', z_range_id)
+         err = nf_get_att_double(ncid, z_range_id, 'actual_range', z_range)
+
+         err = nf_inq_dimid(ncid, 'x', x_range_id)
+         err = nf_inq_dimlen(ncid, x_range_id, dimension(1))
+
+         err = nf_inq_dimid(ncid, 'y', y_range_id)
+         err = nf_inq_dimlen(ncid, y_range_id, dimension(2))
+
+         spacing(1) = (x_range(2) - x_range(1))/(dimension(1) - 1)
+         spacing(2) = (y_range(2) - y_range(1))/(dimension(2) - 1)
+      end if
+#endif
       err = nf_close(ncid)
 
       !*** move values into return variables ***
@@ -260,7 +383,7 @@ contains
       write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] East edge is changed from ', eastorg, ' to ', east, '.'
       write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] South edge is changed from ', southorg, ' to ', south, '.'
       write(6,'(a,f0.3,a,f0.3,a)') '[pixcel format] North edge is changed from ', northorg, ' to ', north, '.'
-#ifdef PIXELOUT
+#ifdef PIXCELOUT
       write(6,'(a)') '[pixcel format] Note that the value on truncated area is zero!'
 #endif
 #endif

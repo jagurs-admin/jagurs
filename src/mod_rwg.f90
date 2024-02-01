@@ -175,9 +175,9 @@ contains
 ! === Conversion from flux to velocity should be done right after calc. ========
 !  subroutine maxgrd_v_check_nl(vmax,wfld,dfld,wod,nlon,nlat)
 #ifndef MPI
-   subroutine maxgrd_v_check_nl(vmax,wfld,dfld,wod,nlon,nlat)
+   subroutine maxgrd_v_check_nl(vmax,wfld,dfld,wod,nlon,nlat,linear_flag)
 #else
-   subroutine maxgrd_v_check_nl(vmax,wfld,dfld,wod,nlon,nlat,bflag)
+   subroutine maxgrd_v_check_nl(vmax,wfld,dfld,wod,nlon,nlat,bflag,linear_flag)
 #endif
 ! ==============================================================================
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(inout) :: vmax
@@ -197,6 +197,7 @@ contains
       integer(kind=4), intent(in) :: bflag
 #endif
 ! ==============================================================================
+      integer(kind=4), intent(in) :: linear_flag
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: fx, fy
       integer(kind=4) :: i, j
@@ -219,49 +220,95 @@ contains
 
       !** if wet check for vmax **
 ! === Conversion from flux to velocity should be done right after calc. ========
+      if(linear_flag == 0) then
 !$omp parallel do private(i, im, ip, jm, jp, tdxm, tdxp, tdym, tdyp, tx, ty, vel)
-      do j = 1, nlat
-         do i = 1, nlon
-            tx = 0.0d0
+         do j = 1, nlat
+            do i = 1, nlon
+               tx = 0.0d0
 #ifndef MPI
-            im = max(1,   i-1)
-            ip = min(nlon,i+1)
+               im = max(1,   i-1)
+               ip = min(nlon,i+1)
 #else
-            im = i - 1
-            ip = i + 1
-            if(iand(bflag, WEST_BOUND) /= 0) im = max(1,im)
-            if(iand(bflag, EAST_BOUND) /= 0) ip = min(nlon,ip)
+               im = i - 1
+               ip = i + 1
+               if(iand(bflag, WEST_BOUND) /= 0) im = max(1,im)
+               if(iand(bflag, EAST_BOUND) /= 0) ip = min(nlon,ip)
 #endif
-            tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
-            tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
-            if(wod(im,j) == 1 .and. tdxm > td_min .and. &
-               wod(ip,j) == 1 .and. tdxp > td_min .and. &
-               wod(i,j) == 1) then
-               tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
-            end if
+               tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
+               tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
+               if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                  wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                  wod(i,j) == 1) then
+                  tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+               end if
 
-            ty = 0.0d0
+               ty = 0.0d0
 #ifndef MPI
-            jm = max(1,   j-1)
-            jp = min(nlat,j+1)
+               jm = max(1,   j-1)
+               jp = min(nlat,j+1)
 #else
-            jm = j - 1
-            jp = j + 1
-            if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,jm)
-            if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(nlat,jp)
+               jm = j - 1
+               jp = j + 1
+               if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,jm)
+               if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(nlat,jp)
 #endif
-            tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
-            tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
-            if(wod(i,jm) == 1 .and. tdym > td_min .and. &
-               wod(i,jp) == 1 .and. tdyp > td_min .and. &
-               wod(i,j) == 1) then
-               ty = 0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
-            end if
+               tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
+               tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
+               if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                  wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                  wod(i,j) == 1) then
+                  ty = 0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+               end if
 
-            vel = sqrt(tx**2 + ty**2)
-            if(vel > vmax(i,j)) vmax(i,j) = vel
+               vel = sqrt(tx**2 + ty**2)
+               if(vel > vmax(i,j)) vmax(i,j) = vel
+            end do
          end do
-      end do
+      else
+!$omp parallel do private(i, im, ip, jm, jp, tdxm, tdxp, tdym, tdyp, tx, ty, vel)
+         do j = 1, nlat
+            do i = 1, nlon
+               tx = 0.0d0
+#ifndef MPI
+               im = max(1,   i-1)
+               ip = min(nlon,i+1)
+#else
+               im = i - 1
+               ip = i + 1
+               if(iand(bflag, WEST_BOUND) /= 0) im = max(1,im)
+               if(iand(bflag, EAST_BOUND) /= 0) ip = min(nlon,ip)
+#endif
+               tdxm = 0.5d0*(dz(i,j) + dz(im,j))
+               tdxp = 0.5d0*(dz(i,j) + dz(ip,j))
+               if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                  wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                  wod(i,j) == 1) then
+                  tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+               end if
+
+               ty = 0.0d0
+#ifndef MPI
+               jm = max(1,   j-1)
+               jp = min(nlat,j+1)
+#else
+               jm = j - 1
+               jp = j + 1
+               if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,jm)
+               if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(nlat,jp)
+#endif
+               tdym = 0.5d0*(dz(i,j) + dz(i,jm))
+               tdyp = 0.5d0*(dz(i,j) + dz(i,jp))
+               if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                  wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                  wod(i,j) == 1) then
+                  ty = 0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+               end if
+
+               vel = sqrt(tx**2 + ty**2)
+               if(vel > vmax(i,j)) vmax(i,j) = vel
+            end do
+         end do
+      end if
 ! ==============================================================================
 
       return
@@ -1259,7 +1306,7 @@ contains
       dz => dfld%dz
       wod => wodfld
 ! === Arrival time =============================================================
-      arrivedat => wfld%arrivedat
+      if(check_arrival_time == 1) arrivedat => wfld%arrivedat
 ! ==============================================================================
 
 #ifndef __NEC__
@@ -1424,6 +1471,7 @@ contains
       real(kind=REAL_BYTE), dimension(0:mt-1) :: min_, max_
       integer(kind=4) :: t
 #endif
+      logical :: missing_value_is_available
    
 #ifndef MPI
       imin = 1
@@ -1434,7 +1482,14 @@ contains
 
 #ifndef _OPENMP
 ! === For negative max. height =================================================
-      if(present(flag_missing_value) .and. flag_missing_value) then
+      missing_value_is_available = .false.
+      if(present(flag_missing_value)) then
+         if(flag_missing_value) then
+            missing_value_is_available = .true.
+         end if
+      end if
+
+      if(missing_value_is_available) then
 ! ==============================================================================
          min = -missing_value
          max =  missing_value
@@ -1487,7 +1542,14 @@ contains
       end if
 ! ==============================================================================
 #else
-      if(present(flag_missing_value) .and. flag_missing_value) then
+      missing_value_is_available = .false.
+      if(present(flag_missing_value)) then
+         if(flag_missing_value) then
+            missing_value_is_available = .true.
+         end if
+      end if
+
+      if(missing_value_is_available) then
          min = -missing_value
          max =  missing_value
          min_ = min

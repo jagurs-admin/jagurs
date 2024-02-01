@@ -11,21 +11,18 @@ CFLAGS=-g -traceback -I$(PROJ4_DIR)/include
 # BASE: Specify basic compiler options.
 BASE=-fpp #-ftrace
 
-# FFTW3_INCLUDE_DIR: Specify FFTW3 include directory.
-FFTW3_INCLUDE_DIR=/opt/nec/ve/nlc/1.0.0/include
-
 # FFTW3_LIB: Specify linker options to link FFTW3.
-FFTW3_LIB=-L/opt/nec/ve/nlc/1.0.0/lib -laslfftw3 -lasl_sequential
+FFTW3_LIB=-laslfftw3 -lasl_sequential
 
 # OPT: Specify compiler options about optimization level.
-OPT=-O2 -fopenmp -report-all -fdiag-vector=2 -I$(FFTW3_INCLUDE_DIR) #-mno-vector-fma
-OPT=-O2          -report-all -fdiag-vector=2 -I$(FFTW3_INCLUDE_DIR) #-mno-vector-fma
+OPT=-O2 -fopenmp -report-all -fdiag-vector=2 #-mno-vector-fma
+OPT=-O2          -report-all -fdiag-vector=2 #-mno-vector-fma
 
 # NETCDF: Specify the path to NetCDF library.
 NETCDF=$(HOME)/aurora/local
 
 # LIBS: Specify linker options.
-LIBS=-Bstatic -L$(NETCDF)/lib -lnetcdff -lnetcdf -lhdf5_hl -lhdf5 -lsz -lz -L$(PROJ4_DIR)/lib -lproj $(FFTW3_LIB)
+LIBS=-L$(NETCDF)/lib -lnetcdff -lnetcdf -lhdf5_hl -lhdf5 -lz -L$(PROJ4_DIR)/lib -lproj $(FFTW3_LIB)
 
 # EXEC: Specify the name of executable.
 EXEC=jagurs
@@ -132,14 +129,14 @@ endif
 ifeq ($(MPI),ON)
    FFLAGS+=-DMPI
 ifeq ($(CARTESIAN),ON)
-   OBJS=mapproject.o okada.sub.o \
+   OBJS=mapproject.o okada.sub.SX.o \
         mod_multi.o \
         mod_a2a3d.o mod_truncation.o mod_timer.o mod_mpi_fatal.o mod_grid.o mod_params.o mod_mpi.o mod_onefile.o mod_mygmt_gridio.o \
         mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o mod_bank.o \
                       mod_displacement.o               mod_rwg.o \
         mod_tgs.o mod_newsubs.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o mod_restart.o mod_dump1d.o JAGURS.o
 else
-   OBJS=mapproject.o okada.sub.o \
+   OBJS=mapproject.o okada.sub.SX.o \
         mod_multi.o \
         mod_a2a3d.o mod_truncation.o mod_timer.o mod_mpi_fatal.o mod_grid.o mod_params.o mod_mpi.o mod_onefile.o mod_mygmt_gridio.o \
         mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o mod_bank.o \
@@ -158,14 +155,14 @@ endif
 endif
 else
 ifeq ($(CARTESIAN),ON)
-   OBJS=mapproject.o okada.sub.o \
+   OBJS=mapproject.o okada.sub.SX.o \
         mod_multi.o \
         mod_truncation.o mod_timer.o                 mod_grid.o mod_params.o           mod_mygmt_gridio.o \
         mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o mod_bank.o \
                       mod_displacement.o               mod_rwg.o \
         mod_tgs.o mod_newsubs.o mod_ncdio.o mod_init_disp_gaussian.o mod_init_disp_sinwave.o mod_restart.o mod_dump1d.o JAGURS.o
 else
-   OBJS=mapproject.o okada.sub.o \
+   OBJS=mapproject.o okada.sub.SX.o \
         mod_multi.o \
         mod_truncation.o mod_timer.o                 mod_grid.o mod_params.o           mod_mygmt_gridio.o \
         mod_fxy.o mod_fxy_cartesian.o mod_nest.o mod_interpolation.o mod_fxy_disp.o mod_fxy_disp_cartesian.o mod_hxy.o mod_hxy_cartesian.o mod_bank.o \
@@ -252,6 +249,7 @@ endif
 ifeq ($(PIXELOUT),ON)
    FFLAGS+=-DPIXELOUT
 endif
+FFLAGS+=-DNFSUPPORT
 
 ################################################################################
 ### Make rules                                                               ###

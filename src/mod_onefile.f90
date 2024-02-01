@@ -67,9 +67,16 @@ contains
       srcount   = srcount_x*srcount_y
 
       if(myrank == 0) then
+#ifndef NFSUPPORT
          allocate(dg%my%buf_g(srcount*nprocs))
 #ifdef NCDIO
          allocate(dg%my%buf_g_ncdio(srcount*nprocs))
+#endif
+#else
+         allocate(dg%my%buf_g(srcount))
+#ifdef NCDIO
+         allocate(dg%my%buf_g_ncdio(srcount))
+#endif
 #endif
       else
          allocate(dg%my%buf_g(1))
@@ -117,6 +124,9 @@ contains
       real(kind=REAL_BYTE), pointer, dimension(:) :: buf_g
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: buf_l
       integer(kind=4) :: i, j, p, ind, ierr
+#ifdef NFSUPPORT
+      integer(kind=4) :: ireq, istat(MPI_STATUS_SIZE)
+#endif
 
       nx        => dg%my%nx
       ny        => dg%my%ny
@@ -131,6 +141,7 @@ contains
       buf_g     => dg%my%buf_g
       buf_l     => dg%my%buf_l
 
+#ifndef NFSUPPORT
       if(myrank == 0) then
          do p = 0, nprocs - 1
             do j = ky_all(p), kyend_all(p)
@@ -153,6 +164,42 @@ contains
             aout(i,j) = buf_l(i,j)
          end do
       end do
+#else
+      do p = 0, nprocs - 1
+         if(myrank == p) then
+#ifndef MULTI
+            call MPI_Irecv(buf_l, srcount, REAL_MPI, 0, 0, MPI_COMM_WORLD, ireq, ierr)
+#else
+            call MPI_Irecv(buf_l, srcount, REAL_MPI, 0, 0, MPI_MEMBER_WORLD, ireq, ierr)
+#endif
+         end if
+
+         if(myrank == 0) then
+            do j = ky_all(p), kyend_all(p)
+               do i = kx_all(p), kxend_all(p)
+                 ind = (i - kx_all(p) + 1) + (j - ky_all(p))*srcount_x
+                 buf_g(ind) = ain(i,j)
+               end do
+            end do
+
+#ifndef MULTI
+            call MPI_Send(buf_g, srcount, REAL_MPI, p, 0, MPI_COMM_WORLD, ierr)
+#else
+            call MPI_Send(buf_g, srcount, REAL_MPI, p, 0, MPI_MEMBER_WORLD, ierr)
+#endif
+         end if
+
+         if(myrank == p) then
+            call MPI_Wait(ireq, istat, ierr)
+
+            do j = 1, ny
+               do i = 1, nx
+                  aout(i,j) = buf_l(i,j)
+               end do
+            end do
+         end if
+      end do
+#endif
 
       return
    end subroutine onefile_scatter_array
@@ -167,6 +214,9 @@ contains
       real(kind=REAL_BYTE), pointer, dimension(:) :: buf_g
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: buf_l
       integer(kind=4) :: i, j, p, ind, ierr
+#ifdef NFSUPPORT
+      integer(kind=4) :: ireq, istat(MPI_STATUS_SIZE)
+#endif
 
       nx        => dg%my%nx
       ny        => dg%my%ny
@@ -184,6 +234,7 @@ contains
       buf_g     => dg%my%buf_g
       buf_l     => dg%my%buf_l
 
+#ifndef NFSUPPORT
       do j = 1, ny
          do i = 1, nx
             buf_l(i,j) = ain(i,j)
@@ -206,6 +257,42 @@ contains
             end do
          end do
       end if
+#else
+      do p = 0, nprocs - 1
+         if(myrank == 0) then
+#ifndef MULTI
+            call MPI_Irecv(buf_g, srcount, REAL_MPI, p, 0, MPI_COMM_WORLD, ireq, ierr)
+#else
+            call MPI_Irecv(buf_g, srcount, REAL_MPI, p, 0, MPI_MEMBER_WORLD, ireq, ierr)
+#endif
+         end if
+
+         if(myrank == p) then
+            do j = 1, ny
+               do i = 1, nx
+                  buf_l(i,j) = ain(i,j)
+               end do
+            end do
+
+#ifndef MULTI
+            call MPI_Send(buf_l, srcount, REAL_MPI, 0, 0, MPI_COMM_WORLD, ierr)
+#else
+            call MPI_Send(buf_l, srcount, REAL_MPI, 0, 0, MPI_MEMBER_WORLD, ierr)
+#endif
+         end if
+
+         if(myrank == 0) then
+            call MPI_Wait(ireq, istat, ierr)
+
+            do j = iy_all(p), iyend_all(p)
+               do i = ix_all(p), ixend_all(p)
+                 ind = (i - kx_all(p) + 1) + (j - ky_all(p))*srcount_x
+                 aout(i,j) = buf_g(ind)
+               end do
+            end do
+         end if
+      end do
+#endif
 
       return
    end subroutine onefile_gather_array

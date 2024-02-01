@@ -91,9 +91,17 @@ contains
    end subroutine add_suffix_to_grid_filenames
 #endif
 #ifndef PIXELIN
+#ifndef NFSUPPORT
    subroutine read_bathymetry_gmt_grdhdr(fname,nx,ny,dxdy,mlon0,mlat0)
 #else
+   subroutine read_bathymetry_gmt_grdhdr(fname,nx,ny,dxdy,mlon0,mlat0,formatid)
+#endif
+#else
+#ifndef NFSUPPORT
    subroutine read_bathymetry_gmt_grdhdr(fname,nx,ny,dxdy,mlon0,mlat0,nxorg,nyorg)
+#else
+   subroutine read_bathymetry_gmt_grdhdr(fname,nx,ny,dxdy,mlon0,mlat0,nxorg,nyorg,formatid)
+#endif
 #endif
       character(len=256), intent(in) :: fname
       integer(kind=4), intent(out) :: nx, ny
@@ -103,11 +111,22 @@ contains
 #ifdef PIXELIN
       integer(kind=4), intent(out) :: nxorg, nyorg
 #endif
+#ifdef NFSUPPORT
+      integer(kind=4), intent(out) :: formatid
+#endif
 
 #ifndef PIXELIN
+#ifndef NFSUPPORT
       call read_gmt_grd_hdr(fname,nlon,nlat,dx,dy,west,east,south,north,zmin,zmax)
 #else
+      call read_gmt_grd_hdr(fname,nlon,nlat,dx,dy,west,east,south,north,zmin,zmax,formatid)
+#endif
+#else
+#ifndef NFSUPPORT
       call read_gmt_grd_hdr(fname,nlon,nlat,dx,dy,west,east,south,north,zmin,zmax,nxorg,nyorg)
+#else
+      call read_gmt_grd_hdr(fname,nlon,nlat,dx,dy,west,east,south,north,zmin,zmax,nxorg,nyorg,formatid)
+#endif
 #endif
 
       write(6,'(/,8x,a,a)') 'read_bathymetry_gmt_grdhdr(newsub.o): file name=', trim(fname)
@@ -528,12 +547,20 @@ contains
 #ifndef DIROUT
 ! === For negative max. height =================================================
 !                        dx, dy, zmin, zmax, nlon, nlat, fname)
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, nlon, nlat, fname, flag_missing_value)
+#else
+                         dx, dy, zmin, zmax, nlon, nlat, fname, dg%my%formatid, flag_missing_value)
+#endif
 ! ==============================================================================
 #else
 ! === For negative max. height =================================================
 !                        dx, dy, zmin, zmax, nlon, nlat, fname_dir)
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, nlon, nlat, fname_dir, flag_missing_value)
+#else
+                         dx, dy, zmin, zmax, nlon, nlat, fname_dir, dg%my%formatid, flag_missing_value)
+#endif
 ! ==============================================================================
 #endif
 #else
@@ -553,9 +580,17 @@ contains
 #ifndef PIXELOUT
       call mygmt_grdio_d(hzmax_all, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname, flag_missing_value)
 #else
+                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname, dg%my%formatid, flag_missing_value)
+#endif
+#else
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir, flag_missing_value)
+#else
+                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir, dg%my%formatid, flag_missing_value)
+#endif
 #endif
 #else
       allocate(hzmaxorg(0:nxorg-1,0:nyorg-1))
@@ -728,12 +763,20 @@ contains
 #ifndef DIROUT
 ! === For negative min. height =================================================
 !                        dx, dy, zmin, zmax, nlon, nlat, fname)
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, nlon, nlat, fname, flag_missing_value)
+#else
+                         dx, dy, zmin, zmax, nlon, nlat, fname, dg%my%formatid, flag_missing_value)
+#endif
 ! ==============================================================================
 #else
 ! === For negative min. height =================================================
 !                        dx, dy, zmin, zmax, nlon, nlat, fname_dir)
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, nlon, nlat, fname_dir, flag_missing_value)
+#else
+                         dx, dy, zmin, zmax, nlon, nlat, fname_dir, dg%my%formatid, flag_missing_value)
+#endif
 ! ==============================================================================
 #endif
 #else
@@ -753,9 +796,17 @@ contains
 #ifndef PIXELOUT
       call mygmt_grdio_d(hzmin_all, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname, flag_missing_value)
 #else
+                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname, dg%my%formatid, flag_missing_value)
+#endif
+#else
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir, flag_missing_value)
+#else
+                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir, dg%my%formatid, flag_missing_value)
+#endif
 #endif
 #else
       allocate(hzminorg(0:nxorg-1,0:nyorg-1))
@@ -907,9 +958,17 @@ contains
 #ifndef PIXELOUT
       call mygmt_grdio_d(vmax, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, nlon, nlat, fname)
 #else
+                         dx, dy, zmin, zmax, nlon, nlat, fname, dg%my%formatid)
+#endif
+#else
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, nlon, nlat, fname_dir)
+#else
+                         dx, dy, zmin, zmax, nlon, nlat, fname_dir, dg%my%formatid)
+#endif
 #endif
 #else
       allocate(vmaxorg(0:nxorg-1,0:nyorg-1))
@@ -928,9 +987,17 @@ contains
 #ifndef PIXELOUT
       call mygmt_grdio_d(vmax_all, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname)
 #else
+                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname, dg%my%formatid)
+#endif
+#else
+#ifndef NFSUPPORT
                          dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir)
+#else
+                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir, dg%my%formatid)
+#endif
 #endif
 #else
       allocate(vmaxorg(0:nxorg-1,0:nyorg-1))
@@ -958,19 +1025,19 @@ contains
 #ifndef MPI
    subroutine dump_gmt_nl(wfld,dfld,tfld,nlon,nlat,wod, &
 #ifndef PIXELOUT
-                          mlat0,mlon0,dxdy,t,istep,base,mode)
+                          mlat0,mlon0,dxdy,t,istep,base,mode,linear_flag)
 #else
-                          mlat0,mlon0,dxdy,t,istep,base,mode,nxorg,nyorg)
+                          mlat0,mlon0,dxdy,t,istep,base,mode,nxorg,nyorg,linear_flag)
 #endif
 #else
    subroutine dump_gmt_nl(wfld,dfld,tfld,nlon,nlat,wod, &
 #ifndef ONEFILE
-                          mlat0,mlon0,dxdy,t,istep,myrank,base,mode,bflag)
+                          mlat0,mlon0,dxdy,t,istep,myrank,base,mode,bflag,linear_flag)
 #else
 #ifndef PIXELOUT
-                          mlat0,mlon0,dxdy,t,istep,myrank,base,mode,bflag,dg)
+                          mlat0,mlon0,dxdy,t,istep,myrank,base,mode,bflag,dg,linear_flag)
 #else
-                          mlat0,mlon0,dxdy,t,istep,myrank,base,mode,bflag,dg,nxorg,nyorg)
+                          mlat0,mlon0,dxdy,t,istep,myrank,base,mode,bflag,dg,nxorg,nyorg,linear_flag)
 #endif
 #endif
 #endif
@@ -1002,6 +1069,7 @@ contains
 #ifdef PIXELOUT
       integer(kind=4), intent(in) :: nxorg, nyorg
 #endif
+      integer(kind=4), intent(in) :: linear_flag
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz, dz, tp, fx, fy
       character(len=512) :: fname
@@ -1200,7 +1268,11 @@ contains
       call mygmt_grdio_d(tp,lon_west,lon_east,lat_south,lat_north, &
 ! === Wave height should be missing value on dry cell. =========================
 !                        dx,dy,zmin,zmax,nlon,nlat,fname)
+#ifndef NFSUPPORT
                          dx,dy,zmin,zmax,nlon,nlat,fname,.true.)
+#else
+                         dx,dy,zmin,zmax,nlon,nlat,fname,dg%my%formatid,.true.)
+#endif
 ! ==============================================================================
 #else
       allocate(tporg(0:nxorg-1,0:nyorg-1))
@@ -1214,7 +1286,11 @@ contains
 #else
 #ifndef PIXELOUT
       call mygmt_grdio_d(tp_all,lon_west,lon_east,lat_south,lat_north, &
+#ifndef NFSUPPORT
                          dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,.true.)
+#else
+                         dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,dg%my%formatid,.true.)
+#endif
 #else
       allocate(tporg(0:nxorg-1,0:nyorg-1))
       tporg = 0.0d0
@@ -1238,28 +1314,53 @@ contains
 
          ! Burbidge: Now output vx
 ! === Conversion from flux to velocity should be done right after calc. ========
-         do j = 1, nlat
-            do i = 1, nlon
+         if(linear_flag == 0) then
+            do j = 1, nlat
+               do i = 1, nlon
 #ifndef MPI
-               im = max(1,   i-1)
-               ip = min(nlon,i+1)
+                  im = max(1,   i-1)
+                  ip = min(nlon,i+1)
 #else
-               im = i - 1
-               ip = i + 1
-               if(iand(bflag, WEST_BOUND) /= 0) im = max(1,im)
-               if(iand(bflag, EAST_BOUND) /= 0) ip = min(nlon,ip)
+                  im = i - 1
+                  ip = i + 1
+                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,im)
+                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(nlon,ip)
 #endif
-               tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
-               tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
-               if(wod(im,j) == 1 .and. tdxm > td_min .and. &
-                  wod(ip,j) == 1 .and. tdxp > td_min .and. &
-                  wod(i,j) == 1) then
-                  tp(i,j) = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
-               else
-                  tp(i,j) = zap
-               end if
+                  tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
+                  tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
+                  if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                     wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                     wod(i,j) == 1) then
+                     tp(i,j) = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+                  else
+                     tp(i,j) = zap
+                  end if
+               end do
             end do
-         end do
+         else
+            do j = 1, nlat
+               do i = 1, nlon
+#ifndef MPI
+                  im = max(1,   i-1)
+                  ip = min(nlon,i+1)
+#else
+                  im = i - 1
+                  ip = i + 1
+                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,im)
+                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(nlon,ip)
+#endif
+                  tdxm = 0.5d0*(dz(i,j) + dz(im,j))
+                  tdxp = 0.5d0*(dz(i,j) + dz(ip,j))
+                  if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                     wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                     wod(i,j) == 1) then
+                     tp(i,j) = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+                  else
+                     tp(i,j) = zap
+                  end if
+               end do
+            end do
+         end if
 ! ==============================================================================
 
 #ifndef MPI
@@ -1324,7 +1425,11 @@ contains
 #if !defined(MPI) || !defined(ONEFILE)
 #ifndef PIXELOUT
          call mygmt_grdio_d(tp,lon_west,lon_east,lat_south,lat_north, &
+#ifndef NFSUPPORT
                             dx,dy,zmin,zmax,nlon,nlat,fname)
+#else
+                            dx,dy,zmin,zmax,nlon,nlat,fname,dg%my%formatid)
+#endif
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
          tporg = 0.0d0
@@ -1337,7 +1442,11 @@ contains
 #else
 #ifndef PIXELOUT
          call mygmt_grdio_d(tp_all,lon_west,lon_east,lat_south,lat_north, &
+#ifndef NFSUPPORT
                             dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname)
+#else
+                            dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,dg%my%formatid)
+#endif
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
          tporg = 0.0d0
@@ -1353,28 +1462,53 @@ contains
 
          ! Burbidge - Now do vy
 ! === Conversion from flux to velocity should be done right after calc. ========
-         do j = 1, nlat
-            do i = 1, nlon
+         if(linear_flag == 0) then
+            do j = 1, nlat
+               do i = 1, nlon
 #ifndef MPI
-               jm = max(1,   j-1)
-               jp = min(nlat,j+1)
+                  jm = max(1,   j-1)
+                  jp = min(nlat,j+1)
 #else
-               jm = j - 1
-               jp = j + 1
-               if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,jm)
-               if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(nlat,jp)
+                  jm = j - 1
+                  jp = j + 1
+                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,jm)
+                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(nlat,jp)
 #endif
-               tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
-               tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
-               if(wod(i,jm) == 1 .and. tdym > td_min .and. &
-                  wod(i,jp) == 1 .and. tdyp > td_min .and. &
-                  wod(i,j) == 1) then
-                  tp(i,j) = 0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
-               else
-                  tp(i,j) = zap
-               end if
+                  tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
+                  tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
+                  if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                     wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                     wod(i,j) == 1) then
+                     tp(i,j) = 0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+                  else
+                     tp(i,j) = zap
+                  end if
+               end do
             end do
-         end do
+         else
+            do j = 1, nlat
+               do i = 1, nlon
+#ifndef MPI
+                  jm = max(1,   j-1)
+                  jp = min(nlat,j+1)
+#else
+                  jm = j - 1
+                  jp = j + 1
+                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,jm)
+                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(nlat,jp)
+#endif
+                  tdym = 0.5d0*(dz(i,j) + dz(i,jm))
+                  tdyp = 0.5d0*(dz(i,j) + dz(i,jp))
+                  if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                     wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                     wod(i,j) == 1) then
+                     tp(i,j) = 0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+                  else
+                     tp(i,j) = zap
+                  end if
+               end do
+            end do
+         end if
 ! ==============================================================================
 
 #ifndef MPI
@@ -1441,7 +1575,11 @@ contains
 #if !defined(MPI) || !defined(ONEFILE)
 #ifndef PIXELOUT
          call mygmt_grdio_d(tp,lon_west,lon_east,lat_south,lat_north, &
+#ifndef NFSUPPORT
                             dx,dy,zmin,zmax,nlon,nlat,fname)
+#else
+                            dx,dy,zmin,zmax,nlon,nlat,fname,dg%my%formatid)
+#endif
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
          tporg = 0.0d0
@@ -1454,7 +1592,11 @@ contains
 #else
 #ifndef PIXELOUT
          call mygmt_grdio_d(tp_all,lon_west,lon_east,lat_south,lat_north, &
+#ifndef NFSUPPORT
                             dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname)
+#else
+                            dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,dg%my%formatid)
+#endif
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
          tporg = 0.0d0
@@ -1472,49 +1614,95 @@ contains
             fx => wfld%fx
             fy => wfld%fy
 
+            if(linear_flag == 0) then
 !$omp parallel do private(i, im, ip, jm, jp, tdxm, tdxp, tdym, tdyp, tx, ty, speed)
-            do j = 1, nlat
-               do i = 1, nlon
-                  tx = 0.0d0
+               do j = 1, nlat
+                  do i = 1, nlon
+                     tx = 0.0d0
 #ifndef MPI
-                  im = max(1,   i-1)
-                  ip = min(nlon,i+1)
+                     im = max(1,   i-1)
+                     ip = min(nlon,i+1)
 #else
-                  im = i - 1
-                  ip = i + 1
-                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,im)
-                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(nlon,ip)
+                     im = i - 1
+                     ip = i + 1
+                     if(iand(bflag, WEST_BOUND) /= 0) im = max(1,im)
+                     if(iand(bflag, EAST_BOUND) /= 0) ip = min(nlon,ip)
 #endif
-                  tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
-                  tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
-                  if(wod(im,j) == 1 .and. tdxm > td_min .and. &
-                     wod(ip,j) == 1 .and. tdxp > td_min .and. &
-                     wod(i,j) == 1) then
-                     tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
-                  end if
+                     tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
+                     tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
+                     if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                        wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                        wod(i,j) == 1) then
+                        tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+                     end if
 
-                  ty = 0.0d0
+                     ty = 0.0d0
 #ifndef MPI
-                  jm = max(1,   j-1)
-                  jp = min(nlat,j+1)
+                     jm = max(1,   j-1)
+                     jp = min(nlat,j+1)
 #else
-                  jm = j - 1
-                  jp = j + 1
-                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,jm)
-                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(nlat,jp)
+                     jm = j - 1
+                     jp = j + 1
+                     if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,jm)
+                     if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(nlat,jp)
 #endif
-                  tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
-                  tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
-                  if(wod(i,jm) == 1 .and. tdym > td_min .and. &
-                     wod(i,jp) == 1 .and. tdyp > td_min .and. &
-                     wod(i,j) == 1) then
-                     ty = 0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
-                  end if
+                     tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
+                     tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
+                     if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                        wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                        wod(i,j) == 1) then
+                        ty = 0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+                     end if
 
-                  speed = sqrt(tx**2 + ty**2)
-                  tp(i,j) = speed
+                     speed = sqrt(tx**2 + ty**2)
+                     tp(i,j) = speed
+                  end do
                end do
-            end do
+            else
+!$omp parallel do private(i, im, ip, jm, jp, tdxm, tdxp, tdym, tdyp, tx, ty, speed)
+               do j = 1, nlat
+                  do i = 1, nlon
+                     tx = 0.0d0
+#ifndef MPI
+                     im = max(1,   i-1)
+                     ip = min(nlon,i+1)
+#else
+                     im = i - 1
+                     ip = i + 1
+                     if(iand(bflag, WEST_BOUND) /= 0) im = max(1,im)
+                     if(iand(bflag, EAST_BOUND) /= 0) ip = min(nlon,ip)
+#endif
+                     tdxm = 0.5d0*(dz(i,j) + dz(im,j))
+                     tdxp = 0.5d0*(dz(i,j) + dz(ip,j))
+                     if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                        wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                        wod(i,j) == 1) then
+                        tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+                     end if
+
+                     ty = 0.0d0
+#ifndef MPI
+                     jm = max(1,   j-1)
+                     jp = min(nlat,j+1)
+#else
+                     jm = j - 1
+                     jp = j + 1
+                     if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,jm)
+                     if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(nlat,jp)
+#endif
+                     tdym = 0.5d0*(dz(i,j) + dz(i,jm))
+                     tdyp = 0.5d0*(dz(i,j) + dz(i,jp))
+                     if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                        wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                        wod(i,j) == 1) then
+                        ty = 0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+                     end if
+
+                     speed = sqrt(tx**2 + ty**2)
+                     tp(i,j) = speed
+                  end do
+               end do
+            end if
 
 #ifndef MPI
 #ifndef PIXELOUT
@@ -1565,7 +1753,11 @@ contains
 #if !defined(MPI) || !defined(ONEFILE)
 #ifndef PIXELOUT
             call mygmt_grdio_d(tp,lon_west,lon_east,lat_south,lat_north, &
+#ifndef NFSUPPORT
                                dx,dy,zmin,zmax,nlon,nlat,fname)
+#else
+                               dx,dy,zmin,zmax,nlon,nlat,fname,dg%my%formatid)
+#endif
 #else
             allocate(tporg(0:nxorg-1,0:nyorg-1))
             tporg = 0.0d0
@@ -1578,7 +1770,11 @@ contains
 #else
 #ifndef PIXELOUT
             call mygmt_grdio_d(tp_all,lon_west,lon_east,lat_south,lat_north, &
+#ifndef NFSUPPORT
                                dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname)
+#else
+                               dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,dg%my%formatid)
+#endif
 #else
             allocate(tporg(0:nxorg-1,0:nyorg-1))
             tporg = 0.0d0
@@ -1674,6 +1870,9 @@ contains
       integer(kind=4), intent(in) :: myrank
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: zz_all
 #endif
+#ifdef NFSUPPORT
+      integer(kind=4) :: formatid
+#endif
 
       ! RWG
       if(trim(fname) == 'NO_DISPLACEMENT_FILE_GIVEN') return
@@ -1682,7 +1881,11 @@ contains
 #if defined(MPI) && defined(ONEFILE)
       if(myrank == 0) then
 #endif
+#ifndef NFSUPPORT
       call read_gmt_grd_hdr(fname, snx, sny, dx, dy, west, east, south, north, zmin, zmax)
+#else
+      call read_gmt_grd_hdr(fname, snx, sny, dx, dy, west, east, south, north, zmin, zmax, formatid)
+#endif
 #if defined(MPI) && defined(ONEFILE)
       end if
 #endif

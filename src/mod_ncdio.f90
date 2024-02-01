@@ -450,12 +450,12 @@ contains
 ! === Conversion from flux to velocity should be done right after calc. ========
 !  subroutine write_snapshot(dgrid, t, istep)
 #ifndef MPI
-   subroutine write_snapshot(dgrid, t, istep, mode)
+   subroutine write_snapshot(dgrid, t, istep, mode, linear_flag)
 #else
 #ifndef ONEFILE
-   subroutine write_snapshot(dgrid, t, istep, mode, bflag)
+   subroutine write_snapshot(dgrid, t, istep, mode, bflag, linear_flag)
 #else
-   subroutine write_snapshot(dgrid, t, istep, mode, bflag, myrank)
+   subroutine write_snapshot(dgrid, t, istep, mode, bflag, myrank, linear_flag)
 #endif
 #endif
 ! ==============================================================================
@@ -471,6 +471,7 @@ contains
 #endif
 #endif
 ! ==============================================================================
+      integer(kind=4), intent(in) :: linear_flag
 
       integer(kind=4), pointer, dimension(:) :: start, count
       integer(kind=4), pointer :: ncid, timeid, stepid, hzid, vxid, vyid, speedid
@@ -596,46 +597,89 @@ contains
 ! ==============================================================================
       if(velgrd_flag == 1) then
 ! === Conversion from flux to velocity should be done right after calc. ========
-         do j = 1, jsize
-            do i = 1, isize
+         if(linear_flag == 0) then
+            do j = 1, jsize
+               do i = 1, isize
 #if !defined(MPI) || !defined(ONEFILE)
-               i_ = i + ist - 1
-               j_ = j + jst - 1
+                  i_ = i + ist - 1
+                  j_ = j + jst - 1
 #ifndef MPI
-               im = max(1,  i_-1)
-               ip = min(ien,i_+1)
+                  im = max(1,  i_-1)
+                  ip = min(ien,i_+1)
 #else
-               im = i_ - 1
-               ip = i_ + 1
-               if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
-               if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+                  im = i_ - 1
+                  ip = i_ + 1
+                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
 #endif
-               tdxm = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(im,j_) + hz(im,j_))
-               tdxp = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(ip,j_) + hz(ip,j_))
-               if(wod(im,j_) == 1 .and. tdxm > td_min .and. &
-                  wod(ip,j_) == 1 .and. tdxp > td_min .and. &
-                  wod(i_,j_) == 1) then
-                  tmp(i, jsize-j+1) = 0.5d0*(fx(i_,j_)/tdxp + fx(im,j_)/tdxm)
-               else
-                  tmp(i, jsize-j+1) = 0.0d0
-               end if
+                  tdxm = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(im,j_) + hz(im,j_))
+                  tdxp = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(ip,j_) + hz(ip,j_))
+                  if(wod(im,j_) == 1 .and. tdxm > td_min .and. &
+                     wod(ip,j_) == 1 .and. tdxp > td_min .and. &
+                     wod(i_,j_) == 1) then
+                     tmp(i, jsize-j+1) = 0.5d0*(fx(i_,j_)/tdxp + fx(im,j_)/tdxm)
+                  else
+                     tmp(i, jsize-j+1) = 0.0d0
+                  end if
 #else
-               im = i - 1
-               ip = i + 1
-               if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
-               if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
-               tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
-               tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
-               if(wod(im,j) == 1 .and. tdxm > td_min .and. &
-                  wod(ip,j) == 1 .and. tdxp > td_min .and. &
-                  wod(i,j) == 1) then
-                  tmp(i,j) = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
-               else
-                  tmp(i,j) = 0.0d0
-               end if
+                  im = i - 1
+                  ip = i + 1
+                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+                  tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
+                  tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
+                  if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                     wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                     wod(i,j) == 1) then
+                     tmp(i,j) = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+                  else
+                     tmp(i,j) = 0.0d0
+                  end if
 #endif
+               end do
             end do
-         end do
+         else
+            do j = 1, jsize
+               do i = 1, isize
+#if !defined(MPI) || !defined(ONEFILE)
+                  i_ = i + ist - 1
+                  j_ = j + jst - 1
+#ifndef MPI
+                  im = max(1,  i_-1)
+                  ip = min(ien,i_+1)
+#else
+                  im = i_ - 1
+                  ip = i_ + 1
+                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+#endif
+                  tdxm = 0.5d0*(dz(i_,j_) + dz(im,j_))
+                  tdxp = 0.5d0*(dz(i_,j_) + dz(ip,j_))
+                  if(wod(im,j_) == 1 .and. tdxm > td_min .and. &
+                     wod(ip,j_) == 1 .and. tdxp > td_min .and. &
+                     wod(i_,j_) == 1) then
+                     tmp(i, jsize-j+1) = 0.5d0*(fx(i_,j_)/tdxp + fx(im,j_)/tdxm)
+                  else
+                     tmp(i, jsize-j+1) = 0.0d0
+                  end if
+#else
+                  im = i - 1
+                  ip = i + 1
+                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+                  tdxm = 0.5d0*(dz(i,j) + + dz(im,j))
+                  tdxp = 0.5d0*(dz(i,j) + + dz(ip,j))
+                  if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                     wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                     wod(i,j) == 1) then
+                     tmp(i,j) = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+                  else
+                     tmp(i,j) = 0.0d0
+                  end if
+#endif
+               end do
+            end do
+         end if
 ! ==============================================================================
 #if !defined(MPI) || !defined(ONEFILE)
          stat = nf_put_vara_real(ncid, vxid, start, count, tmp)
@@ -655,48 +699,93 @@ contains
 #endif
 
 ! === Conversion from flux to velocity should be done right after calc. ========
-         do j = 1, jsize
-            do i = 1, isize
+         if(linear_flag == 0) then
+            do j = 1, jsize
+               do i = 1, isize
 #if !defined(MPI) || !defined(ONEFILE)
-               i_ = i + ist - 1
-               j_ = j + jst - 1
+                  i_ = i + ist - 1
+                  j_ = j + jst - 1
 #ifndef MPI
-               jm = max(1,  j_-1)
-               jp = min(jen,j_+1)
+                  jm = max(1,  j_-1)
+                  jp = min(jen,j_+1)
 #else
-               jm = j_ - 1
-               jp = j_ + 1
-               if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
-               if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+                  jm = j_ - 1
+                  jp = j_ + 1
+                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
 #endif
-               tdym = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(i_,jm) + hz(i_,jm))
-               tdyp = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(i_,jp) + hz(i_,jp))
-               if(wod(i_,jm) == 1 .and. tdym > td_min .and. &
-                  wod(i_,jp) == 1 .and. tdyp > td_min .and. &
-                  wod(i_,j_) == 1) then
-                  ! Invert latitude!!!
-                  tmp(i, jsize-j+1) = -0.5d0*(fy(i_,j_)/tdyp + fy(i_,jm)/tdym)
-               else
-                  tmp(i, jsize-j+1) = 0.0d0
-               end if
+                  tdym = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(i_,jm) + hz(i_,jm))
+                  tdyp = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(i_,jp) + hz(i_,jp))
+                  if(wod(i_,jm) == 1 .and. tdym > td_min .and. &
+                     wod(i_,jp) == 1 .and. tdyp > td_min .and. &
+                     wod(i_,j_) == 1) then
+                     ! Invert latitude!!!
+                     tmp(i, jsize-j+1) = -0.5d0*(fy(i_,j_)/tdyp + fy(i_,jm)/tdym)
+                  else
+                     tmp(i, jsize-j+1) = 0.0d0
+                  end if
 #else
-               jm = j - 1
-               jp = j + 1
-               if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
-               if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
-               tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
-               tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
-               if(wod(i,jm) == 1 .and. tdym > td_min .and. &
-                  wod(i,jp) == 1 .and. tdyp > td_min .and. &
-                  wod(i,j) == 1) then
-                  ! Invert latitude!!!
-                  tmp(i,j) = -0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
-               else
-                  tmp(i,j) = 0.0d0
-               end if
+                  jm = j - 1
+                  jp = j + 1
+                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+                  tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
+                  tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
+                  if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                     wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                     wod(i,j) == 1) then
+                     ! Invert latitude!!!
+                     tmp(i,j) = -0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+                  else
+                     tmp(i,j) = 0.0d0
+                  end if
 #endif
+               end do
             end do
-         end do
+         else
+            do j = 1, jsize
+               do i = 1, isize
+#if !defined(MPI) || !defined(ONEFILE)
+                  i_ = i + ist - 1
+                  j_ = j + jst - 1
+#ifndef MPI
+                  jm = max(1,  j_-1)
+                  jp = min(jen,j_+1)
+#else
+                  jm = j_ - 1
+                  jp = j_ + 1
+                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+#endif
+                  tdym = 0.5d0*(dz(i_,j_) + dz(i_,jm))
+                  tdyp = 0.5d0*(dz(i_,j_) + dz(i_,jp))
+                  if(wod(i_,jm) == 1 .and. tdym > td_min .and. &
+                     wod(i_,jp) == 1 .and. tdyp > td_min .and. &
+                     wod(i_,j_) == 1) then
+                     ! Invert latitude!!!
+                     tmp(i, jsize-j+1) = -0.5d0*(fy(i_,j_)/tdyp + fy(i_,jm)/tdym)
+                  else
+                     tmp(i, jsize-j+1) = 0.0d0
+                  end if
+#else
+                  jm = j - 1
+                  jp = j + 1
+                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+                  tdym = 0.5d0*(dz(i,j) + dz(i,jm))
+                  tdyp = 0.5d0*(dz(i,j) + dz(i,jp))
+                  if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                     wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                     wod(i,j) == 1) then
+                     ! Invert latitude!!!
+                     tmp(i,j) = -0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+                  else
+                     tmp(i,j) = 0.0d0
+                  end if
+#endif
+               end do
+            end do
+         end if
 ! ==============================================================================
 #if !defined(MPI) || !defined(ONEFILE)
          stat = nf_put_vara_real(ncid, vyid, start, count, tmp)
@@ -716,89 +805,175 @@ contains
 #endif
       end if
          if(speedgrd_flag == 1) then
-            do j = 1, jsize
-               do i = 1, isize
-                  tx = 0.0d0
+            if(linear_flag == 0) then
+               do j = 1, jsize
+                  do i = 1, isize
+                     tx = 0.0d0
 
 #if !defined(MPI) || !defined(ONEFILE)
-                  i_ = i + ist - 1
-                  j_ = j + jst - 1
+                     i_ = i + ist - 1
+                     j_ = j + jst - 1
 #ifndef MPI
-                  im = max(1,  i_-1)
-                  ip = min(ien,i_+1)
+                     im = max(1,  i_-1)
+                     ip = min(ien,i_+1)
 #else
-                  im = i_ - 1
-                  ip = i_ + 1
-                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
-                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+                     im = i_ - 1
+                     ip = i_ + 1
+                     if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+                     if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
 #endif
-                  tdxm = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(im,j_) + hz(im,j_))
-                  tdxp = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(ip,j_) + hz(ip,j_))
-                  if(wod(im,j_) == 1 .and. tdxm > td_min .and. &
-                     wod(ip,j_) == 1 .and. tdxp > td_min .and. &
-                     wod(i_,j_) == 1) then
-                     tx = 0.5d0*(fx(i_,j_)/tdxp + fx(im,j_)/tdxm)
-                  else
-                     tx = 0.0d0
-                  end if
+                     tdxm = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(im,j_) + hz(im,j_))
+                     tdxp = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(ip,j_) + hz(ip,j_))
+                     if(wod(im,j_) == 1 .and. tdxm > td_min .and. &
+                        wod(ip,j_) == 1 .and. tdxp > td_min .and. &
+                        wod(i_,j_) == 1) then
+                        tx = 0.5d0*(fx(i_,j_)/tdxp + fx(im,j_)/tdxm)
+                     else
+                        tx = 0.0d0
+                     end if
 
 #ifndef MPI
-                  jm = max(1,  j_-1)
-                  jp = min(jen,j_+1)
+                     jm = max(1,  j_-1)
+                     jp = min(jen,j_+1)
 #else
-                  jm = j_ - 1
-                  jp = j_ + 1
-                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
-                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+                     jm = j_ - 1
+                     jp = j_ + 1
+                     if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+                     if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
 #endif
-                  tdym = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(i_,jm) + hz(i_,jm))
-                  tdyp = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(i_,jp) + hz(i_,jp))
-                  if(wod(i_,jm) == 1 .and. tdym > td_min .and. &
-                     wod(i_,jp) == 1 .and. tdyp > td_min .and. &
-                     wod(i_,j_) == 1) then
-                     ! Invert latitude!!!
-                     ty = -0.5d0*(fy(i_,j_)/tdyp + fy(i_,jm)/tdym)
-                  else
-                     ty = 0.0d0
-                  end if
+                     tdym = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(i_,jm) + hz(i_,jm))
+                     tdyp = 0.5d0*(dz(i_,j_) + hz(i_,j_) + dz(i_,jp) + hz(i_,jp))
+                     if(wod(i_,jm) == 1 .and. tdym > td_min .and. &
+                        wod(i_,jp) == 1 .and. tdyp > td_min .and. &
+                        wod(i_,j_) == 1) then
+                        ! Invert latitude!!!
+                        ty = -0.5d0*(fy(i_,j_)/tdyp + fy(i_,jm)/tdym)
+                     else
+                        ty = 0.0d0
+                     end if
 
-                  speed = sqrt(tx**2 + ty**2)
-                  tmp(i, jsize-j+1) = speed
+                     speed = sqrt(tx**2 + ty**2)
+                     tmp(i, jsize-j+1) = speed
 #else
-                  im = i - 1
-                  ip = i + 1
-                  if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
-                  if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
-                  tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
-                  tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
-                  if(wod(im,j) == 1 .and. tdxm > td_min .and. &
-                     wod(ip,j) == 1 .and. tdxp > td_min .and. &
-                     wod(i,j) == 1) then
-                     tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
-                  else
-                     tx = 0.0d0
-                  end if
+                     im = i - 1
+                     ip = i + 1
+                     if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+                     if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+                     tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
+                     tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
+                     if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                        wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                        wod(i,j) == 1) then
+                        tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+                     else
+                        tx = 0.0d0
+                     end if
 
-                  jm = j - 1
-                  jp = j + 1
-                  if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
-                  if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
-                  tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
-                  tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
-                  if(wod(i,jm) == 1 .and. tdym > td_min .and. &
-                     wod(i,jp) == 1 .and. tdyp > td_min .and. &
-                     wod(i,j) == 1) then
-                     ! Invert latitude!!!
-                     ty = -0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
-                  else
-                     ty = 0.0d0
-                  end if
+                     jm = j - 1
+                     jp = j + 1
+                     if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+                     if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+                     tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
+                     tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
+                     if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                        wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                        wod(i,j) == 1) then
+                        ! Invert latitude!!!
+                        ty = -0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+                     else
+                        ty = 0.0d0
+                     end if
 
-                  speed = sqrt(tx**2 + ty**2)
-                  tmp(i,j) = speed
+                     speed = sqrt(tx**2 + ty**2)
+                     tmp(i,j) = speed
 #endif
+                  end do
                end do
-            end do
+            else
+               do j = 1, jsize
+                  do i = 1, isize
+                     tx = 0.0d0
+
+#if !defined(MPI) || !defined(ONEFILE)
+                     i_ = i + ist - 1
+                     j_ = j + jst - 1
+#ifndef MPI
+                     im = max(1,  i_-1)
+                     ip = min(ien,i_+1)
+#else
+                     im = i_ - 1
+                     ip = i_ + 1
+                     if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+                     if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+#endif
+                     tdxm = 0.5d0*(dz(i_,j_) + dz(im,j_))
+                     tdxp = 0.5d0*(dz(i_,j_) + dz(ip,j_))
+                     if(wod(im,j_) == 1 .and. tdxm > td_min .and. &
+                        wod(ip,j_) == 1 .and. tdxp > td_min .and. &
+                        wod(i_,j_) == 1) then
+                        tx = 0.5d0*(fx(i_,j_)/tdxp + fx(im,j_)/tdxm)
+                     else
+                        tx = 0.0d0
+                     end if
+
+#ifndef MPI
+                     jm = max(1,  j_-1)
+                     jp = min(jen,j_+1)
+#else
+                     jm = j_ - 1
+                     jp = j_ + 1
+                     if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+                     if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+#endif
+                     tdym = 0.5d0*(dz(i_,j_) + dz(i_,jm))
+                     tdyp = 0.5d0*(dz(i_,j_) + dz(i_,jp))
+                     if(wod(i_,jm) == 1 .and. tdym > td_min .and. &
+                        wod(i_,jp) == 1 .and. tdyp > td_min .and. &
+                        wod(i_,j_) == 1) then
+                        ! Invert latitude!!!
+                        ty = -0.5d0*(fy(i_,j_)/tdyp + fy(i_,jm)/tdym)
+                     else
+                        ty = 0.0d0
+                     end if
+
+                     speed = sqrt(tx**2 + ty**2)
+                     tmp(i, jsize-j+1) = speed
+#else
+                     im = i - 1
+                     ip = i + 1
+                     if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
+                     if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
+                     tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
+                     tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
+                     if(wod(im,j) == 1 .and. tdxm > td_min .and. &
+                        wod(ip,j) == 1 .and. tdxp > td_min .and. &
+                        wod(i,j) == 1) then
+                        tx = 0.5d0*(fx(i,j)/tdxp + fx(im,j)/tdxm)
+                     else
+                        tx = 0.0d0
+                     end if
+
+                     jm = j - 1
+                     jp = j + 1
+                     if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
+                     if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
+                     tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
+                     tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
+                     if(wod(i,jm) == 1 .and. tdym > td_min .and. &
+                        wod(i,jp) == 1 .and. tdyp > td_min .and. &
+                        wod(i,j) == 1) then
+                        ! Invert latitude!!!
+                        ty = -0.5d0*(fy(i,j)/tdyp + fy(i,jm)/tdym)
+                     else
+                        ty = 0.0d0
+                     end if
+
+                     speed = sqrt(tx**2 + ty**2)
+                     tmp(i,j) = speed
+#endif
+                  end do
+               end do
+            end if
 
 #if !defined(MPI) || !defined(ONEFILE)
             stat = nf_put_vara_real(ncid, speedid, start, count, tmp)
