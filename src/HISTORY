@@ -595,7 +595,7 @@ Interpolation is NOT performed if one of the two referred coarse grids is "dry" 
 If you want the old version to work, specify "-DNONESTDEBUG" on Makefile and make again.
 
 --------------------------------------------------------------------------------
-2024.01.01 V0520
+2024.01.31 V0520
 
 - "nf"-format is supported as GMT netCDF format. Note that the format may vary across
    different domains, but the file format for a single domain must be consistent.
@@ -608,8 +608,11 @@ If you want the old version to work, specify "-DNONESTDEBUG" on Makefile and mak
 
 - The following DEBUGs are applied.
 
+   - Fixed a bug that values were not updated at the four corners of the root domain
+     (contributed by M.Minami @ MRI. Thanks!).
+
    - A bug for the flow-rate to velocity conversion during linear calculation to
-     outputting velocity grid file is corrected.
+     outputting velocity grid file is corrected (contributed by H.Tsushima @ MRI. Thanks!).
 
    - Typos are corrected (contributed by T.Miyashita @ Kyoto Univ. Thanks!).
 

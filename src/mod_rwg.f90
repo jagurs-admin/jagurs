@@ -343,7 +343,7 @@ contains
       if(iand(bflag, NORTH_BOUND) /= 0) then
 #endif
 !$omp do
-      do i = 2, nlon-1
+      do i = 1, nlon-1
          if(dz(i,1) <= zap) then
             hz(i,1) = zap
          else
@@ -363,7 +363,7 @@ contains
       if(iand(bflag, EAST_BOUND) /= 0) then
 #endif
 !$omp do
-      do j = 2, nlat-1
+      do j = 1, nlat-1
          if(dz(nlon,j) <= zap) then
             hz(nlon,j) = zap
          else
@@ -383,7 +383,7 @@ contains
       if(iand(bflag, SOUTH_BOUND) /= 0) then
 #endif
 !$omp do
-      do i = 2, nlon-1
+      do i = 1, nlon-1
          if(dz(nlon-i+1,nlat) <= zap) then
             hz(nlon-i+1,nlat) = zap
          else
@@ -403,7 +403,7 @@ contains
       if(iand(bflag, WEST_BOUND) /= 0) then
 #endif
 !$omp do
-      do j = 2, nlat-1
+      do j = 1, nlat-1
          if(dz(1,nlat-j+1) <= zap) then
             hz(1,nlat-j+1) = zap
          else

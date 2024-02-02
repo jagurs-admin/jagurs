@@ -1798,7 +1798,7 @@ contains
                fx(i,1) = fx(i,1) - (0.5d0*(dz(i+1,1)+dz(i,1)))*gdtdss*(hz_old(i+1,1)-hz_old(i,1))
                fy(i,1) = fy(i,1) - (0.5d0*(dz(i,  2)+dz(i,1)))*gdtds *(hz_old(i,  2)-hz_old(i,1))
 #else
-            ddx_tmp = half*(hz(i+1,1) + hz(i,1) + dz(i+1,1) + dz(i,1))
+            ddx_tmp = half*(hz_old(i+1,1) + hz_old(i,1) + dz(i+1,1) + dz(i,1))
             if(dz(i,1) > zap .AND. dz(i+1,1) > zap .AND. ddx_tmp > zap) then
                fybar = half*(fy_old(i,1) + fy_old(i+1,1))
                fx(i,1) = fx_old(i,1) - ddx_tmp*gdtdss*(hz_old(i+1,1)-hz_old(i,1))-crls*fybar
@@ -1825,7 +1825,7 @@ contains
                fx(i,1) = zap
 #ifndef OLD_SCHEME
             end if
-            ddy_tmp = half*(hz(i,2) + hz(i,1) + dz(i,2) + dz(i,1))
+            ddy_tmp = half*(hz_old(i,2) + hz_old(i,1) + dz(i,2) + dz(i,1))
             if(dz(i,1) > zap .AND. dz(i,2) > zap .AND. ddy_tmp > zap) then
                if (i > 1) then
                   fxbar = quart*(fx_old(i,1) + fx_old(i-1,1) + fx_old(i-1,2) + fx_old(i,2))
@@ -1893,7 +1893,7 @@ contains
                fx(i,2) = fx(i,2) - (0.5d0*(dz(i+1,2)+dz(i,2)))*gdtdss*(hz_old(i+1,2)-hz_old(i,2))
                fy(i,2) = fy(i,2) - (0.5d0*(dz(i,  3)+dz(i,2)))*gdtds *(hz_old(i,  3)-hz_old(i,2))
 #else
-            ddx_tmp = half*(hz(i+1,2) + hz(i,2) + dz(i+1,2) + dz(i,2))
+            ddx_tmp = half*(hz_old(i+1,2) + hz_old(i,2) + dz(i+1,2) + dz(i,2))
             if(dz(i,2) > zap .AND. dz(i+1,2) > zap .AND. ddx_tmp > zap) then
                fybar = quart*(fy_old(i,2) + fy_old(i+1,2) + fy_old(i,1) + fy_old(i+1,1))
                fx(i,2) = fx_old(i,2) - ddx_tmp*gdtdss*(hz_old(i+1,2)-hz_old(i,2))-crls*fybar
@@ -1920,7 +1920,7 @@ contains
                fx(i,2) = zap
 #ifndef OLD_SCHEME
             end if
-            ddy_tmp = half*(hz(i,3) + hz(i,2) + dz(i,3) + dz(i,2))
+            ddy_tmp = half*(hz_old(i,3) + hz_old(i,2) + dz(i,3) + dz(i,2))
             if(dz(i,2) > zap .AND. dz(i,3) > zap .AND. ddy_tmp > zap) then
                if (i > 1) then
                   fxbar = quart*(fx_old(i,2) + fx_old(i-1,2) + fx_old(i-1,3) + fx_old(i,3))
@@ -1989,7 +1989,7 @@ contains
                fx(i,3) = fx(i,3) - (0.5d0*(dz(i+1,3)+dz(i,3)))*gdtdss*(hz_old(i+1,3)-hz_old(i,3))
                fy(i,3) = fy(i,3) - (0.5d0*(dz(i,  4)+dz(i,3)))*gdtds *(hz_old(i,  4)-hz_old(i,3))
 #else
-            ddx_tmp = half*(hz(i+1,3) + hz(i,3) + dz(i+1,3) + dz(i,3))
+            ddx_tmp = half*(hz_old(i+1,3) + hz_old(i,3) + dz(i+1,3) + dz(i,3))
             if(dz(i,3) > zap .AND. dz(i+1,3) > zap .AND. ddx_tmp > zap) then
                fybar = quart*(fy_old(i,3) + fy_old(i+1,3) + fy_old(i,2) + fy_old(i+1,2))
                fx(i,3) = fx_old(i,3) - ddx_tmp*gdtdss*(hz_old(i+1,3)-hz_old(i,3))-crls*fybar
@@ -2014,7 +2014,7 @@ contains
             else
             fx(i,3) = zap
             end if
-            ddy_tmp = half*(hz(i,4) + hz(i,3) + dz(i,4) + dz(i,3))
+            ddy_tmp = half*(hz_old(i,4) + hz_old(i,3) + dz(i,4) + dz(i,3))
             if(dz(i,3) > zap .AND. dz(i,4) > zap .AND. ddy_tmp > zap) then
                if (i > 1) then
                   fxbar = quart*(fx_old(i,3) + fx_old(i-1,3) + fx_old(i-1,4) + fx_old(i,4))
@@ -2089,7 +2089,7 @@ contains
                fx(i,nlat-1) = fx(i,nlat-1) - (0.5d0*(dz(i+1,nlat-1)+dz(i,nlat-1)))*gdtdss*(hz_old(i+1,nlat-1)-hz_old(i,nlat-1))
                fy(i,nlat-1) = fy(i,nlat-1) - (0.5d0*(dz(i,  nlat)  +dz(i,nlat-1)))*gdtds *(hz_old(i,  nlat)  -hz_old(i,nlat-1))
 #else
-            ddx_tmp = half*(hz(i+1,nlat-1) + hz(i,nlat-1) + dz(i+1,nlat-1) + dz(i,nlat-1))
+            ddx_tmp = half*(hz_old(i+1,nlat-1) + hz_old(i,nlat-1) + dz(i+1,nlat-1) + dz(i,nlat-1))
             if(dz(i,nlat-1) > zap .AND. dz(i+1,nlat-1) > zap .AND. ddx_tmp > zap) then
                fybar = quart*(fy_old(i,nlat-1) + fy_old(i+1,nlat-1) + fy_old(i,nlat-2) + fy_old(i+1,nlat-2))
                fx(i,nlat-1) = fx_old(i,nlat-1) - ddx_tmp*gdtdss*(hz_old(i+1,nlat-1)-hz_old(i,nlat-1))-crls*fybar
@@ -2116,7 +2116,7 @@ contains
                fx(i,nlat-1) = zap
 #ifndef OLD_SCHEME
             end if
-            ddy_tmp = half*(hz(i,nlat) + hz(i,nlat-1) + dz(i,nlat) + dz(i,nlat-1))
+            ddy_tmp = half*(hz_old(i,nlat) + hz_old(i,nlat-1) + dz(i,nlat) + dz(i,nlat-1))
             if(dz(i,nlat-1) > zap .AND. dz(i,nlat) > zap .AND. ddy_tmp > zap) then
                if (i > 1) then
                   fxbar = quart*(fx_old(i,nlat-1) + fx_old(i-1,nlat-1) + fx_old(i-1,nlat) + fx_old(i,nlat))
@@ -2186,7 +2186,7 @@ contains
                fx(i,nlat-2) = fx(i,nlat-2) - (0.5d0*(dz(i+1,nlat-2)+dz(i,nlat-2)))*gdtdss*(hz_old(i+1,nlat-2)-hz_old(i,nlat-2))
                fy(i,nlat-2) = fy(i,nlat-2) - (0.5d0*(dz(i,  nlat-1)+dz(i,nlat-2)))*gdtds *(hz_old(i,  nlat-1)-hz_old(i,nlat-2))
 #else
-            ddx_tmp = half*(hz(i+1,nlat-2) + hz(i,nlat-2) + dz(i+1,nlat-2) + dz(i,nlat-2))
+            ddx_tmp = half*(hz_old(i+1,nlat-2) + hz_old(i,nlat-2) + dz(i+1,nlat-2) + dz(i,nlat-2))
             if(dz(i,nlat-2) > zap .AND. dz(i+1,nlat-2) > zap .AND. ddx_tmp > zap) then
                fybar = quart*(fy_old(i,nlat-2) + fy_old(i+1,nlat-2) + fy_old(i,nlat-3) + fy_old(i+1,nlat-3))
                fx(i,nlat-2) = fx_old(i,nlat-2) - ddx_tmp*gdtdss*(hz_old(i+1,nlat-2)-hz_old(i,nlat-2))-crls*fybar
@@ -2213,7 +2213,7 @@ contains
                fx(i,nlat-2) = zap
 #ifndef OLD_SCHEME
             end if
-            ddy_tmp = half*(hz(i,nlat-1) + hz(i,nlat-2) + dz(i,nlat-1) + dz(i,nlat-2))
+            ddy_tmp = half*(hz_old(i,nlat-1) + hz_old(i,nlat-2) + dz(i,nlat-1) + dz(i,nlat-2))
             if(dz(i,nlat-2) > zap .AND. dz(i,nlat-1) > zap .AND. ddy_tmp > zap) then
                if (i > 1) then
                   fxbar = quart*(fx_old(i,nlat-2) + fx_old(i-1,nlat-2) + fx_old(i-1,nlat-1) + fx_old(i,nlat-1))
@@ -2253,7 +2253,7 @@ contains
 #ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
 #else
-!$omp do private(theta, sint, gdtdss, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+!$omp do private(theta, sint, gdtdss, crls, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
 #endif
 #ifndef UPWIND3
          do j = 2, nlat-2
@@ -2294,7 +2294,7 @@ contains
                fx(nlon-1,j) = fx(nlon-1,j) - (0.5d0*(dz(nlon,  j)  +dz(nlon-1,j)))*gdtdss*(hz_old(nlon,  j)  -hz_old(nlon-1,j))
                fy(nlon-1,j) = fy(nlon-1,j) - (0.5d0*(dz(nlon-1,j+1)+dz(nlon-1,j)))*gdtds *(hz_old(nlon-1,j+1)-hz_old(nlon-1,j))
 #else
-            ddx_tmp = half*(hz(nlon,j) + hz(nlon-1,j) + dz(nlon,j) + dz(nlon-1,j))
+            ddx_tmp = half*(hz_old(nlon,j) + hz_old(nlon-1,j) + dz(nlon,j) + dz(nlon-1,j))
             if(dz(nlon-1,j) > zap .AND. dz(nlon,j) > zap .AND. ddx_tmp > zap) then
                if (j > 1) then
                   fybar = quart*(fy_old(nlon-1,j) + fy_old(nlon,j) + fy_old(nlon-1,j-1) + fy_old(nlon,j-1))
@@ -2325,7 +2325,7 @@ contains
                fx(nlon-1,j) = zap
 #ifndef OLD_SCHEME
             end if
-            ddy_tmp = half*(hz(nlon-1,j+1) + hz(nlon-1,j) + dz(nlon-1,j+1) + dz(nlon-1,j))
+            ddy_tmp = half*(hz_old(nlon-1,j+1) + hz_old(nlon-1,j) + dz(nlon-1,j+1) + dz(nlon-1,j))
             if(dz(nlon-1,j) > zap .AND. dz(nlon-1,j+1) > zap .AND. ddy_tmp > zap) then
                fxbar = quart*(fx_old(nlon-1,j) + fx_old(nlon-2,j) + fx_old(nlon-2,j+1) + fx_old(nlon-1,j+1))
                fy(nlon-1,j) = fy_old(nlon-1,j) - ddy_tmp*gdtds *(hz_old(nlon-1,j+1)-hz_old(nlon-1,j))+crls*fxbar
@@ -2387,7 +2387,7 @@ contains
                fx(1,j) = fx(1,j) - (0.5d0*(dz(2,j)  +dz(1,j)))*gdtdss*(hz_old(2,j)  -hz_old(1,j))
                fy(1,j) = fy(1,j) - (0.5d0*(dz(1,j+1)+dz(1,j)))*gdtds *(hz_old(1,j+1)-hz_old(1,j))
 #else
-            ddx_tmp = half*(hz(2,j) + hz(1,j) + dz(2,j) + dz(1,j))
+            ddx_tmp = half*(hz_old(2,j) + hz_old(1,j) + dz(2,j) + dz(1,j))
             if(dz(1,j) > zap .AND. dz(2,j) > zap .AND. ddx_tmp > zap) then
                if (j > 1) then
                   fybar = quart*(fy_old(1,j) + fy_old(2,j) + fy_old(1,j-1) + fy_old(2,j-1))
@@ -2418,7 +2418,7 @@ contains
                fx(1,j) = zap
 #ifndef OLD_SCHEME
             end if
-            ddy_tmp = half*(hz(1,j+1) + hz(1,j) + dz(1,j+1) + dz(1,j))
+            ddy_tmp = half*(hz_old(1,j+1) + hz_old(1,j) + dz(1,j+1) + dz(1,j))
             if(dz(1,j) > zap .AND. dz(1,j+1) > zap .AND. ddy_tmp > zap) then
                fxbar = half*(fx_old(1,j) + fx_old(1,j+1))
                fy(1,j) = fy_old(1,j) - ddy_tmp*gdtds *(hz_old(1,j+1)-hz_old(1,j))+crls*fxbar
@@ -2471,7 +2471,7 @@ contains
                fx(2,j) = fx(2,j) - (0.5d0*(dz(3,j)  +dz(2,j)))*gdtdss*(hz_old(3,j)  -hz_old(2,j))
                fy(2,j) = fy(2,j) - (0.5d0*(dz(2,j+1)+dz(2,j)))*gdtds *(hz_old(2,j+1)-hz_old(2,j))
 #else
-            ddx_tmp = half*(hz(3,j) + hz(2,j) + dz(3,j) + dz(2,j))
+            ddx_tmp = half*(hz_old(3,j) + hz_old(2,j) + dz(3,j) + dz(2,j))
             if(dz(2,j) > zap .AND. dz(3,j) > zap .AND. ddx_tmp > zap) then
                fybar = quart*(fy_old(2,j) + fy_old(3,j) + fy_old(2,j-1) + fy_old(3,j-1))
                fx(2,j) = fx_old(2,j) - ddx_tmp*gdtdss*(hz_old(3,j)-hz_old(2,j))-crls*fybar
@@ -2498,7 +2498,7 @@ contains
                fx(2,j) = zap
 #ifndef OLD_SCHEME
             end if
-            ddy_tmp = half*(hz(2,j+1) + hz(2,j) + dz(2,j+1) + dz(2,j))
+            ddy_tmp = half*(hz_old(2,j+1) + hz_old(2,j) + dz(2,j+1) + dz(2,j))
             if(dz(2,j) > zap .AND. dz(2,j+1) > zap .AND. ddy_tmp > zap) then
                fxbar = quart*(fx_old(2,j) + fx_old(1,j) + fx_old(1,j+1) + fx_old(2,j+1))
                fy(2,j) = fy_old(2,j) - ddy_tmp*gdtds *(hz_old(2,j+1)-hz_old(2,j))+crls*fxbar
@@ -2557,7 +2557,7 @@ contains
                   fx(2,j) = fx(2,j) - (0.5d0*(dz(3,j)  +dz(2,j)))*gdtdss*(hz_old(3,j)  -hz_old(2,j))
                   fy(2,j) = fy(2,j) - (0.5d0*(dz(2,j+1)+dz(2,j)))*gdtds *(hz_old(2,j+1)-hz_old(2,j))
 #else
-            ddx_tmp = half*(hz(3,j) + hz(2,j) + dz(3,j) + dz(2,j))
+            ddx_tmp = half*(hz_old(3,j) + hz_old(2,j) + dz(3,j) + dz(2,j))
             if(dz(2,j) > zap .AND. dz(3,j) > zap .AND. ddx_tmp > zap) then
                if (j > 1) then
                   fybar = quart*(fy_old(2,j) + fy_old(3,j) + fy_old(2,j-1) + fy_old(3,j-1))
@@ -2591,7 +2591,7 @@ contains
             else
                fx(2,j) = zap
             end if
-            ddy_tmp = half*(hz(2,j+1) + hz(2,j) + dz(2,j+1) + dz(2,j))
+            ddy_tmp = half*(hz_old(2,j+1) + hz_old(2,j) + dz(2,j+1) + dz(2,j))
             if(dz(2,j) > zap .AND. dz(2,j+1) > zap .AND. ddy_tmp > zap) then
                fxbar = quart*(fx_old(2,j) + fx_old(1,j) + fx_old(1,j+1) + fx_old(2,j+1))
                fy(2,j) = fy_old(2,j) - ddy_tmp*gdtds *(hz_old(2,j+1)-hz_old(2,j))+crls*fxbar
@@ -2627,7 +2627,7 @@ contains
 #ifdef OLD_SCHEME
 !$omp do private(theta, sint, gdtdss)
 #else
-!$omp do private(theta, sint, gdtdss, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
+!$omp do private(theta, sint, gdtdss, crls, fxbar, fybar, cf, cf2, bcf, bcf2, fric, fric2, ddx_tmp, ddy_tmp)
 #endif
          do j = 4, nlat-3
             theta = th0 + (j-1)*dth
@@ -2659,7 +2659,7 @@ contains
                fx(nlon-2,j) = fx(nlon-2,j) - (0.5d0*(dz(nlon-1,j)  +dz(nlon-2,j)))*gdtdss*(hz_old(nlon-1,j)  -hz_old(nlon-2,j))
                fy(nlon-2,j) = fy(nlon-2,j) - (0.5d0*(dz(nlon-2,j+1)+dz(nlon-2,j)))*gdtds *(hz_old(nlon-2,j+1)-hz_old(nlon-2,j))
 #else
-            ddx_tmp = half*(hz(nlon-1,j) + hz(nlon-2,j) + dz(nlon-1,j) + dz(nlon-2,j))
+            ddx_tmp = half*(hz_old(nlon-1,j) + hz_old(nlon-2,j) + dz(nlon-1,j) + dz(nlon-2,j))
             if(dz(nlon-1,j) > zap .AND. dz(nlon-2,j) > zap .AND. ddx_tmp > zap) then
                if (j > 1) then
                   fybar = quart*(fy_old(nlon-2,j) + fy_old(nlon-1,j) + fy_old(nlon-2,j-1) + fy_old(nlon-1,j-1))
@@ -2690,7 +2690,7 @@ contains
                fx(nlon-2,j) = zap
 #ifndef OLD_SCHEME
             end if
-            ddy_tmp = half*(hz(nlon-2,j+1) + hz(nlon-2,j) + dz(nlon-2,j+1) + dz(nlon-2,j))
+            ddy_tmp = half*(hz_old(nlon-2,j+1) + hz_old(nlon-2,j) + dz(nlon-2,j+1) + dz(nlon-2,j))
             if(dz(nlon-2,j) > zap .AND. dz(nlon-2,j+1) > zap .AND. ddy_tmp > zap) then
                fxbar = quart*(fx_old(nlon-2,j) + fx_old(nlon-3,j) + fx_old(nlon-3,j+1) + fx_old(nlon-2,j+1))
                fy(nlon-2,j) = fy_old(nlon-2,j) - ddy_tmp*gdtds *(hz_old(nlon-2,j+1)-hz_old(nlon-2,j))+crls*fxbar
@@ -2747,7 +2747,7 @@ contains
                fx(3,j) = fx(3,j) - (0.5d0*(dz(4,j)  +dz(3,j)))*gdtdss*(hz_old(4,j)  -hz_old(3,j))
                fy(3,j) = fy(3,j) - (0.5d0*(dz(3,j+1)+dz(3,j)))*gdtds *(hz_old(3,j+1)-hz_old(3,j))
 #else
-            ddx_tmp = half*(hz(4,j) + hz(3,j) + dz(4,j) + dz(3,j))
+            ddx_tmp = half*(hz_old(4,j) + hz_old(3,j) + dz(4,j) + dz(3,j))
             if(dz(3,j) > zap .AND. dz(4,j) > zap .AND. ddx_tmp > zap) then
                if (j > 1) then
                   fybar = quart*(fy_old(3,j) + fy_old(4,j) + fy_old(3,j-1) + fy_old(4,j-1))
@@ -2778,7 +2778,7 @@ contains
                fx(3,j) = zap
 #ifndef OLD_SCHEME
             end if
-            ddy_tmp = half*(hz(3,j+1) + hz(3,j) + dz(3,j+1) + dz(3,j))
+            ddy_tmp = half*(hz_old(3,j+1) + hz_old(3,j) + dz(3,j+1) + dz(3,j))
             if(dz(3,j) > zap .AND. dz(3,j+1) > zap .AND. ddy_tmp > zap) then
                fxbar = quart*(fx_old(3,j) + fx_old(2,j) + fx_old(2,j+1) + fx_old(3,j+1))
                fy(3,j) = fy_old(3,j) - ddy_tmp*gdtds *(hz_old(3,j+1)-hz_old(3,j))+crls*fxbar

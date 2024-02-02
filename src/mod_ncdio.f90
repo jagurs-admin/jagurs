@@ -943,8 +943,8 @@ contains
                      ip = i + 1
                      if(iand(bflag, WEST_BOUND) /= 0) im = max(1,  im)
                      if(iand(bflag, EAST_BOUND) /= 0) ip = min(ien,ip)
-                     tdxm = 0.5d0*(dz(i,j) + hz(i,j) + dz(im,j) + hz(im,j))
-                     tdxp = 0.5d0*(dz(i,j) + hz(i,j) + dz(ip,j) + hz(ip,j))
+                     tdxm = 0.5d0*(dz(i,j) + dz(im,j))
+                     tdxp = 0.5d0*(dz(i,j) + dz(ip,j))
                      if(wod(im,j) == 1 .and. tdxm > td_min .and. &
                         wod(ip,j) == 1 .and. tdxp > td_min .and. &
                         wod(i,j) == 1) then
@@ -957,8 +957,8 @@ contains
                      jp = j + 1
                      if(iand(bflag, NORTH_BOUND) /= 0) jm = max(1,  jm)
                      if(iand(bflag, SOUTH_BOUND) /= 0) jp = min(jen,jp)
-                     tdym = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jm) + hz(i,jm))
-                     tdyp = 0.5d0*(dz(i,j) + hz(i,j) + dz(i,jp) + hz(i,jp))
+                     tdym = 0.5d0*(dz(i,j) + dz(i,jm))
+                     tdyp = 0.5d0*(dz(i,j) + dz(i,jp))
                      if(wod(i,jm) == 1 .and. tdym > td_min .and. &
                         wod(i,jp) == 1 .and. tdyp > td_min .and. &
                         wod(i,j) == 1) then
