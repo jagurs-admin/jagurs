@@ -183,6 +183,10 @@ type wave_arrays
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: btx, bty
    integer(kind=4), allocatable, dimension(:,:) :: brokenx, brokeny
 #endif
+#ifdef NORMALMODE
+   integer(kind=4), allocatable, dimension(:,:) :: nm_ind
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: nm_P, nm_P0, nm_P1
+#endif
 end type wave_arrays
 #ifndef CARTESIAN
 ! === Elastic Loading ==========================================================

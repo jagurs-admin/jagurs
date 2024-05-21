@@ -621,4 +621,11 @@ If you want the old version to work, specify "-DNONESTDEBUG" on Makefile and mak
    - Other minor bugs are corrected.
 
 --------------------------------------------------------------------------------
+2024.05.15 V0600
+
+- Normalmode calculation is available.
+
+- DEBUG for latest gfortran and serial (non-MPI) mode have been applied.
+
+--------------------------------------------------------------------------------
 

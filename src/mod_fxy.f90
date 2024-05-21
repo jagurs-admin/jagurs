@@ -11,14 +11,28 @@ use mod_params, only : froude_lim
 #ifdef BANKFILE
 use mod_params, only : broken_rate
 #endif
+#ifdef NORMALMODE
+use mod_normalmode, only : calc_nm_P, rhow
+#ifdef MPI
+use mod_mpi, only : exchange_edges_P
+#endif
+#endif
 implicit none
 
 contains
 
 #ifndef MPI
+#ifndef NORMALMODE
    subroutine fxy_rwg(wfld,dfld,dt,th0,dth,nlon,nlat)
 #else
+   subroutine fxy_rwg(wfld,dfld,dt,th0,dth,nlon,nlat,istep)
+#endif
+#else
+#ifndef NORMALMODE
    subroutine fxy_rwg(wfld,dfld,dt,th0,dth,joff,nlon,nlat)
+#else
+   subroutine fxy_rwg(wfld,dfld,dt,th0,dth,joff,nlon,nlat,istep,fg)
+#endif
 #endif
       type(wave_arrays), target, intent(inout) :: wfld
       type(depth_arrays), target, intent(in) :: dfld
@@ -26,6 +40,14 @@ contains
       integer(kind=4), intent(in) :: nlon, nlat
 #ifdef MPI
       integer(kind=4), intent(in) :: joff
+#endif
+#ifdef NORMALMODE
+      integer(kind=4), intent(in) :: istep
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: nm_P, nm_P0, nm_P1
+      integer(kind=4), pointer, dimension(:,:) :: nm_ind
+#ifdef MPI
+      type(data_grids), target, intent(inout) :: fg
+#endif
 #endif
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: fx, fy, hz, dz
@@ -37,6 +59,16 @@ contains
       fx => wfld%fx
       fy => wfld%fy
       hz => wfld%hz
+#ifdef NORMALMODE
+      nm_ind => wfld%nm_ind
+      nm_P   => wfld%nm_P
+      nm_P0  => wfld%nm_P0
+      nm_P1  => wfld%nm_P1
+      call calc_nm_P(nlon, nlat, nm_ind, nm_P, nm_P0, nm_P1, istep)
+#ifdef MPI
+      call exchange_edges_P(fg)
+#endif
+#endif
 
       dz => dfld%dz
       dx => dfld%dx
@@ -59,6 +91,10 @@ contains
             if(dz(i,j) > zap) then
                fx(i,j) = fx(i,j) - dx(i,j)*cfc*(hz(i+1,j)  -hz(i,j))
                fy(i,j) = fy(i,j) - dy(i,j)*gts*(hz(i,  j+1)-hz(i,j))
+#ifdef NORMALMODE
+               fx(i,j) = fx(i,j) - dx(i,j)*cfc/g/rhow*(nm_P(i+1,j)  -nm_P(i,j))
+               fy(i,j) = fy(i,j) - dy(i,j)*gts/g/rhow*(nm_P(i,  j+1)-nm_P(i,j))
+#endif
             else
                fx(i,j) = zap
                fy(i,j) = zap
@@ -70,9 +106,17 @@ contains
    end subroutine fxy_rwg
 
 #ifndef MPI
+#ifndef NORMALMODE
    subroutine fxynl_rwg(wfld,dfld,ffld,ifz,cfs,cfl,cflag,dt,th0,dth,nlon,nlat,gflag,smallh)
 #else
+   subroutine fxynl_rwg(wfld,dfld,ffld,ifz,cfs,cfl,cflag,dt,th0,dth,nlon,nlat,gflag,smallh,istep)
+#endif
+#else
+#ifndef NORMALMODE
    subroutine fxynl_rwg(wfld,dfld,ffld,ifz,cfs,cfl,cflag,dt,th0,dth,joff,nlon,nlat,gflag,smallh,bflag)
+#else
+   subroutine fxynl_rwg(wfld,dfld,ffld,ifz,cfs,cfl,cflag,dt,th0,dth,joff,nlon,nlat,gflag,smallh,bflag,istep,fg)
+#endif
 #endif
       type(wave_arrays), target, intent(inout) :: wfld
       type(depth_arrays), target, intent(inout) :: dfld
@@ -136,6 +180,14 @@ contains
       real(kind=REAL_BYTE) :: zhigh, zlow, discharge, dhigh
       real(kind=REAL_BYTE), parameter :: GX = 1.0d-5, GY = 1.0d-10
 #endif
+#ifdef NORMALMODE
+      integer(kind=4), intent(in) :: istep
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: nm_P, nm_P0, nm_P1
+      integer(kind=4), pointer, dimension(:,:) :: nm_ind
+#ifdef MPI
+      type(data_grids), target, intent(inout) :: fg
+#endif
+#endif
 
       fx => wfld%fx
       fy => wfld%fy
@@ -163,6 +215,16 @@ contains
       end if
 #endif
       dz  => dfld%dz
+#ifdef NORMALMODE
+      nm_ind => wfld%nm_ind
+      nm_P   => wfld%nm_P
+      nm_P0  => wfld%nm_P0
+      nm_P1  => wfld%nm_P1
+      call calc_nm_P(nlon, nlat, nm_ind, nm_P, nm_P0, nm_P1, istep)
+#ifdef MPI
+      call exchange_edges_P(fg)
+#endif
+#endif
 
       dtds = dt/(dth*rote)
       gdtds = g*dtds
@@ -429,7 +491,12 @@ contains
 #endif
                fx(i,j) = fx_old(i,j)                                                           &
                        - half*gdtdss*(dz(i+1,j)+dz(i,j)+hz_old(i+1,j)+hz_old(i,j))*(hz_old(i+1,j)-hz_old(i,j)) &
+#ifndef NORMALMODE
                        - advc - crls*fybar
+#else
+                       - advc - crls*fybar - half*(dz(i+1,j)+dz(i,j))*dtds*invst/rhow*(nm_P(i+1,j)-nm_P(i,j))
+
+#endif
             end if
          end do
       end do
@@ -659,7 +726,11 @@ contains
 #endif
                fy(i,j) = fy_old(i,j)                                                          &
                        - half*gdtds*(dz(i,j+1)+dz(i,j)+hz_old(i,j+1)+hz_old(i,j))*(hz_old(i,j+1)-hz_old(i,j)) &
+#ifndef NORMALMODE
                        - advc + crls*fxbar
+#else
+                       - advc + crls*fxbar - half*(dz(i,j+1)+dz(i,j))*dtds/rhow*(nm_P(i,j+1)-nm_P(i,j))
+#endif
             end if
          end do
       end do

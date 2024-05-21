@@ -421,13 +421,21 @@ contains
 
 #ifndef CONV_CHECK
 #ifndef CARTESIAN
+#ifndef NORMALMODE
    subroutine tstep_grid(mode,ig,cg,fg,cf,cfl,crls,dt,smallh_xy,smallh_wod,c2p_all)
+#else
+   subroutine tstep_grid(mode,ig,cg,fg,cf,cfl,crls,dt,smallh_xy,smallh_wod,c2p_all,istep)
+#endif
 #else
    subroutine tstep_grid(mode,ig,cg,fg,cf,cfl,dt,smallh_xy,smallh_wod,c2p_all)
 #endif
 #else
 #ifndef CARTESIAN
+#ifndef NORMALMODE
    subroutine tstep_grid(mode,ig,cg,fg,cf,cfl,crls,dt,smallh_xy,smallh_wod,c2p_all,conv_step)
+#else
+   subroutine tstep_grid(mode,ig,cg,fg,cf,cfl,crls,dt,smallh_xy,smallh_wod,c2p_all,conv_step,istep)
+#endif
 #else
    subroutine tstep_grid(mode,ig,cg,fg,cf,cfl,dt,smallh_xy,smallh_wod,c2p_all,conv_step)
 #endif
@@ -445,6 +453,9 @@ contains
       integer(kind=4), intent(in) :: c2p_all
 #ifdef CONV_CHECK
       integer(kind=4), intent(out) :: conv_step
+#endif
+#ifdef NORMALMODE
+      integer(kind=4), intent(in) :: istep
 #endif
 
       type(wave_arrays), pointer :: wfld
@@ -493,7 +504,11 @@ contains
 ! === Coriolis force is supported on linear calc. ==============================
                if(crls == 0) then
 ! ==============================================================================
+#ifndef NORMALMODE
                call fxy_rwg(wfld,dfld,dt,th0,dth,niz,njz)
+#else
+               call fxy_rwg(wfld,dfld,dt,th0,dth,niz,njz,istep)
+#endif
 ! === Coriolis force is supported on linear calc. ==============================
                else
                   call fxy_rwg_Coriolis(wfld,dfld,crls,dt,th0,dth,niz,njz,ig)
@@ -508,7 +523,11 @@ contains
 ! === Coriolis force is supported on linear calc. ==============================
                if(crls == 0) then
 ! ==============================================================================
+#ifndef NORMALMODE
                call fxy_rwg_disp(wfld,dfld,dt,th0,dth,niz,njz,ig,fg,cg)
+#else
+               call fxy_rwg_disp(wfld,dfld,dt,th0,dth,niz,njz,ig,fg,cg,istep)
+#endif
 ! === Coriolis force is supported on linear calc. ==============================
                else
                   call fxy_rwg_Coriolis_disp(wfld,dfld,crls,dt,th0,dth,niz,njz,ig,fg,cg)
@@ -522,7 +541,11 @@ contains
 ! === Coriolis force is supported on linear calc. ==============================
                if(crls == 0) then
 ! ==============================================================================
+#ifndef NORMALMODE
                call fxy_rwg_disp(wfld,dfld,dt,th0,dth,niz,njz,ig,fg,cg,conv_step)
+#else
+               call fxy_rwg_disp(wfld,dfld,dt,th0,dth,niz,njz,ig,fg,cg,conv_step,istep)
+#endif
 ! === Coriolis force is supported on linear calc. ==============================
                else
                   call fxy_rwg_Coriolis_disp(wfld,dfld,crls,dt,th0,dth,niz,njz,ig,fg,cg,conv_step)
@@ -539,7 +562,11 @@ contains
 ! === Coriolis force is supported on linear calc. ==============================
                if(crls == 0) then
 ! ==============================================================================
+#ifndef NORMALMODE
                call fxy_rwg(wfld,dfld,dt,th0,dth,joff,niz,njz)
+#else
+               call fxy_rwg(wfld,dfld,dt,th0,dth,joff,niz,njz,istep,fg)
+#endif
 ! === Coriolis force is supported on linear calc. ==============================
                else
                   call fxy_rwg_Coriolis(wfld,dfld,crls,dt,th0,dth,joff,niz,njz,ig,bflag)
@@ -554,7 +581,11 @@ contains
 ! === Coriolis force is supported on linear calc. ==============================
                if(crls == 0) then
 ! ==============================================================================
+#ifndef NORMALMODE
                call fxy_rwg_disp(wfld,dfld,dt,th0,dth,joff,niz,njz,ig,bflag,fg,cg)
+#else
+               call fxy_rwg_disp(wfld,dfld,dt,th0,dth,joff,niz,njz,ig,bflag,fg,cg,istep)
+#endif
 ! === Coriolis force is supported on linear calc. ==============================
                else
                   call fxy_rwg_Coriolis_disp(wfld,dfld,crls,dt,th0,dth,joff,niz,njz,ig,bflag,fg,cg)
@@ -568,7 +599,11 @@ contains
 ! === Coriolis force is supported on linear calc. ==============================
                if(crls == 0) then
 ! ==============================================================================
+#ifndef NORMALMODE
                call fxy_rwg_disp(wfld,dfld,dt,th0,dth,joff,niz,njz,ig,bflag,fg,cg,conv_step)
+#else
+               call fxy_rwg_disp(wfld,dfld,dt,th0,dth,joff,niz,njz,ig,bflag,fg,cg,conv_step,istep)
+#endif
 ! === Coriolis force is supported on linear calc. ==============================
                else
                   call fxy_rwg_Coriolis_disp(wfld,dfld,crls,dt,th0,dth,joff,niz,njz,ig,bflag,fg,cg,conv_step)
@@ -586,7 +621,11 @@ contains
 #ifndef MPI
             if((with_disp == 0) .or. (with_disp == 2 .and. ig == 1)) then
 #ifndef CARTESIAN
+#ifndef NORMALMODE
                call fxynl_rwg(wfld,dfld,ffld,wod,cf,cfl,crls,dt,th0,dth,niz,njz,ig,smallh_xy)
+#else
+               call fxynl_rwg(wfld,dfld,ffld,wod,cf,cfl,crls,dt,th0,dth,niz,njz,ig,smallh_xy,istep)
+#endif
 #else
                call fxynl_rwg(wfld,dfld,ffld,wod,cf,cfl,dt,dxdy,niz,njz,ig,smallh_xy)
 #endif
@@ -594,7 +633,11 @@ contains
 #ifndef CONV_CHECK
 #ifndef CARTESIAN
                call fxynl_rwg_disp(wfld,dfld,ffld,wod,cf,cfl,crls,dt,th0,dth,niz,njz, &
+#ifndef NORMALMODE
                                    ig,smallh_xy,fg,cg)
+#else
+                                   ig,smallh_xy,fg,cg,istep)
+#endif
 #else
                call fxynl_rwg_disp(wfld,dfld,ffld,wod,cf,cfl,dt,dxdy,niz,njz, &
                                    ig,smallh_xy,fg,cg)
@@ -602,7 +645,11 @@ contains
 #else
 #ifndef CARTESIAN
                call fxynl_rwg_disp(wfld,dfld,ffld,wod,cf,cfl,crls,dt,th0,dth,niz,njz, &
+#ifndef NORMALMODE
                                    ig,smallh_xy,fg,cg,conv_step)
+#else
+                                   ig,smallh_xy,fg,cg,conv_step,istep)
+#endif
 #else
                call fxynl_rwg_disp(wfld,dfld,ffld,wod,cf,cfl,dt,dxdy,niz,njz, &
                                    ig,smallh_xy,fg,cg,conv_step)
@@ -612,7 +659,11 @@ contains
 #else
             if((with_disp == 0) .or. (with_disp == 2 .and. ig == 1)) then
 #ifndef CARTESIAN
+#ifndef NORMALMODE
                call fxynl_rwg(wfld,dfld,ffld,wod,cf,cfl,crls,dt,th0,dth,joff,niz,njz,ig,smallh_xy,bflag)
+#else
+               call fxynl_rwg(wfld,dfld,ffld,wod,cf,cfl,crls,dt,th0,dth,joff,niz,njz,ig,smallh_xy,bflag,istep,fg)
+#endif
 #else
                call fxynl_rwg(wfld,dfld,ffld,wod,cf,cfl,dt,dxdy,niz,njz,ig,smallh_xy,bflag)
 #endif
@@ -623,11 +674,19 @@ contains
 #else
                call fxynl_rwg_disp(wfld,dfld,ffld,wod,cf,cfl,dt,dxdy,niz,njz, &
 #endif
+#ifndef NORMALMODE
                                    ig,smallh_xy,bflag,fg,cg)
+#else
+                                   ig,smallh_xy,bflag,fg,cg,istep)
+#endif
 #else
 #ifndef CARTESIAN
                call fxynl_rwg_disp(wfld,dfld,ffld,wod,cf,cfl,crls,dt,th0,dth,joff,niz,njz, &
+#ifndef NORMALMODE
                                    ig,smallh_xy,bflag,fg,cg,conv_step)
+#else
+                                   ig,smallh_xy,bflag,fg,cg,conv_step,istep)
+#endif
 #else
                call fxynl_rwg_disp(wfld,dfld,ffld,wod,cf,cfl,dt,dxdy,niz,njz, &
                                    ig,smallh_xy,bflag,fg,cg,conv_step)
@@ -1259,15 +1318,31 @@ contains
 
 #if !defined(MPI) || !defined(ONEFILE)
 #ifndef PIXELIN
+#ifndef NFSUPPORT
    subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld)
 #else
+   subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,formatid)
+#endif
+#else
+#ifndef NFSUPPORT
    subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,nxorg,nyorg)
+#else
+   subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,nxorg,nyorg,formatid)
+#endif
 #endif
 #else
 #ifndef PIXELIN
+#ifndef NFSUPPORT
    subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,dg,myrank)
 #else
+   subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,dg,myrank,formatid)
+#endif
+#else
+#ifndef NFSUPPORT
    subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,dg,myrank,nxorg,nyorg)
+#else
+   subroutine wet_or_dry(wfld,dfld,ifz,nlon,nlat,fname,wodfld,dg,myrank,nxorg,nyorg,formatid)
+#endif
 #endif
 #endif
       type(wave_arrays), target, intent(inout) :: wfld
@@ -1300,6 +1375,9 @@ contains
 #endif
 #ifdef PIXELIN
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: wodorg
+#endif
+#ifdef NFSUPPORT
+      integer(kind=4), intent(in) :: formatid
 #endif
 
       hz => wfld%hz
@@ -1347,7 +1425,11 @@ contains
 #if !defined(MPI) || !defined(ONEFILE)
          write(6,'(8x,a,a)') 'WETORDRY_FILE_GIVEN:', trim(fname)
 #ifndef PIXELIN
+#ifndef NFSUPPORT
          call read_gmt_grd(fname, wod, nlon, nlat)
+#else
+         call read_gmt_grd(fname, wod, nlon, nlat,formatid)
+#endif
 #else
          allocate(wodorg(0:nxorg-1,0:nyorg-1))
          open(1,file=trim(fname),action='read',status='old',form='formatted')
@@ -1361,7 +1443,11 @@ contains
             allocate(wod_all(dg%my%totalNx,dg%my%totalNy))
             write(6,'(8x,a,a)') 'WETORDRY_FILE_GIVEN:', trim(fname)
 #ifndef PIXELIN
+#ifndef NFSUPPORT
             call read_gmt_grd(fname, wod_all, dg%my%totalNx,dg%my%totalNy)
+#else
+            call read_gmt_grd(fname, wod_all, dg%my%totalNx,dg%my%totalNy,formatid)
+#endif
 #else
             allocate(wodorg(0:nxorg-1,0:nyorg-1))
             open(1,file=trim(fname),action='read',status='old',form='formatted')

@@ -195,6 +195,12 @@ integer(kind=4) :: elastic_loading_interpolation = 1
 #ifdef BANKFILE
 real(kind=REAL_BYTE) :: broken_rate = -1.0d0
 #endif
+#ifdef NORMALMODE
+integer(kind=4) :: dumpp = 0
+#endif
+#ifdef NFSUPPORT
+integer(kind=4), parameter :: id_cf17 = 17
+#endif
 
 contains
 
@@ -208,6 +214,9 @@ contains
 !        maxgrdfn, tgstafn, tgsoutfile, pointers, smooth_edges, &
          maxgrdfn, vmaxgrdfn, tgstafn, tgsoutfile, pointers, smooth_edges, &
 ! ==============================================================================
+#ifdef NORMALMODE
+         dumpp, &
+#endif
 #ifdef HZMINOUT
          mingrdfn, &
 #endif

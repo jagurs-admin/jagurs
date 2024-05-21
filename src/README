@@ -1,5 +1,5 @@
 How to install JAGURS-D
-June 24, 2015
+May 13, 2024
 
 [TOC]
 1. Requirements
@@ -46,13 +46,27 @@ About the following platforms, sample makefiles "Makefile.[platform]" exist.
 In other platforms, you need to make makefile for your platform based on
 existing samples.
 
-   SC_ICE: SGI Altix ICE X system
-           Intel Fortran/C++ compilers, SGI MPT and MKL FFTW3 interface are
-           utilized.
+   DA: For JAMSTEC DA system
+      Intel Fortran/C++ compilers, Intel MPI and MKL FFTW3 interface are
+      utilized.
 
-   SX: Cross environment for the Earth simulator and NEC SX
+   Aurora: For the Earth simulator 4 and NEC SX-Aurora TSUBASA
 
-   K: Cross environment for K computer
+   gfortran: For GNU SDK (gcc and gfortran) and OpenMPI on usual Linux system
+
+   Windows: For nmake at Windows system
+
+   NEC: NEC internal use [NOTE!] Not for NEC SX-Aurora TSUBASA!
+      Intel Fortran/C++ compilers, Intel MPI and MKL FFTW3 interface are
+      utilized.
+
+   SC_ICE (obsolete): SGI Altix ICE X system
+      Intel Fortran/C++ compilers, SGI MPT and MKL FFTW3 interface are
+      utilized.
+
+   SX (obsolete): Cross environment for the Earth simulator and NEC SX
+
+   K (obsolete): Cross environment for K computer
 
 Typically, you need to modify install path of each libraries.
 

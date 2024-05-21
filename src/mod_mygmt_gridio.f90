@@ -3,6 +3,9 @@ module mod_mygmt_gridio
 ! === For negative max. height =================================================
 use mod_params, only : missing_value
 ! ==============================================================================
+#ifdef NFSUPPORT
+use mod_params, only : id_cf17
+#endif
 implicit none
 include 'netcdf.inc'
 
@@ -39,7 +42,7 @@ contains
       !** set these ***
       real(kind=8), allocatable, dimension(:) :: x_range, y_range, z_range, spacing
       integer(kind=4), allocatable, dimension(:) :: dimension
-#ifdef REAL_DBLE
+#if defined(REAL_DBLE) || defined(NFSUPPORT)
 ! === Write buffer must be 4 byte. =============================================
       real(kind=4), allocatable, dimension(:,:) :: z_tmp
 ! ==============================================================================
@@ -48,12 +51,15 @@ contains
 #ifdef NFSUPPORT
       integer(kind=4), intent(in) :: formatid
       real(kind=8), allocatable, dimension(:) :: tmp
-#ifndef __NEC__
+#if !defined(__NEC__) && !defined(__GFORTRAN__)
       real(kind=4), parameter :: NaN = transfer(Z'FFFFFFFF', 0.e0)
 #else
       real(kind=4), parameter :: NaN = Z'FFFFFFFF'
 #endif
       integer(kind=4) :: x_dim, y_dim, i
+#endif
+#ifdef NFSUPPORT
+      integer(kind=4) :: j
 #endif
 
       xysize_len = nx*ny
@@ -144,30 +150,63 @@ contains
          stat = nf_create(filename, NF_NETCDF4, ncid)
 
          ! define 2 dimensions return dimension id's
-         stat = nf_def_dim(ncid, 'x', nx, x_dim)
-         stat = nf_def_dim(ncid, 'y', ny, y_dim)
+         if(formatid /= id_cf17) then
+            stat = nf_def_dim(ncid, 'x', nx, x_dim)
+            stat = nf_def_dim(ncid, 'y', ny, y_dim)
+         else
+            stat = nf_def_dim(ncid, 'lon', nx, x_dim)
+            stat = nf_def_dim(ncid, 'lat', ny, y_dim)
+         end if
 
          ! define variables
          z_dims(1) = x_dim
          z_dims(2) = y_dim
 
-         stat = nf_def_var(ncid, 'x', NF_DOUBLE, 1, x_dim, x_range_id )
-         stat = nf_def_var(ncid, 'y', NF_DOUBLE, 1, y_dim, y_range_id )
+         if(formatid /= id_cf17) then
+            stat = nf_def_var(ncid, 'x', NF_DOUBLE, 1, (/x_dim/), x_range_id )
+            stat = nf_def_var(ncid, 'y', NF_DOUBLE, 1, (/y_dim/), y_range_id )
+         else
+            stat = nf_def_var(ncid, 'lon', NF_DOUBLE, 1, (/x_dim/), x_range_id )
+            stat = nf_def_var(ncid, 'lat', NF_DOUBLE, 1, (/y_dim/), y_range_id )
+         end if
          stat = nf_def_var(ncid, 'z', NF_REAL, 2, z_dims, z_id )
 
          ! assign attributes
-         stat = nf_put_att_text(ncid, x_range_id, 'long_name', 1, 'x')
+         if(formatid /= id_cf17) then
+            stat = nf_put_att_text(ncid, x_range_id, 'long_name', 1, 'x')
+         else
+            stat = nf_put_att_text(ncid, x_range_id, 'long_name', 1, 'longitude')
+         end if
          x_range(1) = dble(x0)
          x_range(2) = dble(x1)
          stat = nf_put_att_double(ncid, x_range_id, 'actual_range', NF_DOUBLE, 2, x_range)
 
-         stat = nf_put_att_text(ncid, y_range_id, 'long_name', 1, 'y')
+         if(formatid /= id_cf17) then
+            stat = nf_put_att_text(ncid, y_range_id, 'long_name', 1, 'y')
+         else
+            stat = nf_put_att_text(ncid, y_range_id, 'long_name', 1, 'latitude')
+         end if
          y_range(1) = dble(y0)
          y_range(2) = dble(y1)
          stat = nf_put_att_double(ncid, y_range_id, 'actual_range', NF_DOUBLE, 2, y_range)
 
          stat = nf_put_att_text(ncid, z_id, 'long_name', 1, 'z')
-         stat = nf_put_att_real(ncid, z_id, '_FillValue', NF_REAL, 1, NaN)
+!        stat = nf_put_att_real(ncid, z_id, '_FillValue', NF_REAL, 1, NaN)
+! === For negative max. height =================================================
+         missing_value_is_available = .false.
+         if(present(flag_missing_value)) then
+            if(flag_missing_value) then
+               missing_value_is_available = .true.
+            end if
+         end if
+
+         if(missing_value_is_available) then
+            stat = nf_put_att_real(ncid, z_id, '_FillValue', NF_REAL, 1, &
+                                   real(missing_value))
+         else
+            stat = nf_put_att_real(ncid, z_id, '_FillValue', NF_REAL, 1, NaN)
+         end if
+! ==============================================================================
          z_range(1) = dble(zmin)
          z_range(2) = dble(zmax)
          stat = nf_put_att_double(ncid, z_id, 'actual_range', NF_DOUBLE, 2, z_range)
@@ -193,12 +232,24 @@ contains
 #endif
 
       ! store z
-#ifndef REAL_DBLE
+#if !defined(REAL_DBLE) && !defined(NFSUPPORT)
       stat = nf_put_var_real(ncid, z_id, z)
 #else
 ! === Write buffer must be 4 byte. =============================================
       allocate(z_tmp(nx,ny))
+#ifdef NFSUPPORT
+      if(formatid == nf_format_classic) then
+#endif
       z_tmp = z
+#ifdef NFSUPPORT
+      else
+         do j = 1, ny
+            do i = 1, nx
+               z_tmp(i,ny-j+1) = z(i,j)
+            end do
+         end do
+      end if
+#endif
       stat = nf_put_var_real(ncid, z_id, z_tmp)
       deallocate(z_tmp)
 ! ==============================================================================
@@ -247,6 +298,7 @@ contains
 #endif
 #ifdef NFSUPPORT
       integer(kind=4), intent(out) :: formatid
+      integer(kind=4) :: node_offset
 #endif
 
       !*** open the file and inquire about the dimensions ***
@@ -304,23 +356,56 @@ contains
       err = nf_get_var_int(ncid, dimension_id, dimension)
 #ifdef NFSUPPORT
       else
+         err = nf_get_att_int(ncid, nf_global, 'node_offset', node_offset)
+         if((node_offset == 1) .and. (err == 0)) then
+            write(0,'(a)') 'Error! Grid file with pixel node registration is NOT available!!!'
+            stop
+         end if
+
          err = nf_inq_varid(ncid, 'x', x_range_id)
-         err = nf_get_att_double(ncid, x_range_id, 'actual_range', x_range)
+         if(err == nf_enotvar) then
+            err = nf_inq_varid(ncid, 'lon', x_range_id)
+            if(err == nf_enotvar) then
+               write(0,'(a,a,a)') 'Error! The format of GMT file "', trim(infilename), '" is invalid!'
+               stop
+            end if
+            formatid = id_cf17
+         end if
 
-         err = nf_inq_varid(ncid, 'y', y_range_id)
-         err = nf_get_att_double(ncid, y_range_id, 'actual_range', y_range)
+         if(formatid /= id_cf17) then
+            err = nf_get_att_double(ncid, x_range_id, 'actual_range', x_range)
 
-         err = nf_inq_varid(ncid, 'z', z_range_id)
-         err = nf_get_att_double(ncid, z_range_id, 'actual_range', z_range)
+            err = nf_inq_varid(ncid, 'y', y_range_id)
+            err = nf_get_att_double(ncid, y_range_id, 'actual_range', y_range)
 
-         err = nf_inq_dimid(ncid, 'x', x_range_id)
-         err = nf_inq_dimlen(ncid, x_range_id, dimension(1))
+            err = nf_inq_varid(ncid, 'z', z_range_id)
+            err = nf_get_att_double(ncid, z_range_id, 'actual_range', z_range)
 
-         err = nf_inq_dimid(ncid, 'y', y_range_id)
-         err = nf_inq_dimlen(ncid, y_range_id, dimension(2))
+            err = nf_inq_dimid(ncid, 'x', x_range_id)
+            err = nf_inq_dimlen(ncid, x_range_id, dimension(1))
+
+            err = nf_inq_dimid(ncid, 'y', y_range_id)
+            err = nf_inq_dimlen(ncid, y_range_id, dimension(2))
+         else
+            err = nf_get_att_double(ncid, x_range_id, 'actual_range', x_range)
+
+            err = nf_inq_varid(ncid, 'lat', y_range_id)
+            err = nf_get_att_double(ncid, y_range_id, 'actual_range', y_range)
+
+            err = nf_inq_varid(ncid, 'z', z_range_id)
+            err = nf_get_att_double(ncid, z_range_id, 'actual_range', z_range)
+
+            err = nf_inq_dimid(ncid, 'lon', x_range_id)
+            err = nf_inq_dimlen(ncid, x_range_id, dimension(1))
+
+            err = nf_inq_dimid(ncid, 'lat', y_range_id)
+            err = nf_inq_dimlen(ncid, y_range_id, dimension(2))
+         end if
 
          spacing(1) = (x_range(2) - x_range(1))/(dimension(1) - 1)
          spacing(2) = (y_range(2) - y_range(1))/(dimension(2) - 1)
+         !spacing(1) = (x_range(2) - x_range(1))/dimension(1)
+         !spacing(2) = (y_range(2) - y_range(1))/dimension(2)
       end if
 #endif
       err = nf_close(ncid)
@@ -399,17 +484,25 @@ contains
 #endif
    end subroutine read_gmt_grd_hdr
 
+#ifndef NFSUPPORT
    subroutine read_gmt_grd(infilename,z,nx,ny)
+#else
+   subroutine read_gmt_grd(infilename,z,nx,ny,formatid)
+#endif
       character(len=256), intent(in) :: infilename
       real(kind=REAL_BYTE), dimension(nx,ny), intent(inout) :: z
 !     real(kind=REAL_BYTE), intent(inout) :: z
       integer(kind=4), intent(in) :: nx, ny
 
       integer(kind=4) :: err, ncid, z_id
-#ifdef REAL_DBLE
+#if defined(REAL_DBLE) || defined(NFSUPPORT)
 ! === Read buffer must be 4 byte. ==============================================
       real(kind=4), allocatable, dimension(:,:) :: z_tmp
 ! ==============================================================================
+#endif
+#ifdef NFSUPPORT
+      integer(kind=4), intent(in) :: formatid
+      integer(kind=4) :: i, j
 #endif
 
       !*** open file again ***
@@ -425,13 +518,25 @@ contains
       !*** inquire about z-data and read into float array
       !    assumes space is already allocated ***
       err = nf_inq_varid(ncid, 'z', z_id)
-#ifndef REAL_DBLE
+#if !defined(REAL_DBLE) && !defined(NFSUPPORT)
       err = nf_get_var_real(ncid, z_id, z)
 #else
 ! === Read buffer must be 4 byte. ==============================================
       allocate(z_tmp(nx,ny))
       err = nf_get_var_real(ncid, z_id, z_tmp)
+#ifdef NFSUPPORT
+      if(formatid == nf_format_classic) then
+#endif
       z = z_tmp
+#ifdef NFSUPPORT
+      else
+         do j = 1, ny
+            do i = 1, nx
+               z(i,ny-j+1) = z_tmp(i,j)
+            end do
+         end do
+      end if
+#endif
       deallocate(z_tmp)
 ! ==============================================================================
 #endif
