@@ -1,0 +1,17 @@
+&normalmode
+srclon=138.72d0
+srclat=35.35d0
+dist_s=0
+dist_e=2000
+tmax=3600.0d0
+dt=1.0d1
+sind=10
+minmode=10
+maxmode=13
+Samp=1000.0d0
+SDt=2000.0d0
+DCflag=.true.
+SYNflag=.true.
+OH=5.0d0
+atmfile='AtmModel.dat'
+/

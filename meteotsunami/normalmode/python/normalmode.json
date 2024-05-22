@@ -1,0 +1,17 @@
+{
+"srclon":138.72,
+"srclat":35.35,
+"dist_s":0,
+"dist_e":2000,
+"tmax":3600,
+"dt":10,
+"sind":10,
+"minmode":10,
+"maxmode":13,
+"Samp":1000,
+"SDt":2000,
+"DCflag":1,
+"SYNflag":1,
+"OH":5,
+"atmfile":"AtmModel.dat"
+}
