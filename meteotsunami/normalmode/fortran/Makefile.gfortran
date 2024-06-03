@@ -1,0 +1,14 @@
+FC=gfortran -DJAGURS #-DNONAN_NOFILT
+FFLAGS=-cpp -fallow-invalid-boz -ffree-line-length-none -I$(FFTW3DIR)/include
+LIBS=-L./amos -lamos -L$(FFTW3DIR)/lib -lfftw3
+
+all: PHcalc_wave6 printp
+
+PHcalc_wave6: mod_PHcalc_wave6.f90
+	$(FC) -o $@ $(FFLAGS) $^ $(LIBS)
+
+printp: printp.f90
+	$(FC) -o $@ $(FFLAGS) $^
+
+clean:
+	rm -f PHcalc_wave6 printp *.mod

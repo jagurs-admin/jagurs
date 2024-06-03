@@ -1,5 +1,4 @@
 FC=ifort -DJAGURS #-DNONAN_NOFILT
-FC=gfortran -DJAGURS #-DNONAN_NOFILT
 FFLAGS=-cpp -check all -g -traceback -qmkl -I$(MKLROOT)/include/fftw -fp-model precise
 FFLAGS=-cpp -O3                      -qmkl -I$(MKLROOT)/include/fftw -fp-model precise
 LIBS=-L./amos -lamos

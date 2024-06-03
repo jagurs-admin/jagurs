@@ -1,0 +1,62 @@
+diff -uprN amos.org/d1mach.f amos/d1mach.f
+--- amos.org/d1mach.f	1992-03-20 05:38:51.000000000 +0900
++++ amos/d1mach.f	2023-07-07 16:55:05.000000000 +0900
+@@ -272,11 +272,11 @@ C     MACHINE CONSTANTS FOR THE IBM PC
+ C     ASSUMES THAT ALL ARITHMETIC IS DONE IN DOUBLE PRECISION
+ C     ON 8088, I.E., NOT IN 80 BIT FORM FOR THE 8087.
+ C
+-C     DATA SMALL(1),SMALL(2) /  2002288515,    1050897 /
+-C     DATA LARGE(1),LARGE(2) /  1487780761, 2146426097 /
+-C     DATA RIGHT(1),RIGHT(2) / -1209488034, 1017118298 /
+-C     DATA DIVER(1),DIVER(2) / -1209488034, 1018166874 /
+-C     DATA LOG10(1),LOG10(2) /  1352628735, 1070810131 /
++      DATA SMALL(1),SMALL(2) /  2002288515,    1050897 /
++      DATA LARGE(1),LARGE(2) /  1487780761, 2146426097 /
++      DATA RIGHT(1),RIGHT(2) / -1209488034, 1017118298 /
++      DATA DIVER(1),DIVER(2) / -1209488034, 1018166874 /
++      DATA LOG10(1),LOG10(2) /  1352628735, 1070810131 /
+ C
+ C     MACHINE CONSTANTS FOR THE IBM RS 6000
+ C
+diff -uprN amos.org/i1mach.f amos/i1mach.f
+--- amos.org/i1mach.f	1992-03-20 05:39:09.000000000 +0900
++++ amos/i1mach.f	2023-07-07 16:55:37.000000000 +0900
+@@ -426,22 +426,22 @@ C     DATA IMACH(16) /  63 /
+ C
+ C     MACHINE CONSTANTS FOR THE IBM PC
+ C
+-C     DATA IMACH( 1) /     5 /
+-C     DATA IMACH( 2) /     6 /
+-C     DATA IMACH( 3) /     0 /
+-C     DATA IMACH( 4) /     0 /
+-C     DATA IMACH( 5) /    32 /
+-C     DATA IMACH( 6) /     4 /
+-C     DATA IMACH( 7) /     2 /
+-C     DATA IMACH( 8) /    31 /
+-C     DATA IMACH( 9) / 2147483647 /
+-C     DATA IMACH(10) /     2 /
+-C     DATA IMACH(11) /    24 /
+-C     DATA IMACH(12) /  -125 /
+-C     DATA IMACH(13) /   127 /
+-C     DATA IMACH(14) /    53 /
+-C     DATA IMACH(15) / -1021 /
+-C     DATA IMACH(16) /  1023 /
++      DATA IMACH( 1) /     5 /
++      DATA IMACH( 2) /     6 /
++      DATA IMACH( 3) /     0 /
++      DATA IMACH( 4) /     0 /
++      DATA IMACH( 5) /    32 /
++      DATA IMACH( 6) /     4 /
++      DATA IMACH( 7) /     2 /
++      DATA IMACH( 8) /    31 /
++      DATA IMACH( 9) / 2147483647 /
++      DATA IMACH(10) /     2 /
++      DATA IMACH(11) /    24 /
++      DATA IMACH(12) /  -125 /
++      DATA IMACH(13) /   127 /
++      DATA IMACH(14) /    53 /
++      DATA IMACH(15) / -1021 /
++      DATA IMACH(16) /  1023 /
+ C
+ C     MACHINE CONSTANTS FOR THE IBM RS 6000
+ C

@@ -1,8 +1,0 @@
-&normalmode
-srclon=138.720000d0
-srclat=35.350000d0
-dist_s=0
-dist_e=2000
-tmax=3600.000000d0
-dt=10.000000d0
-/

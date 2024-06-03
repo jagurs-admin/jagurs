@@ -33,7 +33,11 @@ module mod_PHcalc_wave6
    real(kind=8), parameter :: omg_searchmax = 0.01d0
 
    real(kind=8), parameter :: pi = 3.14159265d0
+#ifndef __GFORTRAN__
    real(kind=8), parameter :: NaN = transfer(Z'FFFFFFFFFFFFFFFF', 0.d0)
+#else
+   real(kind=8), parameter :: NaN = Z'FFFFFFFFFFFFFFFF'
+#endif
    complex(kind=8), parameter :: im = (0.0d0, 1.0d0)
 
    integer :: nz
@@ -342,10 +346,17 @@ contains
                a22 = A(i,j,2,2)
                Acheck = a11*a22 - a12*a21
                if(abs(1.0d0 - Acheck) > 0.1d0) then
+#ifndef __GFORTRAN__
                   A(i,j,1,1) = NaN
                   A(i,j,1,2) = NaN
                   A(i,j,2,1) = NaN
                   A(i,j,2,2) = NaN
+#else
+                  A(i,j,1,1) = (NaN,0.0d0)
+                  A(i,j,1,2) = (NaN,0.0d0)
+                  A(i,j,2,1) = (NaN,0.0d0)
+                  A(i,j,2,2) = (NaN,0.0d0)
+#endif
                end if
 #endif
                A22_(i,j) = A(i,j,2,2)
@@ -805,7 +816,7 @@ contains
       real(kind=8), dimension(n), intent(out) :: y
       real(kind=8) :: as
       integer :: i, j, a_tmp, naxpy, y_tmp
-      if((abs(a_data(1) < huge(a_data(1)))) .and. (a_data(1) == a_data(1)) .and. (a_data(1) /= 0.0d0) .and. (a_data(1) /= 1.0d0)) then
+      if((abs(a_data(1)) < huge(a_data(1))) .and. (a_data(1) == a_data(1)) .and. (a_data(1) /= 0.0d0) .and. (a_data(1) /= 1.0d0)) then
          b_data(1) = b_data(1)/a_data(1)
          b_data(2) = b_data(2)/a_data(1)
          b_data(3) = b_data(3)/a_data(1)
