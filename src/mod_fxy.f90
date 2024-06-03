@@ -12,7 +12,8 @@ use mod_params, only : froude_lim
 use mod_params, only : broken_rate
 #endif
 #ifdef NORMALMODE
-use mod_normalmode, only : calc_nm_P, rhow
+use mod_normalmode, only : calc_nm_P
+use mod_params, only : m_rho
 #ifdef MPI
 use mod_mpi, only : exchange_edges_P
 #endif
@@ -92,8 +93,8 @@ contains
                fx(i,j) = fx(i,j) - dx(i,j)*cfc*(hz(i+1,j)  -hz(i,j))
                fy(i,j) = fy(i,j) - dy(i,j)*gts*(hz(i,  j+1)-hz(i,j))
 #ifdef NORMALMODE
-               fx(i,j) = fx(i,j) - dx(i,j)*cfc/g/rhow*(nm_P(i+1,j)  -nm_P(i,j))
-               fy(i,j) = fy(i,j) - dy(i,j)*gts/g/rhow*(nm_P(i,  j+1)-nm_P(i,j))
+               fx(i,j) = fx(i,j) - dx(i,j)*cfc/g/m_rho*(nm_P(i+1,j)  -nm_P(i,j))
+               fy(i,j) = fy(i,j) - dy(i,j)*gts/g/m_rho*(nm_P(i,  j+1)-nm_P(i,j))
 #endif
             else
                fx(i,j) = zap
@@ -494,7 +495,7 @@ contains
 #ifndef NORMALMODE
                        - advc - crls*fybar
 #else
-                       - advc - crls*fybar - half*(dz(i+1,j)+dz(i,j))*dtds*invst/rhow*(nm_P(i+1,j)-nm_P(i,j))
+                       - advc - crls*fybar - half*(dz(i+1,j)+dz(i,j))*dtds*invst/m_rho*(nm_P(i+1,j)-nm_P(i,j))
 
 #endif
             end if
@@ -729,7 +730,7 @@ contains
 #ifndef NORMALMODE
                        - advc + crls*fxbar
 #else
-                       - advc + crls*fxbar - half*(dz(i,j+1)+dz(i,j))*dtds/rhow*(nm_P(i,j+1)-nm_P(i,j))
+                       - advc + crls*fxbar - half*(dz(i,j+1)+dz(i,j))*dtds/m_rho*(nm_P(i,j+1)-nm_P(i,j))
 #endif
             end if
          end do

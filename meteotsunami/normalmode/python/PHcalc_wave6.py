@@ -379,7 +379,8 @@ if SYNflag == 1:
         
         # -- parameters for fourier transform --
         Nf = 2*pi/(2*dt)
-        FFTf = np.arange(0,Nf*2-Df+eps*(Nf*2-Df),Df)
+        #FFTf = np.arange(0,Nf*2-Df+eps*(Nf*2-Df),Df)
+        FFTf = np.arange(0,Nf*2-Df+0.5*Df,Df)
         
         # -----------------------
         #     figure % Figure for check

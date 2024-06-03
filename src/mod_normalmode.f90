@@ -11,7 +11,6 @@ real(kind=REAL_BYTE) :: srclon, srclat, tmax, dt
 real(kind=REAL_BYTE), allocatable, dimension(:,:) :: nm_atm
 integer(kind=4) :: dist_s, dist_e, sind, minmode, maxmode
 real(kind=REAL_BYTE) :: Samp, SDt, OH
-real(kind=REAL_BYTE), parameter :: rhow = 1.0d3 ! water density (kg/m3)
 integer(kind=4) :: nstep, interval
 logical :: DCflag, SYNflag
 character(len=256) :: atmfile
