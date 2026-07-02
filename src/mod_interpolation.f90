@@ -1,3 +1,11 @@
+#undef TIMER
+#ifdef TIMER
+#   define TIMER_START(a) call start_timer(a)
+#   define TIMER_STOP(a)  call stop_timer(a)
+#else
+#   define TIMER_START(a)
+#   define TIMER_STOP(a)
+#endif
 #ifdef DBLE_MATH
 #include "dble_math.h"
 #endif
@@ -10,6 +18,9 @@ use mod_multi, only : MPI_MEMBER_WORLD
 #endif
 #endif
 use mod_grid
+#ifdef TIMER
+use mod_timer
+#endif
 implicit none
 #ifdef MPI
 integer(kind=4), private :: nprocs, myrank, npx, npy, rankx, ranky
@@ -17,6 +28,9 @@ integer(kind=4), private :: MPI_X_WORLD, MPI_Y_WORLD
 #endif
 
 private :: spline_interpolation, tri, linear_interpolation
+#ifdef USE_GPU
+private :: spline_interpolation_many, tri_many
+#endif
 
 contains
 
@@ -1406,6 +1420,104 @@ contains
 
       return
    end subroutine spline_interpolation
+#ifdef USE_GPU
+   subroutine spline_interpolation_many(r, n_in, y, n_out, yo, howmany)
+      ! Arguments
+      integer(kind=4), intent(in) :: r, n_in, n_out, howmany
+      real(kind=REAL_BYTE), intent(in), dimension(n_in,howmany) :: y
+      real(kind=REAL_BYTE), intent(out), dimension(n_out,howmany) :: yo
+      ! Work
+      real(kind=REAL_BYTE), dimension(n_in-2,howmany)   :: b
+      real(kind=REAL_BYTE), dimension(n_in-2)           :: d
+      real(kind=REAL_BYTE), dimension(n_in,howmany)     :: u
+      real(kind=REAL_BYTE), dimension(n_in-1,howmany) :: c1, c2, c3, c4
+      real(kind=REAL_BYTE) :: x0
+      integer(kind=4) :: n, i, j, i_, ii, k
+
+      n = n_in - 2
+
+      ! Solve ax = b
+      ! a is tridiagonal matrix (dl, d, du)
+TIMER_START('___ip:tri_many01')
+!$omp target teams distribute parallel do
+      do i = 1, n
+         d(i) = 2.0d0*2.0d0
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do k = 1, howmany
+         do i = 1, n
+            b(i,k) = 6.0d0*(y(i+2,k) - 2.0d0*y(i+1,k) + y(i,k))
+         end do
+      end do
+TIMER_STOP('___ip:tri_many01')
+
+TIMER_START('___ip:tri_many02')
+      call tri_many(n, d, b, howmany)
+TIMER_STOP('___ip:tri_many02')
+
+      ! Make u (= d^2y/dx^2)
+TIMER_START('___ip:tri_many03')
+!$omp target teams distribute parallel do
+      do k = 1, howmany
+         u(1,k) = 0.0d0
+      end do
+TIMER_STOP('___ip:tri_many03')
+
+TIMER_START('___ip:tri_many04')
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do k = 1, howmany
+         do i = 1, n
+            u(i+1,k) = b(i,k)
+         end do
+      end do
+TIMER_STOP('___ip:tri_many04')
+
+TIMER_START('___ip:tri_many05')
+!$omp target teams distribute parallel do
+      do k = 1, howmany
+         u(n_in,k) = 0.0d0
+      end do
+TIMER_STOP('___ip:tri_many05')
+
+      ! Calc. coefficients
+      ! S = c(i,1)*x^3 + c(i,2)*x^2 + c(i,3)*x + c(i,4)
+TIMER_START('___ip:tri_many06')
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do k = 1, howmany
+         do i = 1, n_in-1
+            c1(i,k) = (u(i+1,k) - u(i,k))/6.0d0
+            c2(i,k) = u(i,k)/2.0d0
+            c3(i,k) = (y(i+1,k) - y(i,k)) - (2.0d0*u(i,k) + u(i+1,k))/6.0d0
+            c4(i,k) = y(i,k)
+         end do
+      end do
+TIMER_STOP('___ip:tri_many06')
+
+      ! Interpolation
+TIMER_START('___ip:tri_many07')
+!$omp target teams distribute parallel do collapse(2) private(j,i,i_,x0)
+      do k = 1, howmany
+         do j = 1, n_in-1
+            do i = 0, r-1
+               i_ = (j-1)*r + i + 1
+               x0 = dble(i)/dble(r)
+               yo(i_,k) = c1(j,k)*x0**3 + c2(j,k)*x0**2 + c3(j,k)*x0 + c4(j,k)
+            end do
+         end do
+      end do
+TIMER_STOP('___ip:tri_many07')
+
+TIMER_START('___ip:tri_many08')
+!$omp target teams distribute parallel do
+      do k = 1, howmany
+         yo(n_out,k) = y(n_in,k)
+      end do
+TIMER_STOP('___ip:tri_many08')
+
+      return
+   end subroutine spline_interpolation_many
+#endif
 
    subroutine tri(n, d, b)
       implicit none
@@ -1424,6 +1536,30 @@ contains
       end do
       return
    end subroutine tri
+#ifdef USE_GPU
+   subroutine tri_many(n, d, b, howmany)
+      implicit none
+      integer(kind=4), intent(in) :: n, howmany
+      real(kind=REAL_BYTE), intent(inout), dimension(n,howmany) :: b
+      real(kind=REAL_BYTE), intent(inout), dimension(n) :: d
+      integer(kind=4) :: i, k
+!$omp target teams distribute parallel do
+      do i = 1, n-1
+         d(i+1) = d(i+1) - 1.0d0/d(i)
+      end do
+!$omp target teams distribute parallel do private(i)
+      do k = 1, howmany
+         do i = 1, n-1
+            b(i+1,k) = b(i+1,k) - b(i,k)/d(i)
+         end do
+         b(n,k) = b(n,k)/d(n)
+         do i = n-1, 1, -1
+            b(i,k) = (b(i,k) - b(i+1,k))/d(i)
+         end do
+      end do
+      return
+   end subroutine tri_many
+#endif
 
    subroutine linear_interpolation(r, n_in, y, n_out, yo)
       ! Arguments
@@ -1432,6 +1568,9 @@ contains
       real(kind=REAL_BYTE), intent(out), dimension(n_out) :: yo
       real(kind=REAL_BYTE) :: x0, x1
       integer(kind=4) :: i, j, i_
+#ifdef USE_GPU
+!$omp declare target
+#endif
       ! Interpolation
       do j = 1, n_in-1
          do i = 0, r-1
@@ -1552,15 +1691,26 @@ contains
       end do
 #endif
 
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #ifndef MPI
+#ifndef USE_GPU
 !$omp single
+#endif
+TIMER_START('___ip:reg01')
       allocate(buf0(bigNY,bigNX))
       allocate(buf1(ny,   bigNX))
       allocate(buf2(bigNX,ny))
+TIMER_STOP('___ip:reg01')
+TIMER_START('___ip:reg02')
+#ifndef USE_GPU
 !$omp end single
 
 !$omp do private(j)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do i = 1, bigNX
          do j = 1, bigNY
 ! === Elastic loading with interpolation =======================================
@@ -1569,28 +1719,49 @@ contains
 ! ==============================================================================
          end do
       end do
+TIMER_STOP('___ip:reg02')
 
       ! Y interpolation
       if(use_linear == 1) then
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do i = 1, bigNX
             call linear_interpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
          end do
       else
+#ifndef USE_GPU
 !$omp do
          do i = 1, bigNX
             call spline_interpolation(fg%my%nr, bigNY, buf0(1,i), ny, buf1(1,i))
          end do
+#else
+TIMER_START('___ip:reg03')
+         call spline_interpolation_many(fg%my%nr, bigNY, buf0, ny, buf1, bigNX)
+TIMER_STOP('___ip:reg03')
+#endif
       end if
+TIMER_START('___ip:reg04')
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, ny
          do i = 1, bigNX
             buf2(i,j) = buf1(j,i)
          end do
       end do
+TIMER_STOP('___ip:reg04')
       ! X interpolation
       if(use_linear == 1) then
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do j = 1, ny
 ! === Elastic loading with interpolation =======================================
 !           call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
@@ -1598,6 +1769,7 @@ contains
 ! ==============================================================================
          end do
       else
+#ifndef USE_GPU
 !$omp do
          do j = 1, ny
 ! === Elastic loading with interpolation =======================================
@@ -1605,30 +1777,53 @@ contains
             call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%loading%delta(1,j))
 ! ==============================================================================
          end do
+#else
+TIMER_START('___ip:reg05')
+         call spline_interpolation_many(fg%my%nr, bigNX, buf2, nx, fg%loading%delta, ny)
+TIMER_STOP('___ip:reg05')
+#endif
       end if
 
 ! === Elastic loading with interpolation =======================================
+TIMER_START('___ip:reg06')
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, ny
          do i = 1, nx
             fg%wave_field%hz(i,j) = fg%wave_field%hz(i,j) + fg%loading%delta(i,j)
          end do
       end do
+TIMER_STOP('___ip:reg06')
 ! ==============================================================================
+#ifndef USE_GPU
 !$omp single
+#endif
+TIMER_START('___ip:reg07')
       deallocate(buf0)
       deallocate(buf1)
       deallocate(buf2)
+TIMER_STOP('___ip:reg07')
+#ifndef USE_GPU
 !$omp end single
+#endif
 #else
       ! Collect all coarse elements to rank 0.
+#ifndef USE_GPU
 !$omp single
+#endif
       allocate(tmp2d(bigNY,bigNX))
 ! === MPI_IN_PLACE cannot be utilized with MPI_Reduce on SX. ===================
       allocate(commbuf(bigNY,bigNX))
 ! ==============================================================================
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(j)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do i = 1, bigNX
          do j = 1, bigNY
 ! === MPI_IN_PLACE cannot be utilized with MPI_Reduce on SX. ===================
@@ -1637,11 +1832,20 @@ contains
 ! ==============================================================================
          end do
       end do
+#ifndef USE_GPU
 !$omp do private(ic, j, jc)
+#else
+!$omp target teams distribute parallel do collapse(2) private(ic,j,jc)
+#endif
       do i = 1, bigNX
+#ifdef USE_GPU
+         do j = 1, bigNY
+#endif
          ic = i + zeroIX - 1
          if((ic >= cg%my%ix) .and. (ic <= cg%my%ixend)) then
+#ifndef USE_GPU
             do j = 1, bigNY
+#endif
                jc = j + zeroIY - 1
                if((jc >= cg%my%iy) .and. (jc <= cg%my%iyend)) then
 ! === MPI_IN_PLACE cannot be utilized with MPI_Reduce on SX. ===================
@@ -1652,10 +1856,17 @@ contains
 ! ==============================================================================
 ! ==============================================================================
                end if
+#ifndef USE_GPU
             end do
+#endif
          end if
+#ifdef USE_GPU
+         end do
+#endif
       end do
+#ifndef USE_GPU
 !$omp single
+#endif
 ! === MPI_IN_PLACE cannot be utilized with MPI_Reduce on SX. ===================
       call MPI_Reduce(commbuf, tmp2d, bigNY*bigNX, REAL_MPI, &
                       MPI_SUM, 0, __MPICOMM__, ierr)
@@ -1671,31 +1882,49 @@ contains
 
       ! Y interpolation buf0(bigNY,nx0) -> buf1(totalNy,nx0)
       allocate(buf1(totalNy,nx0))
+#ifndef USE_GPU
 !$omp end single
+#endif
       if(use_linear == 1) then
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do i = 1, nx0
             call linear_interpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
          end do
       else
+#ifndef USE_GPU
 !$omp do
          do i = 1, nx0
             call spline_interpolation(fg%my%nr, bigNY, buf0(1,i), totalNy, buf1(1,i))
          end do
+#else
+         call spline_interpolation_many(fg%my%nr, bigNY, buf0, totalNy, buf1, nx0)
+#endif
       end if
+#ifndef USE_GPU
 !$omp single
+#endif
       deallocate(buf0)
 
       ! Local transposition buf1(totalNy,nx0) -> tmp2d(nx0,totalNy)
       allocate(tmp2d(nx0,totalNy))
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, totalNy
          do i = 1, nx0
             tmp2d(i,j) = buf1(j,i)
          end do
       end do
+#ifndef USE_GPU
 !$omp single
+#endif
       deallocate(buf1)
       ! Transposition tmp2d(nx0,totalNy) -> tmp1d(bigNX*ny1)
       allocate(tmp1d(bigNX*ny1))
@@ -1705,11 +1934,17 @@ contains
       deallocate(tmp2d)
       ! Rearrange tmp1d(bigNX*ny1) -> buf2(bigNX,ny1)
       allocate(buf2(bigNX,ny1))
+#ifndef USE_GPU
 !$omp end single
+#endif
       do p = 0, nprocs-1
          ist = rdispls1(p)/ny1 + 1
          ien = ist + recvcounts1(p)/ny1 - 1
+#ifndef USE_GPU
 !$omp do private(i, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,ind)
+#endif
          do j = 1, ny1
             do i = ist, ien
                ind = rdispls1(p) + (ien - ist + 1)*(j - 1) + i - ist + 1
@@ -1717,36 +1952,56 @@ contains
             end do
          end do
       end do
+#ifndef USE_GPU
 !$omp single
+#endif
       deallocate(tmp1d)
 
       ! X interpolation buf2(i,j) -> buf3(totalNx,ny1)
       allocate(buf3(totalNx,ny1))
+#ifndef USE_GPU
 !$omp end single
+#endif
       if(use_linear == 1) then
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do j = 1, ny1
             call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
          end do
       else
+#ifndef USE_GPU
 !$omp do
          do j = 1, ny1
             call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), totalNx, buf3(1,j))
          end do
+#else
+         call spline_interpolation_many(fg%my%nr, bigNX, buf2, totalNx, buf3, ny1)
+#endif
       end if
+#ifndef USE_GPU
 !$omp single
+#endif
       deallocate(buf2)
 
       ! Local transposition buf3(totalNx,ny1) -> tmp2d(ny1,totalNx)
       allocate(tmp2d(ny1,totalNx))
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(j)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do i = 1, totalNx
          do j = 1, ny1
             tmp2d(j,i) = buf3(i,j)
          end do
       end do
+#ifndef USE_GPU
 !$omp single
+#endif
       deallocate(buf3)
       ! Transposition tmp2d(ny1,totalNx) -> tmp1d(nby*nbx)
       allocate(tmp1d(nby*nbx))
@@ -1754,7 +2009,9 @@ contains
                          tmp1d, recvcounts2, rdispls2, REAL_MPI, &
                          MPI_X_WORLD, ierr)
       deallocate(tmp2d)
+#ifndef USE_GPU
 !$omp end single
+#endif
 
       ! Finally, rearrange tmp1d(nby*nbx) -> fg%zz(nx,ny)
       ib = ix - kx
@@ -1762,7 +2019,11 @@ contains
       do p = 0, npx-1
          jst = rdispls2(p)/nbx + 1
          jen = jst + recvcounts2(p)/nbx - 1
+#ifndef USE_GPU
 !$omp do private(j, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(j,ind)
+#endif
          do i = 1, nbx
             do j = jst, jen
                ind = rdispls2(p) + (jen - jst + 1)*(i - 1) + j - jst + 1
@@ -1774,14 +2035,20 @@ contains
          end do
       end do
 ! === Elastic loading with interpolation =======================================
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, fg%my%ny
          do i = 1, fg%my%nx
             fg%wave_field%hz(i,j) = fg%wave_field%hz(i,j) + fg%loading%delta(i,j)
          end do
       end do
 ! ==============================================================================
+#ifndef USE_GPU
 !$omp single
+#endif
       deallocate(tmp1d)
 
       deallocate(sendcounts0)
@@ -1794,9 +2061,13 @@ contains
       deallocate(sdispls2)
       deallocate(recvcounts2)
       deallocate(rdispls2)
+#ifndef USE_GPU
 !$omp end single
 #endif
+#endif
+#ifndef USE_GPU
 !$omp end parallel
+#endif
       return
 ! === Elastic loading with interpolation =======================================
 !  end subroutine interp2fine_init_disp

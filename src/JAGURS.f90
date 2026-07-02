@@ -54,6 +54,7 @@ program JAGURS
 ! === For MRI ==================================================================
    use mod_init_disp_gaussian
 ! ==============================================================================
+   use mod_init_disp_pointsource
 #ifndef CARTESIAN
 ! === Elastic Loading ==========================================================
    use mod_loading
@@ -105,9 +106,9 @@ program JAGURS
 #endif
 #ifdef NORMALMODE
 #ifndef NM_DEF
-   use mod_normalmode, only : normalmode_read_namelist, make_nm_ind
+   use mod_normalmode, only : normalmode_read_namelist, make_nm_ind, calc_nm_P
 #else
-   use mod_normalmode, only : normalmode_read_namelist, normalmode_set_params
+   use mod_normalmode, only : normalmode_read_namelist, normalmode_set_params, calc_nm_P
 #endif
 #endif
    implicit none
@@ -240,6 +241,7 @@ program JAGURS
 ! === For MRI ==================================================================
    character(len=256) :: gaussian_file_name = 'gaussian'
 ! ==============================================================================
+   character(len=256) :: pointsource_file_name = 'pointsource'
 ! === SINWAVE ==================================================================
    character(len=256) :: sinwave_file_name = 'sinwave'
 ! ==============================================================================
@@ -258,6 +260,7 @@ program JAGURS
 ! ==============================================================================
    integer(kind=4) :: nxorg, nyorg
    integer(kind=4) :: formatid
+   real(kind=REAL_BYTE), pointer, dimension(:,:) :: tmp
    TIMER_START('All')
 
 #ifdef MULTI
@@ -282,6 +285,7 @@ program JAGURS
    write(suffix,'(a,i6.6)') '.', member_ids(member_id+1)
    members_dir = 'member' // trim(suffix) // '/'
    gaussian_file_name = trim(gaussian_file_name) // trim(suffix)
+   pointsource_file_name = trim(pointsource_file_name) // trim(suffix)
 
    if(restart == 0) then
       write(command,'(a,a)') 'mkdir -p ', trim(members_dir)
@@ -415,6 +419,11 @@ program JAGURS
       TIMER_STOP('specify_gaussian_params')
    end if
 ! ==============================================================================
+   if(init_disp_pointsource == 1) then
+      TIMER_START('specify_pointsource_params')
+      call specify_pointsource_params(pointsource_file_name)
+      TIMER_STOP('specify_pointsource_params')
+   end if
 ! === SINWAVE ==================================================================
 #ifndef MULTI
    if(init_disp_sinwave == 1) then
@@ -728,6 +737,16 @@ program JAGURS
       allocate(dgrid(ig)%wave_field%fy    (-1:niz+1,-2:njz+1))
       allocate(dgrid(ig)%wave_field%fx_old(-2:niz+1,-1:njz+1))
       allocate(dgrid(ig)%wave_field%fy_old(-1:niz+1,-2:njz+1))
+      if(timenest == 1) then
+         allocate(dgrid(ig)%wave_field%fx_a(-2:niz+1,-1:njz+1))
+         allocate(dgrid(ig)%wave_field%fx_b(-2:niz+1,-1:njz+1))
+         allocate(dgrid(ig)%wave_field%fy_a(-1:niz+1,-2:njz+1))
+         allocate(dgrid(ig)%wave_field%fy_b(-1:niz+1,-2:njz+1))
+         allocate(dgrid(ig)%wave_field%fx_i2f0(-2:niz+1,-1:njz+1))
+         allocate(dgrid(ig)%wave_field%fx_i2f1(-2:niz+1,-1:njz+1))
+         allocate(dgrid(ig)%wave_field%fy_i2f0(-1:niz+1,-2:njz+1))
+         allocate(dgrid(ig)%wave_field%fy_i2f1(-1:niz+1,-2:njz+1))
+      end if
 #ifdef BANKFILE
       if(dgrid(ig)%bank_file(1:7) /= 'NO_BANK') then
          allocate(dgrid(ig)%wave_field%btx(-2:niz+1,-1:njz+1))
@@ -750,6 +769,12 @@ program JAGURS
       if(iand(has_boundary, NORTH_BOUND) /= 0) jst = -1
       allocate(dgrid(ig)%wave_field%fx    (ist:ien,jst:jen))
       allocate(dgrid(ig)%wave_field%fx_old(ist:ien,jst:jen))
+      if(timenest == 1) then
+         allocate(dgrid(ig)%wave_field%fx_a(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%fx_b(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%fx_i2f0(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%fx_i2f1(ist:ien,jst:jen))
+      end if
 #ifdef BANKFILE
       if(dgrid(ig)%bank_file(1:7) /= 'NO_BANK') then
          allocate(dgrid(ig)%wave_field%btx(ist:ien,jst:jen))
@@ -766,6 +791,12 @@ program JAGURS
       if(iand(has_boundary, NORTH_BOUND) /= 0) jst = -2
       allocate(dgrid(ig)%wave_field%fy    (ist:ien,jst:jen))
       allocate(dgrid(ig)%wave_field%fy_old(ist:ien,jst:jen))
+      if(timenest == 1) then
+         allocate(dgrid(ig)%wave_field%fy_a(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%fy_b(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%fy_i2f0(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%fy_i2f1(ist:ien,jst:jen))
+      end if
 #ifdef BANKFILE
       if(dgrid(ig)%bank_file(1:7) /= 'NO_BANK') then
          allocate(dgrid(ig)%wave_field%bty(ist:ien,jst:jen))
@@ -799,6 +830,12 @@ program JAGURS
 #ifndef MPI
       allocate(dgrid(ig)%wave_field%hz    (-1:niz+2,-1:njz+2))
       allocate(dgrid(ig)%wave_field%hz_old(-1:niz+2,-1:njz+2))
+      if(timenest == 1) then
+         allocate(dgrid(ig)%wave_field%hz_a(-1:niz+2,-1:njz+2))
+         allocate(dgrid(ig)%wave_field%hz_b(-1:niz+2,-1:njz+2))
+         allocate(dgrid(ig)%wave_field%hz_i2f0(-1:niz+2,-1:njz+2))
+         allocate(dgrid(ig)%wave_field%hz_i2f1(-1:niz+2,-1:njz+2))
+      end if
       allocate(dgrid(ig)%depth_field%dz   (-1:niz+2,-1:njz+2))
 #ifdef BANKFILE
       if(dgrid(ig)%bank_file(1:7) /= 'NO_BANK') then
@@ -828,6 +865,12 @@ program JAGURS
       jen = njz + 2
       if(iand(has_boundary, NORTH_BOUND) /= 0) jst = -1
       allocate(dgrid(ig)%wave_field%hz    (ist:ien,jst:jen))
+      if(timenest == 1) then
+         allocate(dgrid(ig)%wave_field%hz_a(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%hz_b(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%hz_i2f0(ist:ien,jst:jen))
+         allocate(dgrid(ig)%wave_field%hz_i2f1(ist:ien,jst:jen))
+      end if
 #ifndef NONESTDEBUG
       allocate(dgrid(ig)%wave_field%noi2f (ist:ien,jst:jen))
 #endif
@@ -906,6 +949,10 @@ program JAGURS
          allocate(dgrid(ig)%wave_field%arrival_time(niz,njz))
       end if
 ! ==============================================================================
+      if(check_tt_time == 1) then
+         allocate(dgrid(ig)%wave_field%tttdat(niz,njz))
+         allocate(dgrid(ig)%wave_field%tt_time(niz,njz))
+      end if
       allocate(dgrid(ig)%hbnd%north(niz))
       allocate(dgrid(ig)%hbnd%east(njz))
       allocate(dgrid(ig)%hbnd%south(niz))
@@ -922,10 +969,44 @@ program JAGURS
 ! ==============================================================================
 
       !*** initialize depth and friction field ***
+#ifndef USE_GPU
       dgrid(ig)%depth_field%dx = 0.0d0 ! depth field
       dgrid(ig)%depth_field%dy = 0.0d0 ! depth field
       dgrid(ig)%depth_field%dz = 0.0d0 ! depth field
       dgrid(ig)%bcf_field = 0.0d0 ! friction field
+#else
+      tmp => dgrid(ig)%depth_field%dx
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = lbound(tmp,2), ubound(tmp,2)
+         do i = lbound(tmp,1), ubound(tmp,1)
+            tmp(i,j) = 0.0d0
+         end do
+      end do
+
+      tmp => dgrid(ig)%depth_field%dy
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = lbound(tmp,2), ubound(tmp,2)
+         do i = lbound(tmp,1), ubound(tmp,1)
+            tmp(i,j) = 0.0d0
+         end do
+      end do
+
+      tmp => dgrid(ig)%depth_field%dz
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = lbound(tmp,2), ubound(tmp,2)
+         do i = lbound(tmp,1), ubound(tmp,1)
+            tmp(i,j) = 0.0d0
+         end do
+      end do
+
+      tmp => dgrid(ig)%bcf_field
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = lbound(tmp,2), ubound(tmp,2)
+         do i = lbound(tmp,1), ubound(tmp,1)
+            tmp(i,j) = 0.0d0
+         end do
+      end do
+#endif
 #ifdef BANKFILE
       if(dgrid(ig)%bank_file(1:7) /= 'NO_BANK') then
          dgrid(ig)%depth_field%dx_old = 0.0d0
@@ -946,6 +1027,52 @@ program JAGURS
          end if
       end if
 #endif
+      if(timenest == 1) then
+         tmp => dgrid(ig)%wave_field%fx
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+         do j = lbound(tmp,2), ubound(tmp,2)
+            do i = lbound(tmp,1), ubound(tmp,1)
+               dgrid(ig)%wave_field%fx_a(i,j) = 0.0d0
+               dgrid(ig)%wave_field%fx_b(i,j) = 0.0d0
+               dgrid(ig)%wave_field%fx_i2f0(i,j) = 0.0d0
+               dgrid(ig)%wave_field%fx_i2f1(i,j) = 0.0d0
+            end do
+         end do
+
+         tmp => dgrid(ig)%wave_field%fy
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+         do j = lbound(tmp,2), ubound(tmp,2)
+            do i = lbound(tmp,1), ubound(tmp,1)
+               dgrid(ig)%wave_field%fy_a(i,j) = 0.0d0
+               dgrid(ig)%wave_field%fy_b(i,j) = 0.0d0
+               dgrid(ig)%wave_field%fy_i2f0(i,j) = 0.0d0
+               dgrid(ig)%wave_field%fy_i2f1(i,j) = 0.0d0
+            end do
+         end do
+
+         tmp => dgrid(ig)%wave_field%hz
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+         do j = lbound(tmp,2), ubound(tmp,2)
+            do i = lbound(tmp,1), ubound(tmp,1)
+               dgrid(ig)%wave_field%hz_a(i,j) = 0.0d0
+               dgrid(ig)%wave_field%hz_b(i,j) = 0.0d0
+               dgrid(ig)%wave_field%hz_i2f0(i,j) = 0.0d0
+               dgrid(ig)%wave_field%hz_i2f1(i,j) = 0.0d0
+            end do
+         end do
+      end if
 
       !*** set simulation parameters ***
 #ifndef CARTESIAN
@@ -1063,22 +1190,24 @@ program JAGURS
 #endif
       TIMER_STOP('wet_or_dry')
 
-      if(ig == 1) then ! set zero slope radiation condition for coarse grid only
-         TIMER_START('boundary_rwg')
+      if(timenest /= 1) then
+         if(ig == 1) then ! set zero slope radiation condition for coarse grid only
+            TIMER_START('boundary_rwg')
 #ifndef MPI
 #ifndef CARTESIAN
-         call boundary_rwg(depth_field,hbnd,ubnd,dt,th0,dth,niz,njz)
+            call boundary_rwg(depth_field,hbnd,ubnd,dt,th0,dth,niz,njz)
 #else
-         call boundary_rwg(depth_field,hbnd,ubnd,dt,dxdy,niz,njz)
+            call boundary_rwg(depth_field,hbnd,ubnd,dt,dxdy,niz,njz)
 #endif
 #else
 #ifndef CARTESIAN
-         call boundary_rwg(depth_field,hbnd,ubnd,dt,th0,dth,max(iy-2,0),niz,njz,has_boundary)
+            call boundary_rwg(depth_field,hbnd,ubnd,dt,th0,dth,max(iy-2,0),niz,njz,has_boundary)
 #else
-         call boundary_rwg(depth_field,hbnd,ubnd,dt,dxdy,niz,njz,has_boundary)
+            call boundary_rwg(depth_field,hbnd,ubnd,dt,dxdy,niz,njz,has_boundary)
 #endif
 #endif
-         TIMER_STOP('boundary_rwg')
+            TIMER_STOP('boundary_rwg')
+         end if
       end if
 
       TIMER_START('maxgrd_init_rwg')
@@ -1122,6 +1251,10 @@ program JAGURS
 #ifndef MPI
       end if
 #endif
+      if(timenest == 1) then
+         dgrid(ig)%my%nl = min(dgrid(pid)%my%nl + 1, max_nest_level)
+         dgrid(ig)%my%maxnl = dgrid(ig)%my%nl
+      end if
 
       write(6,'(/,2x,a,i0,a,i0,a,a)') '*** grid ', ig, ', parent= ', dgrid(ig)%parent%id, &
          ' parent_base= ', trim(dgrid(ig)%parent%base_name)
@@ -1413,6 +1546,44 @@ program JAGURS
 #endif
    end do
 
+   if(timenest == 1) then
+      do ig = 1, ngrid-1
+         dgrid(ig)%my%maxnl = dgrid(ngrid)%my%maxnl
+      end do
+      do ig = 1, ngrid
+         dgrid(ig)%my%dt = dt*3.0**(dgrid(ig)%my%maxnl - dgrid(ig)%my%nl)
+      end do
+
+      TIMER_START('boundary_rwg')
+      ig = 1
+      depth_field  => dgrid(ig)%depth_field
+      hbnd         => dgrid(ig)%hbnd
+      ubnd         => dgrid(ig)%ubnd
+      th0          =  dgrid(ig)%my%th0
+      dxdy         =  dgrid(ig)%my%dh
+      dth          =  dgrid(ig)%my%dth
+      niz          =  dgrid(ig)%my%nx
+      njz          =  dgrid(ig)%my%ny
+#ifdef MPI
+      iy           =  dgrid(ig)%my%iy
+      has_boundary =  dgrid(ig)%my%has_boundary
+#endif
+#ifndef MPI
+#ifndef CARTESIAN
+      call boundary_rwg(depth_field,hbnd,ubnd,dgrid(ig)%my%dt,th0,dth,niz,njz)
+#else
+      call boundary_rwg(depth_field,hbnd,ubnd,dgrid(ig)%my%dt,dxdy,niz,njz)
+#endif
+#else
+#ifndef CARTESIAN
+      call boundary_rwg(depth_field,hbnd,ubnd,dgrid(ig)%my%dt,th0,dth,max(iy-2,0),niz,njz,has_boundary)
+#else
+      call boundary_rwg(depth_field,hbnd,ubnd,dgrid(ig)%my%dt,dxdy,niz,njz,has_boundary)
+#endif
+#endif
+      TIMER_STOP('boundary_rwg')
+   end if
+
    !********************************************
    !*** load in the locations of tide gauges ***
    !********************************************
@@ -1561,6 +1732,48 @@ program JAGURS
    end do
 #endif
    !*** main loop ***
+   if(timenest == 1) then
+      do ig = 1, ngrid
+         tmp => dgrid(ig)%wave_field%fx
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+         do j = lbound(tmp,2), ubound(tmp,2)
+            do i = lbound(tmp,1), ubound(tmp,1)
+               dgrid(ig)%wave_field%fx_a(i,j) = dgrid(ig)%wave_field%fx(i,j)
+               dgrid(ig)%wave_field%fx_b(i,j) = dgrid(ig)%wave_field%fx(i,j)
+            end do
+         end do
+
+         tmp => dgrid(ig)%wave_field%fy
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+         do j = lbound(tmp,2), ubound(tmp,2)
+            do i = lbound(tmp,1), ubound(tmp,1)
+               dgrid(ig)%wave_field%fy_a(i,j) = dgrid(ig)%wave_field%fy(i,j)
+               dgrid(ig)%wave_field%fy_b(i,j) = dgrid(ig)%wave_field%fy(i,j)
+            end do
+         end do
+
+         tmp => dgrid(ig)%wave_field%hz
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+         do j = lbound(tmp,2), ubound(tmp,2)
+            do i = lbound(tmp,1), ubound(tmp,1)
+               dgrid(ig)%wave_field%hz_a(i,j) = dgrid(ig)%wave_field%hz(i,j)
+               dgrid(ig)%wave_field%hz_b(i,j) = dgrid(ig)%wave_field%hz(i,j)
+            end do
+         end do
+      end do
+   end if
 ! === Support restart ==========================================================
 !  do istep = 1, nstep
    if(restart == 0) then
@@ -1617,7 +1830,11 @@ program JAGURS
             call read_init_val_gmt_grd(file_name_init_fx, wave_field, niz, njz, linear_flag, dgrid(ig), myrank, nxorg, nyorg, dgrid(ig)%my%formatid, IFX)
 
             if(linear_flag == 0) then
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
                do j = 1, njz
                   do i = 1, niz
                      if(wod_flags(i,j) /= 1) wave_field%fx(i,j) = 0.0d0
@@ -1634,7 +1851,11 @@ program JAGURS
             call read_init_val_gmt_grd(file_name_init_fy, wave_field, niz, njz, linear_flag, dgrid(ig), myrank, nxorg, nyorg, dgrid(ig)%my%formatid, IFY)
 
             if(linear_flag == 0) then
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
                do j = 1, njz
                   do i = 1, niz
                      if(wod_flags(i,j) /= 1) wave_field%fy(i,j) = 0.0d0
@@ -1666,7 +1887,11 @@ program JAGURS
          call interp2fine_init_fy(dgrid(pid), dgrid(ig))
 !
          if(linear_flag == 0) then
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
             do j = 1, njz
                do i = 1, niz
                   if(wod_flags(i,j) /= 1) then
@@ -1684,6 +1909,15 @@ program JAGURS
    end do
 
    do istep = istart, nstep
+      do ig = 1, ngrid
+         dgrid(ig)%my%numneststeps = 3**(dgrid(ig)%my%maxnl - dgrid(ig)%my%nl)
+         dgrid(ig)%my%neststephgt  = mod(istep-1,                               dgrid(ig)%my%numneststeps)
+         dgrid(ig)%my%neststepvel  = mod(istep-1 + dgrid(ig)%my%numneststeps/2, dgrid(ig)%my%numneststeps)
+         dgrid(ig)%my%calchgt = 0
+         if(dgrid(ig)%my%neststephgt == 0) dgrid(ig)%my%calchgt = 1
+         dgrid(ig)%my%calcvel = 0
+         if(dgrid(ig)%my%neststepvel == 0) dgrid(ig)%my%calcvel = 1
+      end do
 ! ==============================================================================
       t = REAL_FUNC(istep) * dt
 ! === Support truncation =======================================================
@@ -1727,7 +1961,7 @@ program JAGURS
 
             if(irupt > jrupt) then
 ! === For MRI ==================================================================
-               if(init_disp_gaussian == 0) then
+               if((init_disp_gaussian == 0) .and. (init_disp_pointsource == 0)) then
 ! ==============================================================================
 ! === Initial displacement of child domains is given by interpolation. =========
                if((init_disp_interpolation /= 1) .or. (ig == 1))  then
@@ -1850,9 +2084,16 @@ program JAGURS
                   write(6,'(a,i0,a,f0.6,a,f0.6,a,f0.6,a,i0,a,i0,a,i0,a,a)') &
                      'New rupture step: istep=', istep, ' dt=', dt, ' t=', t, ' tau=', tau, ' ig=', ig, &
                      ' irupt=', irupt, ' nrupt=', nrupt, ' file=', trim(ruptgrd(irupt))
-                  TIMER_START('make_gaussian_rupture')
-                  call make_gaussian_rupture(dgrid(ig))
-                  TIMER_STOP('make_gaussian_rupture')
+                  if(init_disp_gaussian == 1) then
+                     TIMER_START('make_gaussian_rupture')
+                     call make_gaussian_rupture(dgrid(ig))
+                     TIMER_STOP('make_gaussian_rupture')
+                  end if
+                  if(init_disp_pointsource == 1) then
+                     TIMER_START('make_pointsource_rupture')
+                     call make_pointsource_rupture(dgrid(ig))
+                     TIMER_STOP('make_pointsource_rupture')
+                  end if
                end if
 ! ==============================================================================
 ! === Multiple rupture =========================================================
@@ -1982,8 +2223,15 @@ program JAGURS
 ! ==============================================================================
 ! === When "def_bathy=0", hz is changed on dry cell and it can become wet. =====
 !           call hrise_rwg(dgrid(ig)%wave_field,dgrid(ig)%zz,dt,tau,dgrid(ig)%my%nx,dgrid(ig)%my%ny)
-            call hrise_rwg(dgrid(ig)%wave_field,dgrid(ig)%zz,dt,tau,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
-                           dgrid(ig)%wod_flags,defbathy_flag)
+            if(timenest /= 1) then
+               call hrise_rwg(dgrid(ig)%wave_field,dgrid(ig)%zz,dt,tau,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+                              dgrid(ig)%wod_flags,defbathy_flag)
+            else
+               if(dgrid(ig)%my%calchgt == 1) then
+                  call hrise_rwg(dgrid(ig)%wave_field,dgrid(ig)%zz,dgrid(ig)%my%dt,tau,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+                                 dgrid(ig)%wod_flags,defbathy_flag)
+               end if
+            end if
 ! ==============================================================================
 ! === SINWAVE ==================================================================
             else
@@ -2006,7 +2254,11 @@ program JAGURS
             end if
 #endif
 #ifdef MPI
-            call exchange_edges(HGT,dgrid(ig))
+            if(timenest /= 1) then
+               call exchange_edges(HGT,dgrid(ig))
+            else
+               call exchange_edges_b(HGT,dgrid(ig))
+            end if
 #endif
             TIMER_START('drise_rwg')
             call drise_rwg(dgrid(ig)%depth_field,dgrid(ig)%zz,dt,tau,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
@@ -2054,6 +2306,15 @@ program JAGURS
                has_boundary          =  dgrid(ig)%my%has_boundary
 #endif
                linear_flag           =  dgrid(ig)%my%linear_flag
+#ifdef NORMALMODE
+                if(dumpp == 1) then
+#ifndef NM_DEF
+                   call calc_nm_P(niz, njz, wave_field%nm_ind, wave_field%nm_P, wave_field%nm_P0, wave_field%nm_P1, 1)
+#else
+                   call calc_nm_P(niz, njz, wave_field%nm_P, .true.)
+#endif
+                end if
+#endif
 #ifndef NCDIO
                TIMER_START('dump_gmt_nl_vel')
 #ifndef MPI
@@ -2123,9 +2384,18 @@ program JAGURS
             TIMER_STOP('check_arrival')
          end if
 ! ==============================================================================
+         if(check_tt_time == 1 .and. istep == 1) then
+            TIMER_START('check_ttt')
+            call check_ttt(wave_field,depth_field,niz,njz,0)
+            TIMER_STOP('check_ttt')
+         end if
          pid = dgrid(ig)%parent%id
          TIMER_START('tstep_grid_vel')
-         call tstep_grid(VEL,ig,dgrid(pid),dgrid(ig),cf,cfl,coriolis,dt,smallh_xy,smallh_wod,c2p_all,conv_step,istep)
+         if(timenest /= 1) then
+            call tstep_grid(VEL,ig,dgrid(pid),dgrid(ig),cf,cfl,coriolis,dt,smallh_xy,smallh_wod,c2p_all,conv_step,istep)
+         else
+            call tstep_grid(VEL,ig,dgrid(pid),dgrid(ig),cf,cfl,coriolis,dgrid(ig)%my%dt,smallh_xy,smallh_wod,c2p_all,conv_step,istep)
+         end if
          TIMER_STOP('tstep_grid_vel')
 #ifdef BANKFILE
          if(dgrid(ig)%bank_file(1:7) /= 'NO_BANK') then
@@ -2247,7 +2517,11 @@ program JAGURS
       do ig = 1, ngrid
          pid = dgrid(ig)%parent%id
          TIMER_START('tstep_grid_hgt')
-         call tstep_grid(HGT,ig,dgrid(pid),dgrid(ig),cf,cfl,coriolis,dt,smallh_xy,smallh_wod,c2p_all,conv_step,istep)
+         if(timenest /= 1) then
+            call tstep_grid(HGT,ig,dgrid(pid),dgrid(ig),cf,cfl,coriolis,dt,smallh_xy,smallh_wod,c2p_all,conv_step,istep)
+         else
+            call tstep_grid(HGT,ig,dgrid(pid),dgrid(ig),cf,cfl,coriolis,dgrid(ig)%my%dt,smallh_xy,smallh_wod,c2p_all,conv_step,istep)
+         end if
          TIMER_STOP('tstep_grid_hgt')
 
 ! === recheck_wod should be called after outsea_rwg. by tkato 2012/09/11 =======
@@ -2313,6 +2587,9 @@ program JAGURS
             call check_arrival(wave_field,depth_field,niz,njz,istep)
          end if
 ! ==============================================================================
+         if(check_tt_time == 1) then
+            call check_ttt(wave_field,depth_field,niz,njz,istep)
+         end if
          !*** check for maximum wave heights ***
          TIMER_START('maxgrd_check_nl')
          call maxgrd_check_nl(hzmax,wave_field,wod_flags,niz,njz)
@@ -2326,15 +2603,19 @@ program JAGURS
          ! Burbidge: Stop things if the maximum wave height gets silly
          TIMER_START('error_check')
          error = 0
+#ifndef USE_GPU
 #ifndef __NEC__
 !$omp parallel do private(i)
 #else
 !$omp parallel do private(i) reduction(+:error)
 #endif
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) reduction(+:error)
+#endif
          do j = 1, njz
             do i = 1, niz
                if(hzmax(i,j) > 1.0d6) then
-#ifndef __NEC__
+#if !defined(__NEC__) && !defined(USE_GPU)
 !$omp critical
                   error = 1
 !$omp end critical
@@ -2804,6 +3085,86 @@ program JAGURS
 #endif
          end if
 ! ==============================================================================
+         if(check_tt_time == 1) then
+            TIMER_START('calc_tt_time')
+            call calc_tt_time(dgrid(ig)%wave_field,dgrid(ig)%my%nx,dgrid(ig)%my%ny,dt)
+            TIMER_STOP('calc_tt_time')
+#ifndef NCDIO
+#ifndef MPI
+#ifndef PIXELOUT
+            str = trim(dgrid(ig)%my%base_name) // '.' // trim(ttt_file) // '.grd'
+#else
+            str = trim(dgrid(ig)%my%base_name) // '.' // trim(ttt_file) // '.dat'
+#endif
+#else
+#ifndef ONEFILE
+            str = trim(dgrid(ig)%my%base_name) // '.' // trim(ttt_file) // '.dat' // trim(suffix)
+#else
+#ifndef PIXELOUT
+            str = trim(dgrid(ig)%my%base_name) // '.' // trim(ttt_file) // '.grd'
+#else
+            str = trim(dgrid(ig)%my%base_name) // '.' // trim(ttt_file) // '.dat'
+#endif
+#endif
+#endif
+            TIMER_START('maxgrd_write_gmt_ttt')
+#ifndef DIROUT
+#ifdef MULTI
+            str = trim(members_dir) // trim(str)
+#endif
+            call maxgrd_write_gmt(dgrid(ig)%wave_field%tt_time,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+#if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.,dgrid(ig))
+#else
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.,dgrid(ig), &
+                                  dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg)
+#endif
+#else
+#ifndef PIXELOUT
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.,dgrid(ig),myrank)
+#else
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.,dgrid(ig),myrank, &
+                                  dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg)
+#endif
+#endif
+#else
+#ifndef PIXELOUT
+            dirname = trim(ttt_file) // '.grd'
+#else
+            dirname = trim(ttt_file) // '.dat'
+#endif
+#ifdef MULTI
+            dirname = trim(members_dir) // trim(dirname)
+#endif
+            call maxgrd_write_gmt(dgrid(ig)%wave_field%tt_time,dgrid(ig)%my%nx,dgrid(ig)%my%ny, &
+#if !defined(MPI) || !defined(ONEFILE)
+#ifndef PIXELOUT
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.,dgrid(ig))
+#else
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.,dgrid(ig), &
+                                  dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg)
+#endif
+#else
+#ifndef PIXELOUT
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.,dgrid(ig),myrank)
+#else
+                                  dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.,dgrid(ig),myrank, &
+                                  dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg)
+#endif
+#endif
+#endif
+            TIMER_STOP('maxgrd_write_gmt_ttt')
+#else
+            TIMER_START('write_tt_time')
+#if !defined(MPI) || !defined(ONEFILE)
+            call write_tt_time(dgrid(ig))
+#else
+            call write_tt_time(dgrid(ig), myrank)
+#endif
+            TIMER_STOP('write_tt_time')
+#endif
+         end if
       end if
    end do
 ! === To add max velocity output. by tkato 2012/10/02 ==========================

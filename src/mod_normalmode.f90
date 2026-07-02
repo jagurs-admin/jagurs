@@ -312,9 +312,10 @@ contains
 ! --- Subroutine calc_nm_P:
 ! --- Calculate pressure on each step.
 ! ----------------------------------------------------------------------------------------------------------------------
-   subroutine calc_nm_P(nlon, nlat, P)
+   subroutine calc_nm_P(nlon, nlat, P, flag_only_get)
       integer(kind=4), intent(in) :: nlon, nlat
       real(kind=REAL_BYTE), intent(out) :: P(nlon, nlat)
+      logical, optional, intent(in) :: flag_only_get
       real(kind=REAL_BYTE) :: north, west, lat1, lon1, dist, dx, dy
       integer(kind=4) :: i, j
 
@@ -324,8 +325,10 @@ contains
       dx = vel*dt*sin(theta*pi/180.0d0)
       dx = (180.0d0/pi)*(dx/(R*cos(srclat*pi/180.0d0)))
 
-      srclat = srclat + dy
-      srclon = srclon + dx
+      if(.not. present(flag_only_get)) then
+         srclat = srclat + dy
+         srclon = srclon + dx
+      end if
 
       north = 90.0d0 - mlat0/60.0d0
       west  = mlon0/60.0d0

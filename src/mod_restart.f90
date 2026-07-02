@@ -15,6 +15,8 @@ use mod_init_disp_sinwave, only : ccount
 ! === Arrival time =============================================================
 use mod_params, only : check_arrival_time
 ! ==============================================================================
+use mod_params, only : check_tt_time
+use mod_params, only : timenest
 implicit none
 
 contains
@@ -118,6 +120,37 @@ contains
             read(1) iarray
          end if
 ! ==============================================================================
+         if(check_tt_time == 1) then
+            iarray => dg%wave_field%tttdat
+            read(1) iarray
+         end if
+         if(timenest == 1) then
+           rarray => dg%wave_field%fx_a
+           read(1) rarray
+           rarray => dg%wave_field%fx_b
+           read(1) rarray
+           rarray => dg%wave_field%fy_a
+           read(1) rarray
+           rarray => dg%wave_field%fy_b
+           read(1) rarray
+           rarray => dg%wave_field%hz_a
+           read(1) rarray
+           rarray => dg%wave_field%hz_b
+           read(1) rarray
+
+           rarray => dg%wave_field%fx_i2f0
+           read(1) rarray
+           rarray => dg%wave_field%fx_i2f1
+           read(1) rarray
+           rarray => dg%wave_field%fy_i2f0
+           read(1) rarray
+           rarray => dg%wave_field%fy_i2f1
+           read(1) rarray
+           rarray => dg%wave_field%hz_i2f0
+           read(1) rarray
+           rarray => dg%wave_field%hz_i2f1
+           read(1) rarray
+         end if
       end do
 
       close(1)
@@ -224,6 +257,37 @@ contains
             write(1) iarray
          end if
 ! ==============================================================================
+         if(check_tt_time == 1) then
+            iarray => dg%wave_field%tttdat
+            write(1) iarray
+         end if
+         if(timenest == 1) then
+           rarray => dg%wave_field%fx_a
+           write(1) rarray
+           rarray => dg%wave_field%fx_b
+           write(1) rarray
+           rarray => dg%wave_field%fy_a
+           write(1) rarray
+           rarray => dg%wave_field%fy_b
+           write(1) rarray
+           rarray => dg%wave_field%hz_a
+           write(1) rarray
+           rarray => dg%wave_field%hz_b
+           write(1) rarray
+
+           rarray => dg%wave_field%fx_i2f0
+           write(1) rarray
+           rarray => dg%wave_field%fx_i2f1
+           write(1) rarray
+           rarray => dg%wave_field%fy_i2f0
+           write(1) rarray
+           rarray => dg%wave_field%fy_i2f1
+           write(1) rarray
+           rarray => dg%wave_field%hz_i2f0
+           write(1) rarray
+           rarray => dg%wave_field%hz_i2f1
+           write(1) rarray
+        end if
       end do
 
       close(1)

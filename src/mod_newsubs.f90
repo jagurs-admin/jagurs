@@ -18,6 +18,7 @@ use mod_onefile, only : onefile_scatter_array, onefile_gather_array
 #ifdef NORMALMODE
 use mod_params, only : dumpp
 #endif
+use mod_params, only : grd_nan2zero
 implicit none
 
 contains
@@ -160,6 +161,9 @@ contains
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: bcforg
 #endif
       integer(kind=4), intent(in) :: formatid
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       bcf => ffld
 
@@ -171,7 +175,16 @@ contains
 #if defined(MPI) && defined(ONEFILE)
          end if
 #endif
+#ifndef USE_GPU
          bcf = 0.0d0
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = lbound(bcf,2), ubound(bcf,2)
+            do i = lbound(bcf,1), ubound(bcf,1)
+               bcf(i,j) = 0.0d0
+            end do
+         end do
+#endif
       else
 #if !defined(MPI) || !defined(ONEFILE)
          write(6,'(8x,a,a)') 'FRICTION_FILE_GIVEN:', trim(fname)
@@ -182,7 +195,16 @@ contains
          open(1,file=trim(fname),action='read',status='old',form='formatted')
          read(1,'(10f8.4)') bcforg
          close(1)
+#ifndef USE_GPU
          bcf(1:nx,1:ny) = bcforg(1:nx,1:ny)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 1, ny
+            do i = 1, nx
+               bcf(i,j) = bcforg(i,j)
+            end do
+         end do
+#endif
          deallocate(bcforg)
 #endif
 #else
@@ -200,7 +222,16 @@ contains
             open(1,file=trim(fname),action='read',status='old',form='formatted')
             read(1,'(10f8.4)') bcforg
             close(1)
+#ifndef USE_GPU
             bcf_all(1:dg%my%totalNx,1:dg%my%totalNy) = bcforg(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+            do j = 1, dg%my%totalNy
+               do i = 1, dg%my%totalNx
+                  bcf_all(i,j) = bcforg(i,j)
+               end do
+            end do
+#endif
             deallocate(bcforg)
 #endif
          end if
@@ -254,7 +285,16 @@ contains
       open(1,file=trim(fname),action='read',status='old',form='formatted')
       read(1,'(10f8.2)') dzorg
       close(1)
+#ifndef USE_GPU
       dz_tmp(1:nx,1:ny) = dzorg(1:nx,1:ny)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, ny
+         do i = 1, nx
+            dz_tmp(i,j) = dzorg(i,j)
+         end do
+      end do
+#endif
       deallocate(dzorg)
 #endif
 #else
@@ -270,6 +310,9 @@ contains
       end if
 #endif
       call onefile_scatter_array(dz_all,dz_tmp,dg)
+#endif
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
 #endif
       do j = 1, ny
          do i = 1, nx
@@ -301,6 +344,9 @@ contains
 #endif
 
       if(linear == 1) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, ny
             do i = 1, nx-1
                if(dz(i+1,j) < zap .or. dz(i,j) < zap) then
@@ -309,20 +355,36 @@ contains
                   dx(i,j) = 0.5d0*(dz(i+1,j)+dz(i,j))
                end if
             end do
+#ifdef USE_GPU
+         end do
+!$omp target teams distribute parallel do
+         do j = 1, ny
+#endif
             if(dz(nx,j) < zap) then
                dx(nx,j) = zap
             else 
                dx(nx,j) = dz(nx,j)
             end if
          end do
+#ifndef USE_GPU
          do i = 1, nx
             do j = 1, ny-1
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 1, ny-1
+            do i = 1, nx
+#endif
                if(dz(i,j+1) < zap .or. dz(i,j) < zap) then
                   dy(i,j) = zap
                else
                   dy(i,j) = 0.5d0*(dz(i,j+1)+dz(i,j))
                end if
             end do
+#ifdef USE_GPU
+         end do
+!$omp target teams distribute parallel do
+         do i = 1, nx
+#endif
             if(dz(i,ny) < zap) then
                dy(i,ny) = zap
             else
@@ -330,16 +392,32 @@ contains
             end if
          end do
       else
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, ny
             do i = 1, nx-1
                dx(i,j) = 0.5d0*(dz(i+1,j)+dz(i,j))
             end do
+#ifdef USE_GPU
+         end do
+!$omp target teams distribute parallel do
+         do j = 1, ny
+#endif
             dx(nx,j) = dz(nx,j)
          end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do i = 1, nx
             do j = 1, ny-1
                dy(i,j) = 0.5d0*(dz(i,j+1)+dz(i,j))
             end do
+#ifdef USE_GPU
+         end do
+!$omp target teams distribute parallel do
+         do i = 1, nx
+#endif
             dy(i,ny) = dz(i,ny)
          end do
       end if
@@ -372,7 +450,7 @@ contains
       ! Dummy arguments end   ----------------------------------------------------------------------
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: val_part
       logical :: flag_part
-      integer(kind=4) :: ist, ien, jst, jen
+      integer(kind=4) :: ist, ien, jst, jen, ierr
 #ifndef CARTESIAN
       real(kind=8) :: lon_west, lat_south
 #endif
@@ -391,7 +469,16 @@ contains
       end if
 
       allocate(val_tmp1(nx,ny))
+#ifndef USE_GPU
       val_tmp1 = 0.0d0
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, ny
+         do i = 1, nx
+            val_tmp1(i,j) = 0.0d0
+         end do
+      end do
+#endif
 
       call read_gmt_grd_hdr(fname,nx_,ny_,dx_,dy_,xmin_,xmax_,ymin_,ymax_,zmin_,zmax_,nxorg_,nyorg_,formatid_,.true.)
 
@@ -441,6 +528,9 @@ contains
          jst = max(jen-ny_+1, 1)
          write(6,'(a,2i8)')            'jst, jen: ', jst, jen
 
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = jst, jen
             do i = ist, ien
                val_tmp0(i,j) = val_part(i-ist+1,j-jst+1)
@@ -453,25 +543,65 @@ contains
       end if
 
       ! NaN is modified into zero.
+      ierr = 0
+#ifndef USE_GPU
+#ifndef __NEC__
+!$omp parallel do private(i)
+#else
+!$omp parallel do private(i) reduction(+:ierr)
+#endif
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) reduction(+:ierr)
+#endif
       do j = 1, ny
          do i = 1, nx
-            if(val_tmp0(i,j) /= val_tmp0(i,j)) val_tmp0(i,j) = 0.0d0
+            if(val_tmp0(i,j) /= val_tmp0(i,j)) then
+               val_tmp0(i,j) = 0.0d0
+#if !defined(__NEC__) && !defined(USE_GPU)
+!$omp critical
+               ierr = 1
+!$omp end critical
+#else
+               ierr = ierr + 1
+#endif
+            end if
          end do
       end do
 
+      if((ierr /= 0) .and. (grd_nan2zero == 0)) then
+         write(0,'(a)')     '======================================================='
+         write(0,'(a)')     '======================================================='
+         write(0,'(a)')     '=== ERROR!!!'
+         write(0,'(a,a,a)') '=== Input file "', trim(fname), '" includes NaN!'
+         write(0,'(a)')     '=== Check the file or specify "grd_nan2zero = 1"'
+         write(0,'(a)')     '=== to replace NaNs into zeros.'
+         write(0,'(a)')     '======================================================='
+         write(0,'(a)')     '======================================================='
+         stop
+      end if
+
       if(mode == HGT) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, ny
             do i = 1, nx
                val_tmp1(i,j) = val_tmp0(i,j)
             end do
          end do
       else if(mode == IFX) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, ny
             do i = 1, nx-1
                val_tmp1(i,j) = (val_tmp0(i,j) + val_tmp0(i+1,j))/2.0d0
             end do
          end do
       else if(mode == IFY) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, ny-1
             do i = 1, nx
                val_tmp1(i,j) = (val_tmp0(i,j) + val_tmp0(i,j+1))/2.0d0
@@ -488,8 +618,18 @@ contains
          allocate(val_all(1,1))
          allocate(val_tmp0(1,1))
       end if
+#ifndef USE_GPU
       val_all = 0.0d0
       val_tmp0 = 0.0d0
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = lbound(val_all,2), ubound(val_all,2)
+         do i = lbound(val_all,1), ubound(val_all,1)
+            val_all(i,j) = 0.0d0
+            val_tmp0(i,j) = 0.0d0
+         end do
+      end do
+#endif
 
       if((dg%my%totalNx /= nx_) .or. (dg%my%totalNy /= ny_)) flag_part = .true.
 
@@ -532,6 +672,9 @@ contains
             jst = max(jen-ny_+1, 1)
             write(6,'(a,2i8)')            'jst, jen: ', jst, jen
 
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
             do j = jst, jen
                do i = ist, ien
                   val_tmp0(i,j) = val_part(i-ist+1,j-jst+1)
@@ -548,25 +691,65 @@ contains
 
       if(myrank == 0) then
          ! NaN is modified into zero.
+         ierr = 0
+#ifndef USE_GPU
+#ifndef __NEC__
+!$omp parallel do private(i)
+#else
+!$omp parallel do private(i) reduction(+:ierr)
+#endif
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) reduction(+:ierr)
+#endif
          do j = 1, dg%my%totalNy
             do i = 1, dg%my%totalNx
-               if(val_tmp0(i,j) /= val_tmp0(i,j)) val_tmp0(i,j) = 0.0d0
+               if(val_tmp0(i,j) /= val_tmp0(i,j)) then
+                  val_tmp0(i,j) = 0.0d0
+#if !defined(__NEC__) && !defined(USE_GPU)
+!$omp critical
+                  ierr = 1
+!$omp end critical
+#else
+                  ierr = ierr + 1
+#endif
+               end if
             end do
          end do
 
+         if((ierr /= 0) .and. (grd_nan2zero == 0)) then
+            write(0,'(a)')     '======================================================='
+            write(0,'(a)')     '======================================================='
+            write(0,'(a)')     '=== ERROR!!!'
+            write(0,'(a,a,a)') '=== Input file "', trim(fname), '" includes NaN!'
+            write(0,'(a)')     '=== Check the file or specify "grd_nan2zero = 1"'
+            write(0,'(a)')     '=== to replace NaNs into zeros.'
+            write(0,'(a)')     '======================================================='
+            write(0,'(a)')     '======================================================='
+            stop
+         end if
+
          if(mode == HGT) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
             do j = 1, dg%my%totalNy
                do i = 1, dg%my%totalNx
                   val_all(i,j) = val_tmp0(i,j)
                end do
             end do
          else if(mode == IFX) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
             do j = 1, dg%my%totalNy
                do i = 1, dg%my%totalNx-1
                   val_all(i,j) = (val_tmp0(i,j) + val_tmp0(i+1,j))/2.0d0
                end do
             end do
          else if(mode == IFY) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
             do j = 1, dg%my%totalNy-1
                do i = 1, dg%my%totalNx
                   val_all(i,j) = (val_tmp0(i,j) + val_tmp0(i,j+1))/2.0d0
@@ -580,6 +763,9 @@ contains
       call onefile_scatter_array(val_all,val_tmp1,dg)
 #endif
 
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, ny
          do i = 1, nx
             val(i,j) = val_tmp1(i,j)
@@ -779,8 +965,24 @@ contains
 #endif
 #else
       allocate(hzmaxorg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
       hzmaxorg = 0.0d0
       hzmaxorg(1:nlon,1:nlat) = hzmax(1:nlon,1:nlat)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 0, nyorg-1
+         do i = 0, nxorg-1
+            hzmaxorg(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, nlat
+         do i = 1, nlon
+            hzmaxorg(i,j) = hzmax(i,j)
+         end do
+      end do
+#endif
 #ifndef DIROUT
       open(1,file=trim(fname),action='write',status='new',form='formatted')
 #else
@@ -800,8 +1002,24 @@ contains
 #endif
 #else
       allocate(hzmaxorg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
       hzmaxorg = 0.0d0
       hzmaxorg(1:dg%my%totalNx,1:dg%my%totalNy) = hzmax_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 0, nyorg-1
+         do i = 0, nxorg-1
+            hzmaxorg(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, dg%my%totalNy
+         do i = 1, dg%my%totalNy
+            hzmaxorg(i,j) = hzmax_all(i,j)
+         end do
+      end do
+#endif
 #ifndef DIROUT
       open(1,file=trim(fname),action='write',status='new',form='formatted')
 #else
@@ -979,8 +1197,24 @@ contains
 #endif
 #else
       allocate(hzminorg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
       hzminorg = 0.0d0
       hzminorg(1:nlon,1:nlat) = hzmin(1:nlon,1:nlat)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 0, nyorg-1
+         do i = 0, nxorg-1
+            hzminorg(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, nlat
+         do i = 1, nlon
+            hzminorg(i,j) = hzmin(i,j)
+         end do
+      end do
+#endif
 #ifndef DIROUT
       open(1,file=trim(fname),action='write',status='new',form='formatted')
 #else
@@ -1000,8 +1234,24 @@ contains
 #endif
 #else
       allocate(hzminorg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
       hzminorg = 0.0d0
       hzminorg(1:dg%my%totalNx,1:dg%my%totalNy) = hzmin_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 0, nyorg-1
+         do i = 0, nxorg-1
+            hzminorg(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, dg%my%totalNy
+         do i = 1, dg%my%totalNy
+            hzminorg(i,j) = hzmin_all(i,j)
+         end do
+      end do
+#endif
 #ifndef DIROUT
       open(1,file=trim(fname),action='write',status='new',form='formatted')
 #else
@@ -1154,8 +1404,24 @@ contains
 #endif
 #else
       allocate(vmaxorg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
       vmaxorg = 0.0d0
       vmaxorg(1:nlon,1:nlat) = vmax(1:nlon,1:nlat)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 0, nyorg-1
+         do i = 0, nxorg-1
+            vmaxorg(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, nlat
+         do i = 1, nlon
+            vmaxorg(i,j) = vmax(i,j)
+         end do
+      end do
+#endif
 #ifndef DIROUT
       open(1,file=trim(fname),action='write',status='new',form='formatted')
 #else
@@ -1175,8 +1441,24 @@ contains
 #endif
 #else
       allocate(vmaxorg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
       vmaxorg = 0.0d0
       vmaxorg(1:dg%my%totalNx,1:dg%my%totalNy) = vmax_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 0, nyorg-1
+         do i = 0, nxorg-1
+            vmaxorg(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, dg%my%totalNy
+         do i = 1, dg%my%totalNy
+            vmaxorg(i,j) = vmax_all(i,j)
+         end do
+      end do
+#endif
 #ifndef DIROUT
       open(1,file=trim(fname),action='write',status='new',form='formatted')
 #else
@@ -1293,6 +1575,7 @@ contains
 #endif
 ! === Conversion from flux to velocity should be done right after calc. ========
       hz => wfld%hz
+      if((timenest == 1) .and. (istep == 0)) hz => wfld%hz_b
       dz => dfld%dz
       tp => tfld
 
@@ -1366,6 +1649,9 @@ contains
 ! ==============================================================================
 
       ! check for wet-or-dry
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             if(wod(i,j) == 1) then
@@ -1446,8 +1732,24 @@ contains
 ! ==============================================================================
 #else
       allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
       tporg = 0.0d0
       tporg(1:nlon,1:nlat) = tp(1:nlon,1:nlat)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 0, nyorg-1
+         do i = 0, nxorg-1
+            tporg(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, nlat
+         do i = 1, nlon
+            tporg(i,j) = tp(i,j)
+         end do
+      end do
+#endif
       open(1,file=trim(fname),action='write',status='unknown',form='formatted')
       write(1,'(10e15.6)') tporg
       close(1)
@@ -1459,8 +1761,24 @@ contains
                          dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,dg%my%formatid,.true.)
 #else
       allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
       tporg = 0.0d0
       tporg(1:dg%my%totalNx,1:dg%my%totalNy) = tp_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 0, nyorg-1
+         do i = 0, nxorg-1
+            tporg(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, dg%my%totalNy
+         do i = 1, dg%my%totalNy
+            tporg(i,j) = tp_all(i,j)
+         end do
+      end do
+#endif
       open(1,file=trim(fname),action='write',status='unknown',form='formatted')
       write(1,'(10e15.6)') tporg
       close(1)
@@ -1481,6 +1799,9 @@ contains
          ! Burbidge: Now output vx
 ! === Conversion from flux to velocity should be done right after calc. ========
          if(linear_flag == 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,im,ip,tdxm,tdxp)
+#endif
             do j = 1, nlat
                do i = 1, nlon
 #ifndef MPI
@@ -1504,6 +1825,9 @@ contains
                end do
             end do
          else
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,im,ip,tdxm,tdxp)
+#endif
             do j = 1, nlat
                do i = 1, nlon
 #ifndef MPI
@@ -1594,8 +1918,24 @@ contains
                             dx,dy,zmin,zmax,nlon,nlat,fname,dg%my%formatid)
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
          tporg = 0.0d0
          tporg(1:nlon,1:nlat) = tp(1:nlon,1:nlat)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 0, nyorg-1
+            do i = 0, nxorg-1
+               tporg(i,j) = 0.0d0
+            end do
+         end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 1, nlat
+            do i = 1, nlon
+               tporg(i,j) = tp(i,j)
+            end do
+         end do
+#endif
          open(1,file=trim(fname),action='write',status='unknown',form='formatted')
          write(1,'(10e15.6)') tporg
          close(1)
@@ -1607,8 +1947,24 @@ contains
                             dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,dg%my%formatid)
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
          tporg = 0.0d0
          tporg(1:dg%my%totalNx,1:dg%my%totalNy) = tp_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 0, nyorg-1
+            do i = 0, nxorg-1
+               tporg(i,j) = 0.0d0
+            end do
+         end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 1, dg%my%totalNy
+            do i = 1, dg%my%totalNy
+               tporg(i,j) = tp_all(i,j)
+            end do
+         end do
+#endif
          open(1,file=trim(fname),action='write',status='unknown',form='formatted')
          write(1,'(10e15.6)') tporg
          close(1)
@@ -1621,6 +1977,9 @@ contains
          ! Burbidge - Now do vy
 ! === Conversion from flux to velocity should be done right after calc. ========
          if(linear_flag == 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,jm,jp,tdym,tdyp)
+#endif
             do j = 1, nlat
                do i = 1, nlon
 #ifndef MPI
@@ -1644,6 +2003,9 @@ contains
                end do
             end do
          else
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,jm,jp,tdym,tdyp)
+#endif
             do j = 1, nlat
                do i = 1, nlon
 #ifndef MPI
@@ -1736,8 +2098,24 @@ contains
                             dx,dy,zmin,zmax,nlon,nlat,fname,dg%my%formatid)
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
          tporg = 0.0d0
          tporg(1:nlon,1:nlat) = tp(1:nlon,1:nlat)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 0, nyorg-1
+            do i = 0, nxorg-1
+               tporg(i,j) = 0.0d0
+            end do
+         end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 1, nlat
+            do i = 1, nlon
+               tporg(i,j) = tp(i,j)
+            end do
+         end do
+#endif
          open(1,file=trim(fname),action='write',status='unknown',form='formatted')
          write(1,'(10e15.6)') tporg
          close(1)
@@ -1749,8 +2127,24 @@ contains
                             dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,dg%my%formatid)
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
          tporg = 0.0d0
          tporg(1:dg%my%totalNx,1:dg%my%totalNy) = tp_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 0, nyorg-1
+            do i = 0, nxorg-1
+               tporg(i,j) = 0.0d0
+            end do
+         end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 1, dg%my%totalNy
+            do i = 1, dg%my%totalNx
+               tporg(i,j) = tp_all(i,j)
+            end do
+         end do
+#endif
          open(1,file=trim(fname),action='write',status='unknown',form='formatted')
          write(1,'(10e15.6)') tporg
          close(1)
@@ -1765,7 +2159,11 @@ contains
             fy => wfld%fy
 
             if(linear_flag == 0) then
+#ifndef USE_GPU
 !$omp parallel do private(i, im, ip, jm, jp, tdxm, tdxp, tdym, tdyp, tx, ty, speed)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,tx,im,ip,tdxm,tdxp,ty,jm,jp,tdym,tdyp,speed)
+#endif
                do j = 1, nlat
                   do i = 1, nlon
                      tx = 0.0d0
@@ -1809,7 +2207,11 @@ contains
                   end do
                end do
             else
+#ifndef USE_GPU
 !$omp parallel do private(i, im, ip, jm, jp, tdxm, tdxp, tdym, tdyp, tx, ty, speed)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,tx,im,ip,tdxm,tdxp,ty,jm,jp,tdym,tdyp,speed)
+#endif
                do j = 1, nlat
                   do i = 1, nlon
                      tx = 0.0d0
@@ -1906,8 +2308,24 @@ contains
                                dx,dy,zmin,zmax,nlon,nlat,fname,dg%my%formatid)
 #else
             allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
             tporg = 0.0d0
             tporg(1:nlon,1:nlat) = tp(1:nlon,1:nlat)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+            do j = 0, nyorg-1
+               do i = 0, nxorg-1
+                  tporg(i,j) = 0.0d0
+               end do
+            end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+            do j = 1, nlat
+               do i = 1, nlon
+                  tporg(i,j) = tp(i,j)
+               end do
+            end do
+#endif
             open(1,file=trim(fname),action='write',status='unknown',form='formatted')
             write(1,'(10e15.6)') tporg
             close(1)
@@ -1919,8 +2337,24 @@ contains
                                dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,dg%my%formatid)
 #else
             allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
             tporg = 0.0d0
             tporg(1:dg%my%totalNx,1:dg%my%totalNy) = tp_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+            do j = 0, nyorg-1
+               do i = 0, nxorg-1
+                  tporg(i,j) = 0.0d0
+               end do
+            end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+            do j = 1, dg%my%totalNy
+               do i = 1, dg%my%totalNx
+                  tporg(i,j) = tp_all(i,j)
+               end do
+            end do
+#endif
             open(1,file=trim(fname),action='write',status='unknown',form='formatted')
             write(1,'(10e15.6)') tporg
             close(1)
@@ -1958,6 +2392,9 @@ contains
 #endif
 
          ! check for wet-or-dry
+#ifdef USE_GUP
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                tp(i,j) = hz(i,j)
@@ -2002,8 +2439,24 @@ contains
                             dx,dy,zmin,zmax,nlon,nlat,fname,dg%my%formatid,.true.)
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
          tporg = 0.0d0
          tporg(1:nlon,1:nlat) = tp(1:nlon,1:nlat)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 0, nyorg-1
+            do i = 0, nxorg-1
+               tporg(i,j) = 0.0d0
+            end do
+         end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 1, nlat
+            do i = 1, nlon
+               tporg(i,j) = tp(i,j)
+            end do
+         end do
+#endif
          open(1,file=trim(fname),action='write',status='unknown',form='formatted')
          write(1,'(10e15.6)') tporg
          close(1)
@@ -2015,8 +2468,24 @@ contains
                             dx,dy,zmin,zmax,dg%my%totalNx,dg%my%totalNy,fname,dg%my%formatid,.true.)
 #else
          allocate(tporg(0:nxorg-1,0:nyorg-1))
+#ifndef USE_GPU
          tporg = 0.0d0
          tporg(1:dg%my%totalNx,1:dg%my%totalNy) = tp_all(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 0, nyorg-1
+            do i = 0, nxorg-1
+               tporg(i,j) = 0.0d0
+            end do
+         end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 1, dg%my%totalNy
+            do i = 1, dg%my%totalNy
+               tporg(i,j) = tp_all(i,j)
+            end do
+         end do
+#endif
          open(1,file=trim(fname),action='write',status='unknown',form='formatted')
          write(1,'(10e15.6)') tporg
          close(1)
@@ -2043,15 +2512,48 @@ contains
       integer(kind=4), intent(in) :: nlon, nlat
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: fx, fy, hz
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       fx => wfld%fx
       fy => wfld%fy
       hz => wfld%hz
 
+#ifndef USE_GPU
       fx = 0.0d0
       fy = 0.0d0
       hz = 0.0d0
       zz = 0.0d0
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = lbound(fx,2), ubound(fx,2)
+         do i = lbound(fx,1), ubound(fx,1)
+            fx(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = lbound(fy,2), ubound(fy,2)
+         do i = lbound(fy,1), ubound(fy,1)
+            fy(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = lbound(hz,2), ubound(hz,2)
+         do i = lbound(hz,1), ubound(hz,1)
+            hz(i,j) = 0.0d0
+         end do
+      end do
+
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = lbound(zz,2), ubound(zz,2)
+         do i = lbound(zz,1), ubound(zz,1)
+            zz(i,j) = 0.0d0
+         end do
+      end do
+#endif
 
       return
    end subroutine initl_wfld
@@ -2239,6 +2741,7 @@ contains
 #endif
 
       !** map zz_tmp into zz **
+#ifndef USE_GPU
       j = 1
 ! === DEBUG by tkato 2012/11/13 ================================================
 !     do jj = js, je-1
@@ -2255,6 +2758,14 @@ contains
          j = j + 1
       end do
 #else
+!$omp target teams distribute parallel do collapse(2) private(ii)
+      do jj = js, je
+         do ii = is, ie
+            zz(ii,jj) = zz_tmp(ii-is+1,jj-js+1)
+         end do
+      end do
+#endif
+#else
       if(myrank == 0) then
          allocate(zz_all(dg%my%totalNx,dg%my%totalNy))
       else
@@ -2269,7 +2780,16 @@ contains
          open(1,file=trim(fname),action='read',status='old',form='formatted')
          read(1,'(10f8.4)') zz_tmp
          close(1)
+#ifndef USE_GPU
          zz_all(1:dg%my%totalNx,1:dg%my%totalNy) = zz_tmp(1:dg%my%totalNx,1:dg%my%totalNy)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+         do j = 1, dg%my%totalNy
+            do i = 1, dg%my%totalNx
+               zz_all(i,j) = zz_tmp(i,j)
+            end do
+         end do
+#endif
          deallocate(zz_tmp)
       end if
       allocate(zz_tmp(nlon,nlat))
@@ -2277,6 +2797,9 @@ contains
       call onefile_scatter_array(zz_all,zz_tmp,dg)
 
       !** map zz_tmp into zz **
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             zz(i,j) = zz_tmp(i,j)

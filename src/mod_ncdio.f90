@@ -7,6 +7,7 @@ use mod_grid
 use mod_params, only : velgrd_flag, start_date, missing_value, VEL, HGT, &
                        speedgrd_flag, check_arrival_time
 ! ==============================================================================
+use mod_params, only : check_tt_time
 ! === Multiple rupture =========================================================
 use mod_params, only : multrupt
 ! ==============================================================================
@@ -42,6 +43,7 @@ contains
 ! === Arrival time =============================================================
       integer(kind=4), pointer :: atid
 ! ==============================================================================
+      integer(kind=4), pointer :: tttid
       integer(kind=4), pointer, dimension(:) :: start, count
 
       integer(kind=4) :: xid, yid, tid
@@ -131,6 +133,7 @@ contains
 ! === Arrival time =============================================================
       atid => dgrid%my%ncdio%atid
 ! ==============================================================================
+      tttid => dgrid%my%ncdio%tttid
 
       hzid => dgrid%my%ncdio%hzid
       vxid => dgrid%my%ncdio%vxid
@@ -272,6 +275,16 @@ contains
                                 real(missing_value))
       end if
 ! ==============================================================================
+      if(check_tt_time == 1) then
+         stat = nf_def_var(ncid, 'tt_time', NF_REAL, 2, vdims, tttid)
+         if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
+         att = 'Tsunami travel time'
+         stat = nf_put_att_text(ncid, tttid, 'long_name', len(trim(att)), att)
+         att = 'seconds since ' // trim(start_date)
+         stat = nf_put_att_text(ncid, tttid, 'units', len(trim(att)), att)
+         stat = nf_put_att_real(ncid, tttid, '_FillValue', NF_REAL, 1, &
+                                real(missing_value))
+      end if
 
       stat = nf_def_var(ncid, 'wave_height', NF_REAL, 3, vdims, hzid)
       if(stat /= NF_NOERR) write(0,'(a)') nf_strerror(stat)
@@ -1082,6 +1095,29 @@ contains
       return
    end subroutine write_arrival_time
 ! ==============================================================================
+#if !defined(MPI) || !defined(ONEFILE)
+   subroutine write_tt_time(dgrid)
+#else
+   subroutine write_tt_time(dgrid, myrank)
+#endif
+      type(data_grids), target, intent(inout) :: dgrid
+#if defined(MPI) && defined(ONEFILE)
+      integer(kind=4), intent(in) :: myrank
+#endif
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: tt_time
+      integer(kind=4), pointer :: atid
+
+      atid => dgrid%my%ncdio%atid
+      tt_time => dgrid%wave_field%tt_time
+
+#if !defined(MPI) || !defined(ONEFILE)
+      call write_array(dgrid, tt_time, atid)
+#else
+      call write_array(dgrid, tt_time, atid, myrank)
+#endif
+
+      return
+   end subroutine write_tt_time
 #ifdef HZMINOUT
 #if !defined(MPI) || !defined(ONEFILE)
    subroutine write_min_height(dgrid)

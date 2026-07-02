@@ -1,3 +1,11 @@
+#undef TIMER
+#ifdef TIMER
+#   define TIMER_START(a) call start_timer(a)
+#   define TIMER_STOP(a)  call stop_timer(a)
+#else
+#   define TIMER_START(a)
+#   define TIMER_STOP(a)
+#endif
 #include "real.h"
 module mod_mpi
 use mpi
@@ -6,6 +14,9 @@ use mod_multi, only : MPI_MEMBER_WORLD
 #endif
 use mod_grid
 use mod_params
+#ifdef TIMER
+use mod_timer
+#endif
 implicit none
 
 integer(kind=4) :: north_rank, south_rank, east_rank, west_rank
@@ -188,6 +199,9 @@ contains
       integer(kind=4), dimension(2) :: sreqs, rreqs
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
       integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       nx = grid%my%nx
       ny = grid%my%ny
@@ -203,11 +217,13 @@ contains
       !*                                    *
       !**************************************
       if(mode == VEL) then
+TIMER_START('___ee:reg01')
          north_edge => grid%edges%fne
          south_edge => grid%edges%fse
          north_buf  => grid%edges%fnb
          south_buf  => grid%edges%fsb
 
+#ifndef USE_GPU
          if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,1) = fx(1:nx,2)
          if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,2) = fy(1:nx,2)
          if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,3) = fx(1:nx,3)
@@ -220,14 +236,46 @@ contains
             south_edge(1:nx,3) = fy(1:nx,ny-2)
             south_edge(1:nx,5) = fy(1:nx,ny-3)
          end if
+#else
+!$omp target teams distribute parallel do
+         do i = 1, nx
+            if(iand(has_boundary, NORTH_BOUND) == 0) then
+               north_edge(i,1) = fx(i,2)
+               north_edge(i,2) = fy(i,2)
+               north_edge(i,3) = fx(i,3)
+               north_edge(i,4) = fy(i,3)
+            end if
+            if(iand(has_boundary, SOUTH_BOUND) == 0) then
+               south_edge(i,1) = fx(i,ny-1)
+               south_edge(i,2) = fy(i,ny-1)
+               south_edge(i,3) = fy(i,ny-2)
+               south_edge(i,4) = fx(i,ny-2)
+               south_edge(i,5) = fy(i,ny-3)
+            end if
+         end do
+#endif
+TIMER_STOP('___ee:reg01')
 
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___ee:reg02')
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
          call MPI_Irecv(north_buf,  5*nx, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
          call MPI_Irecv(south_buf,  4*nx, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
          call MPI_Isend(north_edge, 4*nx, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
          call MPI_Isend(south_edge, 5*nx, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
          call MPI_Waitall(2, sreqs, sstat, ierr)
          call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+TIMER_STOP('___ee:reg02')
 
+TIMER_START('___ee:reg03')
+#ifndef USE_GPU
          if(iand(has_boundary, NORTH_BOUND) == 0) fx(1:nx,1) = north_buf(1:nx,1)
          if(iand(has_boundary, NORTH_BOUND) == 0) fx(1:nx,0) = north_buf(1:nx,4)
          if(iand(has_boundary, NORTH_BOUND) == 0) then
@@ -239,12 +287,33 @@ contains
          if(iand(has_boundary, SOUTH_BOUND) == 0) fy(1:nx,ny) = south_buf(1:nx,2)
          if(iand(has_boundary, SOUTH_BOUND) == 0) fx(1:nx,ny+1) = south_buf(1:nx,3)
          if(iand(has_boundary, SOUTH_BOUND) == 0) fy(1:nx,ny+1) = south_buf(1:nx,4)
+#else
+!$omp target teams distribute parallel do
+         do i = 1, nx
+            if(iand(has_boundary, NORTH_BOUND) == 0) then
+               fx(i,1) = north_buf(i,1)
+               fy(i,1) = north_buf(i,2)
+               fy(i,0) = north_buf(i,3)
+               fx(i,0) = north_buf(i,4)
+               fy(i,-1) = north_buf(i,5)
+            end if
+            if(iand(has_boundary, SOUTH_BOUND) == 0) then
+               fx(i,ny) = south_buf(i,1)
+               fy(i,ny) = south_buf(i,2)
+               fx(i,ny+1) = south_buf(i,3)
+               fy(i,ny+1) = south_buf(i,4)
+            end if
+         end do
+#endif
+TIMER_STOP('___ee:reg03')
       else if(mode == HGT) then
+TIMER_START('___ee:reg04')
          north_edge => grid%edges%hne
          south_edge => grid%edges%hse
          north_buf  => grid%edges%hnb
          south_buf  => grid%edges%hsb
 
+#ifndef USE_GPU
          if(iand(has_boundary, NORTH_BOUND) == 0) then
             north_edge(1:nx,1) = hz(1:nx,2)
             north_edge(1:nx,2) = hz(1:nx,3)
@@ -254,14 +323,42 @@ contains
             south_edge(1:nx,1) = hz(1:nx,ny-1)
             south_edge(1:nx,2) = hz(1:nx,ny-2)
          end if
+#else
+!$omp target teams distribute parallel do
+         do i = 1, nx
+            if(iand(has_boundary, NORTH_BOUND) == 0) then
+               north_edge(i,1) = hz(i,2)
+               north_edge(i,2) = hz(i,3)
+               north_edge(i,3) = hz(i,4)
+            end if
+            if(iand(has_boundary, SOUTH_BOUND) == 0) then
+               south_edge(i,1) = hz(i,ny-1)
+               south_edge(i,2) = hz(i,ny-2)
+            end if
+         end do
+#endif
+TIMER_STOP('___ee:reg04')
 
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___ee:reg05')
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
          call MPI_Irecv(north_buf,  2*nx, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
          call MPI_Irecv(south_buf,  3*nx, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
          call MPI_Isend(north_edge, 3*nx, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
          call MPI_Isend(south_edge, 2*nx, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
          call MPI_Waitall(2, sreqs, sstat, ierr)
          call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+TIMER_STOP('___ee:reg05')
 
+TIMER_START('___ee:reg06')
+#ifndef USE_GPU
          if(iand(has_boundary, NORTH_BOUND) == 0) then
             hz(1:nx,1) = north_buf(1:nx,1)
             hz(1:nx,0) = north_buf(1:nx,2)
@@ -271,6 +368,21 @@ contains
             hz(1:nx,ny+1) = south_buf(1:nx,2)
             hz(1:nx,ny+2) = south_buf(1:nx,3)
          end if
+#else
+!$omp target teams distribute parallel do
+         do i = 1, nx
+            if(iand(has_boundary, NORTH_BOUND) == 0) then
+               hz(i,1) = north_buf(i,1)
+               hz(i,0) = north_buf(i,2)
+            end if
+            if(iand(has_boundary, SOUTH_BOUND) == 0) then
+               hz(i,ny  ) = south_buf(i,1)
+               hz(i,ny+1) = south_buf(i,2)
+               hz(i,ny+2) = south_buf(i,3)
+            end if
+         end do
+#endif
+TIMER_STOP('___ee:reg06')
       end if
 
       !**************************************
@@ -279,11 +391,13 @@ contains
       !*                                    *
       !**************************************
       if(mode == VEL) then
+TIMER_START('___ee:reg07')
          east_edge => grid%edges%fee
          west_edge => grid%edges%fwe
          east_buf  => grid%edges%feb
          west_buf  => grid%edges%fwb
 
+#ifndef USE_GPU
          if(iand(has_boundary, EAST_BOUND) == 0) then
              east_edge(0:ny+1,1) = fx(nx-1,0:ny+1)
              east_edge(0:ny+1,2) = fx(nx-2,0:ny+1)
@@ -295,14 +409,46 @@ contains
          if(iand(has_boundary, WEST_BOUND) == 0) west_edge(-1:ny+1,2) = fy(2,-1:ny+1)
          if(iand(has_boundary, WEST_BOUND) == 0) west_edge( 0:ny+1,3) = fx(3, 0:ny+1)
          if(iand(has_boundary, WEST_BOUND) == 0) west_edge(-1:ny+1,4) = fy(3,-1:ny+1)
+#else
+!$omp target teams distribute parallel do
+         do j = -1, ny+1
+            if(iand(has_boundary, EAST_BOUND) == 0) then
+               if(j >= 0) east_edge(j,1) = fx(nx-1,j)
+               if(j >= 0) east_edge(j,2) = fx(nx-2,j)
+               east_edge(j,3) = fy(nx-1,j)
+               if(j >= 0) east_edge(j,4) = fx(nx-3,j)
+               east_edge(j,5) = fy(nx-2,j)
+            end if
+            if(iand(has_boundary, WEST_BOUND) == 0) then
+               if(j >= 0) west_edge(j,1) = fx(2,j)
+               west_edge(j,2) = fy(2,j)
+               if(j >= 0) west_edge(j,3) = fx(3,j)
+               west_edge(j,4) = fy(3,j)
+            end if
+         end do
+#endif
+TIMER_STOP('___ee:reg07')
 
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___ee:reg08')
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
          call MPI_Irecv(east_buf,  4*(ny+3), REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
          call MPI_Irecv(west_buf,  5*(ny+3), REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
          call MPI_Isend(east_edge, 5*(ny+3), REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
          call MPI_Isend(west_edge, 4*(ny+3), REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
          call MPI_Waitall(2, sreqs, sstat, ierr)
          call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+TIMER_STOP('___ee:reg08')
 
+TIMER_START('___ee:reg09')
+#ifndef USE_GPU
          if(iand(has_boundary, EAST_BOUND) == 0) fx(nx,   0:ny+1) = east_buf( 0:ny+1,1)
          if(iand(has_boundary, EAST_BOUND) == 0) fy(nx,  -1:ny+1) = east_buf(-1:ny+1,2)
          if(iand(has_boundary, EAST_BOUND) == 0) fx(nx+1, 0:ny+1) = east_buf( 0:ny+1,3)
@@ -314,12 +460,33 @@ contains
          end if
          if(iand(has_boundary, WEST_BOUND) == 0) fy(1,-1:ny+1) = west_buf(-1:ny+1,3)
          if(iand(has_boundary, WEST_BOUND) == 0) fy(0,-1:ny+1) = west_buf(-1:ny+1,5)
+#else
+!$omp target teams distribute parallel do
+         do j = -1, ny+1
+            if(iand(has_boundary, EAST_BOUND) == 0) then
+               if(j >= 0) fx(nx,j) = east_buf(j,1)
+               fy(nx,j) = east_buf(j,2)
+               if(j >= 0) fx(nx+1,j) = east_buf(j,3)
+               fy(nx+1,j) = east_buf(j,4)
+            end if
+            if(iand(has_boundary, WEST_BOUND) == 0) then
+               if(j >= 0) fx( 1,j) = west_buf(j,1)
+               if(j >= 0) fx( 0,j) = west_buf(j,2)
+               if(j >= 0) fx(-1,j) = west_buf(j,4)
+               fy(1,j) = west_buf(j,3)
+               fy(0,j) = west_buf(j,5)
+            end if
+         end do
+#endif
+TIMER_STOP('___ee:reg09')
       else if(mode == HGT) then
+TIMER_START('___ee:reg10')
          east_edge => grid%edges%hee
          west_edge => grid%edges%hwe
          east_buf  => grid%edges%heb
          west_buf  => grid%edges%hwb
 
+#ifndef USE_GPU
          if(iand(has_boundary, EAST_BOUND) == 0) then
             east_edge(0:ny+2,1) = hz(nx-1,0:ny+2)
             east_edge(0:ny+2,2) = hz(nx-2,0:ny+2)
@@ -329,14 +496,42 @@ contains
             west_edge(0:ny+2,2) = hz(3,0:ny+2)
             west_edge(0:ny+2,3) = hz(4,0:ny+2)
          end if
+#else
+!$omp target teams distribute parallel do
+         do j = 0, ny+2
+            if(iand(has_boundary, EAST_BOUND) == 0) then
+               east_edge(j,1) = hz(nx-1,j)
+               east_edge(j,2) = hz(nx-2,j)
+            end if
+            if(iand(has_boundary, WEST_BOUND) == 0) then
+               west_edge(j,1) = hz(2,j)
+               west_edge(j,2) = hz(3,j)
+               west_edge(j,3) = hz(4,j)
+            end if
+         end do
+#endif
+TIMER_STOP('___ee:reg10')
 
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___ee:reg11')
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
          call MPI_Irecv(east_buf,  3*(ny+3), REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
          call MPI_Irecv(west_buf,  2*(ny+3), REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
          call MPI_Isend(east_edge, 2*(ny+3), REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
          call MPI_Isend(west_edge, 3*(ny+3), REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
          call MPI_Waitall(2, sreqs, sstat, ierr)
          call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+TIMER_STOP('___ee:reg11')
 
+TIMER_START('___ee:reg12')
+#ifndef USE_GPU
          if(iand(has_boundary, EAST_BOUND) == 0) then
             hz(nx,  0:ny+2) = east_buf(0:ny+2,1)
             hz(nx+1,0:ny+2) = east_buf(0:ny+2,2)
@@ -346,10 +541,409 @@ contains
             hz(1,0:ny+2) = west_buf(0:ny+2,1)
             hz(0,0:ny+2) = west_buf(0:ny+2,2)
          end if
+#else
+!$omp target teams distribute parallel do
+         do j = 0, ny+2
+            if(iand(has_boundary, EAST_BOUND) == 0) then
+               hz(nx,  j) = east_buf(j,1)
+               hz(nx+1,j) = east_buf(j,2)
+               hz(nx+2,j) = east_buf(j,3)
+            end if
+            if(iand(has_boundary, WEST_BOUND) == 0) then
+               hz(1,j) = west_buf(j,1)
+               hz(0,j) = west_buf(j,2)
+            end if
+         end do
+#endif
+TIMER_STOP('___ee:reg12')
       end if
 
       return
    end subroutine exchange_edges
+
+   subroutine exchange_edges_b(mode, grid)
+      integer(kind=4), intent(in) :: mode
+      type(data_grids), target, intent(inout) :: grid
+
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: north_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: south_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: east_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: west_edge
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: north_buf
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: south_buf
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: east_buf
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: west_buf
+      integer(kind=4) :: nx
+      integer(kind=4) :: ny
+      integer(kind=4) :: has_boundary
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: fx
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: fy
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz
+
+      integer(kind=4), dimension(2) :: sreqs, rreqs
+      integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
+      integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
+
+      nx = grid%my%nx
+      ny = grid%my%ny
+      has_boundary = grid%my%has_boundary
+
+      fx => grid%wave_field%fx_b
+      fy => grid%wave_field%fy_b
+      hz => grid%wave_field%hz_b
+
+      !**************************************
+      !*                                    *
+      !* North-South Communication          *
+      !*                                    *
+      !**************************************
+      if(mode == VEL) then
+TIMER_START('___eeb:reg01')
+         north_edge => grid%edges%fne
+         south_edge => grid%edges%fse
+         north_buf  => grid%edges%fnb
+         south_buf  => grid%edges%fsb
+
+#ifndef USE_GPU
+         if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,1) = fx(1:nx,2)
+         if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,2) = fy(1:nx,2)
+         if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,3) = fx(1:nx,3)
+         if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,4) = fy(1:nx,3)
+
+         if(iand(has_boundary, SOUTH_BOUND) == 0) south_edge(1:nx,1) = fx(1:nx,ny-1)
+         if(iand(has_boundary, SOUTH_BOUND) == 0) south_edge(1:nx,4) = fx(1:nx,ny-2)
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(1:nx,2) = fy(1:nx,ny-1)
+            south_edge(1:nx,3) = fy(1:nx,ny-2)
+            south_edge(1:nx,5) = fy(1:nx,ny-3)
+         end if
+#else
+!$omp target teams distribute parallel do
+         do i = 1, nx
+            if(iand(has_boundary, NORTH_BOUND) == 0) then
+               north_edge(i,1) = fx(i,2)
+               north_edge(i,2) = fy(i,2)
+               north_edge(i,3) = fx(i,3)
+               north_edge(i,4) = fy(i,3)
+            end if
+            if(iand(has_boundary, SOUTH_BOUND) == 0) then
+               south_edge(i,1) = fx(i,ny-1)
+               south_edge(i,2) = fy(i,ny-1)
+               south_edge(i,3) = fy(i,ny-2)
+               south_edge(i,4) = fx(i,ny-2)
+               south_edge(i,5) = fy(i,ny-3)
+            end if
+         end do
+#endif
+TIMER_STOP('___eeb:reg01')
+
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___eeb:reg02')
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
+         call MPI_Irecv(north_buf,  5*nx, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
+         call MPI_Irecv(south_buf,  4*nx, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
+         call MPI_Isend(north_edge, 4*nx, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
+         call MPI_Isend(south_edge, 5*nx, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
+         call MPI_Waitall(2, sreqs, sstat, ierr)
+         call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+TIMER_STOP('___eeb:reg02')
+
+TIMER_START('___eeb:reg03')
+#ifndef USE_GPU
+         if(iand(has_boundary, NORTH_BOUND) == 0) fx(1:nx,1) = north_buf(1:nx,1)
+         if(iand(has_boundary, NORTH_BOUND) == 0) fx(1:nx,0) = north_buf(1:nx,4)
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            fy(1:nx,1) = north_buf(1:nx,2)
+            fy(1:nx,0) = north_buf(1:nx,3)
+            fy(1:nx,-1) = north_buf(1:nx,5)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) fx(1:nx,ny) = south_buf(1:nx,1)
+         if(iand(has_boundary, SOUTH_BOUND) == 0) fy(1:nx,ny) = south_buf(1:nx,2)
+         if(iand(has_boundary, SOUTH_BOUND) == 0) fx(1:nx,ny+1) = south_buf(1:nx,3)
+         if(iand(has_boundary, SOUTH_BOUND) == 0) fy(1:nx,ny+1) = south_buf(1:nx,4)
+#else
+!$omp target teams distribute parallel do
+         do i = 1, nx
+            if(iand(has_boundary, NORTH_BOUND) == 0) then
+               fx(i,1) = north_buf(i,1)
+               fy(i,1) = north_buf(i,2)
+               fy(i,0) = north_buf(i,3)
+               fx(i,0) = north_buf(i,4)
+               fy(i,-1) = north_buf(i,5)
+            end if
+            if(iand(has_boundary, SOUTH_BOUND) == 0) then
+               fx(i,ny) = south_buf(i,1)
+               fy(i,ny) = south_buf(i,2)
+               fx(i,ny+1) = south_buf(i,3)
+               fy(i,ny+1) = south_buf(i,4)
+            end if
+         end do
+#endif
+TIMER_STOP('___eeb:reg03')
+      else if(mode == HGT) then
+TIMER_START('___eeb:reg04')
+         north_edge => grid%edges%hne
+         south_edge => grid%edges%hse
+         north_buf  => grid%edges%hnb
+         south_buf  => grid%edges%hsb
+
+#ifndef USE_GPU
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(1:nx,1) = hz(1:nx,2)
+            north_edge(1:nx,2) = hz(1:nx,3)
+            north_edge(1:nx,3) = hz(1:nx,4)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(1:nx,1) = hz(1:nx,ny-1)
+            south_edge(1:nx,2) = hz(1:nx,ny-2)
+         end if
+#else
+!$omp target teams distribute parallel do
+         do i = 1, nx
+            if(iand(has_boundary, NORTH_BOUND) == 0) then
+               north_edge(i,1) = hz(i,2)
+               north_edge(i,2) = hz(i,3)
+               north_edge(i,3) = hz(i,4)
+            end if
+            if(iand(has_boundary, SOUTH_BOUND) == 0) then
+               south_edge(i,1) = hz(i,ny-1)
+               south_edge(i,2) = hz(i,ny-2)
+            end if
+         end do
+#endif
+TIMER_STOP('___eeb:reg04')
+
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___eeb:reg05')
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
+         call MPI_Irecv(north_buf,  2*nx, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
+         call MPI_Irecv(south_buf,  3*nx, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
+         call MPI_Isend(north_edge, 3*nx, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
+         call MPI_Isend(south_edge, 2*nx, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
+         call MPI_Waitall(2, sreqs, sstat, ierr)
+         call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+TIMER_STOP('___eeb:reg05')
+
+TIMER_START('___eeb:reg06')
+#ifndef USE_GPU
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            hz(1:nx,1) = north_buf(1:nx,1)
+            hz(1:nx,0) = north_buf(1:nx,2)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            hz(1:nx,ny  ) = south_buf(1:nx,1)
+            hz(1:nx,ny+1) = south_buf(1:nx,2)
+            hz(1:nx,ny+2) = south_buf(1:nx,3)
+         end if
+#else
+!$omp target teams distribute parallel do
+         do i = 1, nx
+            if(iand(has_boundary, NORTH_BOUND) == 0) then
+               hz(i,1) = north_buf(i,1)
+               hz(i,0) = north_buf(i,2)
+            end if
+            if(iand(has_boundary, SOUTH_BOUND) == 0) then
+               hz(i,ny  ) = south_buf(i,1)
+               hz(i,ny+1) = south_buf(i,2)
+               hz(i,ny+2) = south_buf(i,3)
+            end if
+         end do
+#endif
+TIMER_STOP('___eeb:reg06')
+      end if
+
+      !**************************************
+      !*                                    *
+      !* East-West Communication            *
+      !*                                    *
+      !**************************************
+      if(mode == VEL) then
+TIMER_START('___eeb:reg07')
+         east_edge => grid%edges%fee
+         west_edge => grid%edges%fwe
+         east_buf  => grid%edges%feb
+         west_buf  => grid%edges%fwb
+
+#ifndef USE_GPU
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+             east_edge(0:ny+1,1) = fx(nx-1,0:ny+1)
+             east_edge(0:ny+1,2) = fx(nx-2,0:ny+1)
+             east_edge(0:ny+1,4) = fx(nx-3,0:ny+1)
+         end if
+         if(iand(has_boundary, EAST_BOUND) == 0) east_edge(-1:ny+1,3) = fy(nx-1,-1:ny+1)
+         if(iand(has_boundary, EAST_BOUND) == 0) east_edge(-1:ny+1,5) = fy(nx-2,-1:ny+1)
+         if(iand(has_boundary, WEST_BOUND) == 0) west_edge( 0:ny+1,1) = fx(2, 0:ny+1)
+         if(iand(has_boundary, WEST_BOUND) == 0) west_edge(-1:ny+1,2) = fy(2,-1:ny+1)
+         if(iand(has_boundary, WEST_BOUND) == 0) west_edge( 0:ny+1,3) = fx(3, 0:ny+1)
+         if(iand(has_boundary, WEST_BOUND) == 0) west_edge(-1:ny+1,4) = fy(3,-1:ny+1)
+#else
+!$omp target teams distribute parallel do
+         do j = -1, ny+1
+            if(iand(has_boundary, EAST_BOUND) == 0) then
+               if(j >= 0) east_edge(j,1) = fx(nx-1,j)
+               if(j >= 0) east_edge(j,2) = fx(nx-2,j)
+               east_edge(j,3) = fy(nx-1,j)
+               if(j >= 0) east_edge(j,4) = fx(nx-3,j)
+               east_edge(j,5) = fy(nx-2,j)
+            end if
+            if(iand(has_boundary, WEST_BOUND) == 0) then
+               if(j >= 0) west_edge(j,1) = fx(2,j)
+               west_edge(j,2) = fy(2,j)
+               if(j >= 0) west_edge(j,3) = fx(3,j)
+               west_edge(j,4) = fy(3,j)
+            end if
+         end do
+#endif
+TIMER_STOP('___eeb:reg07')
+
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___eeb:reg08')
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
+         call MPI_Irecv(east_buf,  4*(ny+3), REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
+         call MPI_Irecv(west_buf,  5*(ny+3), REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
+         call MPI_Isend(east_edge, 5*(ny+3), REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
+         call MPI_Isend(west_edge, 4*(ny+3), REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
+         call MPI_Waitall(2, sreqs, sstat, ierr)
+         call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+TIMER_STOP('___eeb:reg08')
+
+TIMER_START('___eeb:reg09')
+#ifndef USE_GPU
+         if(iand(has_boundary, EAST_BOUND) == 0) fx(nx,   0:ny+1) = east_buf( 0:ny+1,1)
+         if(iand(has_boundary, EAST_BOUND) == 0) fy(nx,  -1:ny+1) = east_buf(-1:ny+1,2)
+         if(iand(has_boundary, EAST_BOUND) == 0) fx(nx+1, 0:ny+1) = east_buf( 0:ny+1,3)
+         if(iand(has_boundary, EAST_BOUND) == 0) fy(nx+1,-1:ny+1) = east_buf(-1:ny+1,4)
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+             fx( 1,0:ny+1) = west_buf(0:ny+1,1)
+             fx( 0,0:ny+1) = west_buf(0:ny+1,2)
+             fx(-1,0:ny+1) = west_buf(0:ny+1,4)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) fy(1,-1:ny+1) = west_buf(-1:ny+1,3)
+         if(iand(has_boundary, WEST_BOUND) == 0) fy(0,-1:ny+1) = west_buf(-1:ny+1,5)
+#else
+!$omp target teams distribute parallel do
+         do j = -1, ny+1
+            if(iand(has_boundary, EAST_BOUND) == 0) then
+               if(j >= 0) fx(nx,j) = east_buf(j,1)
+               fy(nx,j) = east_buf(j,2)
+               if(j >= 0) fx(nx+1,j) = east_buf(j,3)
+               fy(nx+1,j) = east_buf(j,4)
+            end if
+            if(iand(has_boundary, WEST_BOUND) == 0) then
+               if(j >= 0) fx( 1,j) = west_buf(j,1)
+               if(j >= 0) fx( 0,j) = west_buf(j,2)
+               if(j >= 0) fx(-1,j) = west_buf(j,4)
+               fy(1,j) = west_buf(j,3)
+               fy(0,j) = west_buf(j,5)
+            end if
+         end do
+#endif
+TIMER_STOP('___eeb:reg09')
+      else if(mode == HGT) then
+TIMER_START('___eeb:reg10')
+         east_edge => grid%edges%hee
+         west_edge => grid%edges%hwe
+         east_buf  => grid%edges%heb
+         west_buf  => grid%edges%hwb
+
+#ifndef USE_GPU
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            east_edge(0:ny+2,1) = hz(nx-1,0:ny+2)
+            east_edge(0:ny+2,2) = hz(nx-2,0:ny+2)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            west_edge(0:ny+2,1) = hz(2,0:ny+2)
+            west_edge(0:ny+2,2) = hz(3,0:ny+2)
+            west_edge(0:ny+2,3) = hz(4,0:ny+2)
+         end if
+#else
+!$omp target teams distribute parallel do
+         do j = 0, ny+2
+            if(iand(has_boundary, EAST_BOUND) == 0) then
+               east_edge(j,1) = hz(nx-1,j)
+               east_edge(j,2) = hz(nx-2,j)
+            end if
+            if(iand(has_boundary, WEST_BOUND) == 0) then
+               west_edge(j,1) = hz(2,j)
+               west_edge(j,2) = hz(3,j)
+               west_edge(j,3) = hz(4,j)
+            end if
+         end do
+#endif
+TIMER_STOP('___eeb:reg10')
+
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___eeb:reg11')
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
+         call MPI_Irecv(east_buf,  3*(ny+3), REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
+         call MPI_Irecv(west_buf,  2*(ny+3), REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
+         call MPI_Isend(east_edge, 2*(ny+3), REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
+         call MPI_Isend(west_edge, 3*(ny+3), REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
+         call MPI_Waitall(2, sreqs, sstat, ierr)
+         call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+TIMER_STOP('___eeb:reg11')
+
+TIMER_START('___eeb:reg12')
+#ifndef USE_GPU
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            hz(nx,  0:ny+2) = east_buf(0:ny+2,1)
+            hz(nx+1,0:ny+2) = east_buf(0:ny+2,2)
+            hz(nx+2,0:ny+2) = east_buf(0:ny+2,3)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            hz(1,0:ny+2) = west_buf(0:ny+2,1)
+            hz(0,0:ny+2) = west_buf(0:ny+2,2)
+         end if
+#else
+!$omp target teams distribute parallel do
+         do j = 0, ny+2
+            if(iand(has_boundary, EAST_BOUND) == 0) then
+               hz(nx,  j) = east_buf(j,1)
+               hz(nx+1,j) = east_buf(j,2)
+               hz(nx+2,j) = east_buf(j,3)
+            end if
+            if(iand(has_boundary, WEST_BOUND) == 0) then
+               hz(1,j) = west_buf(j,1)
+               hz(0,j) = west_buf(j,2)
+            end if
+         end do
+#endif
+TIMER_STOP('___eeb:reg12')
+      end if
+
+      return
+   end subroutine exchange_edges_b
 
    subroutine exchange_edges_dz(grid)
       type(data_grids), target, intent(inout) :: grid
@@ -370,6 +964,9 @@ contains
       integer(kind=4), dimension(2) :: sreqs, rreqs
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
       integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       nx = grid%my%nx
       ny = grid%my%ny
@@ -387,6 +984,7 @@ contains
       north_buf  => grid%edges%dnb
       south_buf  => grid%edges%dsb
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          north_edge(1:nx,1) = hz(1:nx,2)
          north_edge(1:nx,2) = hz(1:nx,3)
@@ -396,14 +994,35 @@ contains
          south_edge(1:nx,1) = hz(1:nx,ny-1)
          south_edge(1:nx,2) = hz(1:nx,ny-2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(i,1) = hz(i,2)
+            north_edge(i,2) = hz(i,3)
+            north_edge(i,3) = hz(i,4)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(i,1) = hz(i,ny-1)
+            south_edge(i,2) = hz(i,ny-2)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
       call MPI_Irecv(north_buf,  2*nx, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(south_buf,  3*nx, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(north_edge, 3*nx, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(south_edge, 2*nx, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          hz(1:nx,1) = north_buf(1:nx,1)
          hz(1:nx,0) = north_buf(1:nx,2)
@@ -413,6 +1032,20 @@ contains
          hz(1:nx,ny+1) = south_buf(1:nx,2)
          hz(1:nx,ny+2) = south_buf(1:nx,3)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            hz(i,1) = north_buf(i,1)
+            hz(i,0) = north_buf(i,2)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            hz(i,ny  ) = south_buf(i,1)
+            hz(i,ny+1) = south_buf(i,2)
+            hz(i,ny+2) = south_buf(i,3)
+         end if
+      end do
+#endif
 
       !**************************************
       !*                                    *
@@ -424,6 +1057,7 @@ contains
       east_buf  => grid%edges%deb
       west_buf  => grid%edges%dwb
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          east_edge(0:ny+2,1) = hz(nx-1,0:ny+2)
          east_edge(0:ny+2,2) = hz(nx-2,0:ny+2)
@@ -433,14 +1067,35 @@ contains
          west_edge(0:ny+2,2) = hz(3,0:ny+2)
          west_edge(0:ny+2,3) = hz(4,0:ny+2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny+2
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            east_edge(j,1) = hz(nx-1,j)
+            east_edge(j,2) = hz(nx-2,j)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            west_edge(j,1) = hz(2,j)
+            west_edge(j,2) = hz(3,j)
+            west_edge(j,3) = hz(4,j)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
       call MPI_Irecv(east_buf,  3*(ny+3), REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(west_buf,  2*(ny+3), REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(east_edge, 2*(ny+3), REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(west_edge, 3*(ny+3), REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          hz(nx,  0:ny+2) = east_buf(0:ny+2,1)
          hz(nx+1,0:ny+2) = east_buf(0:ny+2,2)
@@ -450,6 +1105,20 @@ contains
          hz(1,0:ny+2) = west_buf(0:ny+2,1)
          hz(0,0:ny+2) = west_buf(0:ny+2,2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny+2
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            hz(nx,  j) = east_buf(j,1)
+            hz(nx+1,j) = east_buf(j,2)
+            hz(nx+2,j) = east_buf(j,3)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            hz(1,j) = west_buf(j,1)
+            hz(0,j) = west_buf(j,2)
+         end if
+      end do
+#endif
 
       return
    end subroutine exchange_edges_dz
@@ -473,6 +1142,9 @@ contains
       integer(kind=4), dimension(2) :: sreqs, rreqs
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
       integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       nx = grid%my%nx
       ny = grid%my%ny
@@ -490,38 +1162,56 @@ contains
       north_buf  => grid%edges%fnb_d
       south_buf  => grid%edges%fsb_d
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
-! === DEBUG by tkato 2017/07/18 ================================================
-!        north_edge(0:nx,1) = zz(0:nx,2)
          north_edge(1:nx,1) = zz(1:nx,2)
-! ==============================================================================
       end if
       if(iand(has_boundary, SOUTH_BOUND) == 0) then
-! === DEBUG by tkato 2017/07/18 ================================================
-!        south_edge(0:nx,1) = zz(0:nx,ny-1)
          south_edge(1:nx,1) = zz(1:nx,ny-1)
-! ==============================================================================
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(i,1) = zz(i,2)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(i,1) = zz(i,ny-1)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
       call MPI_Irecv(north_buf,  nx+1, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(south_buf,  nx+1, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(north_edge, nx+1, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(south_edge, nx+1, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
-! === DEBUG by tkato 2017/07/18 ================================================
-!        zz(0:nx,1) = north_buf(0:nx,1)
          zz(1:nx,1) = north_buf(1:nx,1)
-! ==============================================================================
       end if
       if(iand(has_boundary, SOUTH_BOUND) == 0) then
-! === DEBUG by tkato 2017/07/18 ================================================
-!        zz(0:nx,ny  ) = south_buf(0:nx,1)
          zz(1:nx,ny  ) = south_buf(1:nx,1)
-! ==============================================================================
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            zz(i,1) = north_buf(i,1)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            zz(i,ny  ) = south_buf(i,1)
+         end if
+      end do
+#endif
 
       !**************************************
       !*                                    *
@@ -533,38 +1223,56 @@ contains
       east_buf  => grid%edges%feb_d
       west_buf  => grid%edges%fwb_d
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
-! === DEBUG by tkato 2017/07/18 ================================================
-!        east_edge(0:ny,1) = zz(nx-1,0:ny)
          east_edge(1:ny,1) = zz(nx-1,1:ny)
-! ==============================================================================
       end if
       if(iand(has_boundary, WEST_BOUND) == 0) then
-! === DEBUG by tkato 2017/07/18 ================================================
-!        west_edge(0:ny,1) = zz(2,0:ny)
          west_edge(1:ny,1) = zz(2,1:ny)
-! ==============================================================================
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 1, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            east_edge(j,1) = zz(nx-1,j)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            west_edge(j,1) = zz(2,j)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
       call MPI_Irecv(east_buf,  ny+1, REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(west_buf,  ny+1, REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(east_edge, ny+1, REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(west_edge, ny+1, REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
-! === DEBUG by tkato 2017/07/18 ================================================
-!        zz(nx,0:ny) = east_buf(0:ny,1)
          zz(nx,1:ny) = east_buf(1:ny,1)
-! ==============================================================================
       end if
       if(iand(has_boundary, WEST_BOUND) == 0) then
-! === DEBUG by tkato 2017/07/18 ================================================
-!        zz(1,0:ny) = west_buf(0:ny,1)
          zz(1,1:ny) = west_buf(1:ny,1)
-! ==============================================================================
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 1, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            zz(nx,j) = east_buf(j,1)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            zz(1,j) = west_buf(j,1)
+         end if
+      end do
+#endif
 
       return
    end subroutine exchange_edges_zz
@@ -590,13 +1298,20 @@ contains
       integer(kind=4), dimension(2) :: sreqs, rreqs
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
       integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       nx = grid%my%nx
       ny = grid%my%ny
       has_boundary = grid%my%has_boundary
 
       if(parity == 1) then
-         fx => grid%wave_field%fx
+         if(timenest /= 1) then
+            fx => grid%wave_field%fx
+         else
+            fx => grid%wave_field%fx_b
+         end if
       else
          fx => grid%wave_field%fx_old
       end if
@@ -614,22 +1329,52 @@ contains
 ! === DEBUG by tkato 2016/10/12 ================================================
 !     if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,1) = fx(1:nx,2)
 !     if(iand(has_boundary, SOUTH_BOUND) == 0) south_edge(1:nx,1) = fx(1:nx,ny-1)
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(0:nx,1) = fx(0:nx,2)
       if(iand(has_boundary, SOUTH_BOUND) == 0) south_edge(0:nx,1) = fx(0:nx,ny-1)
+#else
+!$omp target teams distribute parallel do
+      do i = 0, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(i,1) = fx(i,2)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(i,1) = fx(i,ny-1)
+         end if
+      end do
+#endif
 ! ==============================================================================
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
       call MPI_Irecv(north_buf,  nx+1, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(south_buf,  nx+1, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(north_edge, nx+1, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(south_edge, nx+1, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
 ! === DEBUG by tkato 2016/10/12 ================================================
 !     if(iand(has_boundary, NORTH_BOUND) == 0) fx(1:nx,1) = north_buf(1:nx,1)
 !     if(iand(has_boundary, SOUTH_BOUND) == 0) fx(1:nx,ny) = south_buf(1:nx,1)
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) fx(0:nx,1) = north_buf(0:nx,1)
       if(iand(has_boundary, SOUTH_BOUND) == 0) fx(0:nx,ny) = south_buf(0:nx,1)
+#else
+!$omp target teams distribute parallel do
+      do i = 0, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            fx(i,1) = north_buf(i,1)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            fx(i,ny) = south_buf(i,1)
+         end if
+      end do
+#endif
 ! ==============================================================================
 
       !**************************************
@@ -645,22 +1390,52 @@ contains
 ! === DEBUG by tkato 2016/10/12 ================================================
 !     if(iand(has_boundary, EAST_BOUND) == 0) east_edge(1:ny,1) = fx(nx-1,1:ny)
 !     if(iand(has_boundary, WEST_BOUND) == 0) west_edge(1:ny,1) = fx(2,1:ny)
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) east_edge(0:ny,1) = fx(nx-1,0:ny)
       if(iand(has_boundary, WEST_BOUND) == 0) west_edge(0:ny,1) = fx(2,0:ny)
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            east_edge(j,1) = fx(nx-1,j)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            west_edge(j,1) = fx(2,j)
+         end if
+      end do
+#endif
 ! ==============================================================================
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
       call MPI_Irecv(east_buf,  ny+1, REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(west_buf,  ny+1, REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(east_edge, ny+1, REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(west_edge, ny+1, REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
 ! === DEBUG by tkato 2016/10/12 ================================================
 !     if(iand(has_boundary, EAST_BOUND) == 0) fx(nx,1:ny) = east_buf(1:ny,1)
 !     if(iand(has_boundary, WEST_BOUND) == 0) fx(1,1:ny) = west_buf(1:ny,1)
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) fx(nx,0:ny) = east_buf(0:ny,1)
       if(iand(has_boundary, WEST_BOUND) == 0) fx(1,0:ny) = west_buf(0:ny,1)
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            fx(nx,j) = east_buf(j,1)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            fx(1,j) = west_buf(j,1)
+         end if
+      end do
+#endif
 ! ==============================================================================
 
       return
@@ -686,13 +1461,20 @@ contains
       integer(kind=4), dimension(2) :: sreqs, rreqs
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
       integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       nx = grid%my%nx
       ny = grid%my%ny
       has_boundary = grid%my%has_boundary
 
       if(parity == 1) then
-         fy => grid%wave_field%fy
+         if(timenest /= 1) then
+            fy => grid%wave_field%fy
+         else
+            fy => grid%wave_field%fy_b
+         end if
       else
          fy => grid%wave_field%fy_old
       end if
@@ -710,22 +1492,52 @@ contains
 ! === DEBUG by tkato 2016/10/12 ================================================
 !     if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,1) = fy(1:nx,2)
 !     if(iand(has_boundary, SOUTH_BOUND) == 0) south_edge(1:nx,1) = fy(1:nx,ny-1)
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(0:nx,1) = fy(0:nx,2)
       if(iand(has_boundary, SOUTH_BOUND) == 0) south_edge(0:nx,1) = fy(0:nx,ny-1)
+#else
+!$omp target teams distribute parallel do
+      do i = 0, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(i,1) = fy(i,2)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(i,1) = fy(i,ny-1)
+         end if
+      end do
+#endif
 ! ==============================================================================
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
       call MPI_Irecv(north_buf,  nx+1, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(south_buf,  nx+1, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(north_edge, nx+1, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(south_edge, nx+1, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
 ! === DEBUG by tkato 2016/10/12 ================================================
 !     if(iand(has_boundary, NORTH_BOUND) == 0) fy(1:nx,1) = north_buf(1:nx,1)
 !     if(iand(has_boundary, SOUTH_BOUND) == 0) fy(1:nx,ny) = south_buf(1:nx,1)
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) fy(0:nx,1) = north_buf(0:nx,1)
       if(iand(has_boundary, SOUTH_BOUND) == 0) fy(0:nx,ny) = south_buf(0:nx,1)
+#else
+!$omp target teams distribute parallel do
+      do i = 0, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            fy(i,1) = north_buf(i,1)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            fy(i,ny) = south_buf(i,1)
+         end if
+      end do
+#endif
 ! ==============================================================================
 
       !**************************************
@@ -741,22 +1553,52 @@ contains
 ! === DEBUG by tkato 2016/10/12 ================================================
 !     if(iand(has_boundary, EAST_BOUND) == 0) east_edge(1:ny,1) = fy(nx-1,1:ny)
 !     if(iand(has_boundary, WEST_BOUND) == 0) west_edge(1:ny,1) = fy(2,1:ny)
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) east_edge(0:ny,1) = fy(nx-1,0:ny)
       if(iand(has_boundary, WEST_BOUND) == 0) west_edge(0:ny,1) = fy(2,0:ny)
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            east_edge(j,1) = fy(nx-1,j)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            west_edge(j,1) = fy(2,j)
+         end if
+      end do
+#endif
 ! ==============================================================================
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
       call MPI_Irecv(east_buf,  ny+1, REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(west_buf,  ny+1, REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(east_edge, ny+1, REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(west_edge, ny+1, REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
 ! === DEBUG by tkato 2016/10/12 ================================================
 !     if(iand(has_boundary, EAST_BOUND) == 0) fy(nx,1:ny) = east_buf(1:ny,1)
 !     if(iand(has_boundary, WEST_BOUND) == 0) fy(1,1:ny) = west_buf(1:ny,1)
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) fy(nx,0:ny) = east_buf(0:ny,1)
       if(iand(has_boundary, WEST_BOUND) == 0) fy(1,0:ny) = west_buf(0:ny,1)
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            fy(nx,j) = east_buf(j,1)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            fy(1,j) = west_buf(j,1)
+         end if
+      end do
+#endif
 ! ==============================================================================
 
       return
@@ -782,6 +1624,9 @@ contains
       integer(kind=4), dimension(2) :: sreqs, rreqs
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
       integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       nx = grid%my%nx
       ny = grid%my%ny
@@ -799,26 +1644,56 @@ contains
       north_buf  => grid%edges%wnb_d
       south_buf  => grid%edges%wsb_d
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          north_edge(1:nx,1) = wod(1:nx,3)
       end if
       if(iand(has_boundary, SOUTH_BOUND) == 0) then
          south_edge(1:nx,1) = wod(1:nx,ny-2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(i,1) = wod(i,3)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(i,1) = wod(i,ny-2)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
       call MPI_Irecv(north_buf,  nx, MPI_INTEGER, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(south_buf,  nx, MPI_INTEGER, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(north_edge, nx, MPI_INTEGER, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(south_edge, nx, MPI_INTEGER, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          wod(1:nx,0) = north_buf(1:nx,1)
       end if
       if(iand(has_boundary, SOUTH_BOUND) == 0) then
          wod(1:nx,ny+1) = south_buf(1:nx,1)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            wod(i,0) = north_buf(i,1)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            wod(i,ny+1) = south_buf(i,1)
+         end if
+      end do
+#endif
 
       !**************************************
       !*                                    *
@@ -830,26 +1705,56 @@ contains
       east_buf  => grid%edges%web_d
       west_buf  => grid%edges%wwb_d
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          east_edge(1:ny,1) = wod(nx-2,1:ny)
       end if
       if(iand(has_boundary, WEST_BOUND) == 0) then
          west_edge(1:ny,1) = wod(3,1:ny)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 1, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            east_edge(j,1) = wod(nx-2,j)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            west_edge(j,1) = wod(3,j)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
       call MPI_Irecv(east_buf,  ny, MPI_INTEGER, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(west_buf,  ny, MPI_INTEGER, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(east_edge, ny, MPI_INTEGER, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(west_edge, ny, MPI_INTEGER, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          wod(nx+1,1:ny) = east_buf(1:ny,1)
       end if
       if(iand(has_boundary, WEST_BOUND) == 0) then
          wod(0,1:ny) = west_buf(1:ny,1)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 1, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            wod(nx+1,j) = east_buf(j,1)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            wod(0,j) = west_buf(j,1)
+         end if
+      end do
+#endif
 
       return
    end subroutine exchange_edges_wod
@@ -874,6 +1779,9 @@ contains
       integer(kind=4), dimension(2) :: sreqs, rreqs
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
       integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       nx = grid%my%nx
       ny = grid%my%ny
@@ -891,6 +1799,7 @@ contains
       north_buf  => grid%edges%dnb
       south_buf  => grid%edges%dsb
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          north_edge(1:nx,1) = hz(1:nx,2)
          north_edge(1:nx,2) = hz(1:nx,3)
@@ -900,14 +1809,35 @@ contains
          south_edge(1:nx,1) = hz(1:nx,ny-1)
          south_edge(1:nx,2) = hz(1:nx,ny-2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(i,1) = hz(i,2)
+            north_edge(i,2) = hz(i,3)
+            north_edge(i,3) = hz(i,4)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(i,1) = hz(i,ny-1)
+            south_edge(i,2) = hz(i,ny-2)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
       call MPI_Irecv(north_buf,  2*nx, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(south_buf,  3*nx, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(north_edge, 3*nx, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(south_edge, 2*nx, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          hz(1:nx,1) = north_buf(1:nx,1)
          hz(1:nx,0) = north_buf(1:nx,2)
@@ -917,6 +1847,20 @@ contains
          hz(1:nx,ny+1) = south_buf(1:nx,2)
          hz(1:nx,ny+2) = south_buf(1:nx,3)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            hz(i,1) = north_buf(i,1)
+            hz(i,0) = north_buf(i,2)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            hz(i,ny  ) = south_buf(i,1)
+            hz(i,ny+1) = south_buf(i,2)
+            hz(i,ny+2) = south_buf(i,3)
+         end if
+      end do
+#endif
 
       !**************************************
       !*                                    *
@@ -928,6 +1872,7 @@ contains
       east_buf  => grid%edges%deb
       west_buf  => grid%edges%dwb
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          east_edge(0:ny+2,1) = hz(nx-1,0:ny+2)
          east_edge(0:ny+2,2) = hz(nx-2,0:ny+2)
@@ -937,14 +1882,35 @@ contains
          west_edge(0:ny+2,2) = hz(3,0:ny+2)
          west_edge(0:ny+2,3) = hz(4,0:ny+2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny+2
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            east_edge(j,1) = hz(nx-1,j)
+            east_edge(j,2) = hz(nx-2,j)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            west_edge(j,1) = hz(2,j)
+            west_edge(j,2) = hz(3,j)
+            west_edge(j,3) = hz(4,j)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
       call MPI_Irecv(east_buf,  3*(ny+3), REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(west_buf,  2*(ny+3), REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(east_edge, 2*(ny+3), REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(west_edge, 3*(ny+3), REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          hz(nx,  0:ny+2) = east_buf(0:ny+2,1)
          hz(nx+1,0:ny+2) = east_buf(0:ny+2,2)
@@ -954,6 +1920,20 @@ contains
          hz(1,0:ny+2) = west_buf(0:ny+2,1)
          hz(0,0:ny+2) = west_buf(0:ny+2,2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny+2
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            hz(nx,  j) = east_buf(j,1)
+            hz(nx+1,j) = east_buf(j,2)
+            hz(nx+2,j) = east_buf(j,3)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            hz(1,j) = west_buf(j,1)
+            hz(0,j) = west_buf(j,2)
+         end if
+      end do
+#endif
 
       hz => grid%depth_field%dyby
 
@@ -967,6 +1947,7 @@ contains
       north_buf  => grid%edges%dnb
       south_buf  => grid%edges%dsb
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          north_edge(1:nx,1) = hz(1:nx,2)
          north_edge(1:nx,2) = hz(1:nx,3)
@@ -976,14 +1957,35 @@ contains
          south_edge(1:nx,1) = hz(1:nx,ny-1)
          south_edge(1:nx,2) = hz(1:nx,ny-2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(i,1) = hz(i,2)
+            north_edge(i,2) = hz(i,3)
+            north_edge(i,3) = hz(i,4)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(i,1) = hz(i,ny-1)
+            south_edge(i,2) = hz(i,ny-2)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
       call MPI_Irecv(north_buf,  2*nx, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(south_buf,  3*nx, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(north_edge, 3*nx, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(south_edge, 2*nx, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          hz(1:nx,1) = north_buf(1:nx,1)
          hz(1:nx,0) = north_buf(1:nx,2)
@@ -993,6 +1995,20 @@ contains
          hz(1:nx,ny+1) = south_buf(1:nx,2)
          hz(1:nx,ny+2) = south_buf(1:nx,3)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            hz(i,1) = north_buf(i,1)
+            hz(i,0) = north_buf(i,2)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            hz(i,ny  ) = south_buf(i,1)
+            hz(i,ny+1) = south_buf(i,2)
+            hz(i,ny+2) = south_buf(i,3)
+         end if
+      end do
+#endif
 
       !**************************************
       !*                                    *
@@ -1004,6 +2020,7 @@ contains
       east_buf  => grid%edges%deb
       west_buf  => grid%edges%dwb
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          east_edge(0:ny+2,1) = hz(nx-1,0:ny+2)
          east_edge(0:ny+2,2) = hz(nx-2,0:ny+2)
@@ -1013,14 +2030,35 @@ contains
          west_edge(0:ny+2,2) = hz(3,0:ny+2)
          west_edge(0:ny+2,3) = hz(4,0:ny+2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny+2
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            east_edge(j,1) = hz(nx-1,j)
+            east_edge(j,2) = hz(nx-2,j)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            west_edge(j,1) = hz(2,j)
+            west_edge(j,2) = hz(3,j)
+            west_edge(j,3) = hz(4,j)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
       call MPI_Irecv(east_buf,  3*(ny+3), REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(west_buf,  2*(ny+3), REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(east_edge, 2*(ny+3), REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(west_edge, 3*(ny+3), REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          hz(nx,  0:ny+2) = east_buf(0:ny+2,1)
          hz(nx+1,0:ny+2) = east_buf(0:ny+2,2)
@@ -1030,6 +2068,20 @@ contains
          hz(1,0:ny+2) = west_buf(0:ny+2,1)
          hz(0,0:ny+2) = west_buf(0:ny+2,2)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 0, ny+2
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            hz(nx,  j) = east_buf(j,1)
+            hz(nx+1,j) = east_buf(j,2)
+            hz(nx+2,j) = east_buf(j,3)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            hz(1,j) = west_buf(j,1)
+            hz(0,j) = west_buf(j,2)
+         end if
+      end do
+#endif
 
       return
    end subroutine exchange_edges_dxbxdyby
@@ -1054,6 +2106,9 @@ contains
       integer(kind=4), dimension(2) :: sreqs, rreqs
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
       integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       nx = grid%my%nx
       ny = grid%my%ny
@@ -1072,6 +2127,7 @@ contains
       north_buf  => grid%edges%fnb
       south_buf  => grid%edges%fsb
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,1) = fx(1:nx,2)
       if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,2) = fy(1:nx,2)
       if(iand(has_boundary, NORTH_BOUND) == 0) north_edge(1:nx,3) = fx(1:nx,3)
@@ -1084,14 +2140,39 @@ contains
          south_edge(1:nx,3) = fy(1:nx,ny-2)
          south_edge(1:nx,5) = fy(1:nx,ny-3)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(i,1) = fx(i,2)
+            north_edge(i,2) = fy(i,2)
+            north_edge(i,3) = fx(i,3)
+            north_edge(i,4) = fy(i,3)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(i,1) = fx(i,ny-1)
+            south_edge(i,2) = fy(i,ny-1)
+            south_edge(i,3) = fy(i,ny-2)
+            south_edge(i,4) = fx(i,ny-2)
+            south_edge(i,5) = fy(i,ny-3)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
       call MPI_Irecv(north_buf,  5*nx, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(south_buf,  4*nx, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(north_edge, 4*nx, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(south_edge, 5*nx, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) fx(1:nx,1) = north_buf(1:nx,1)
       if(iand(has_boundary, NORTH_BOUND) == 0) fx(1:nx,0) = north_buf(1:nx,4)
       if(iand(has_boundary, NORTH_BOUND) == 0) then
@@ -1103,6 +2184,24 @@ contains
       if(iand(has_boundary, SOUTH_BOUND) == 0) fy(1:nx,ny) = south_buf(1:nx,2)
       if(iand(has_boundary, SOUTH_BOUND) == 0) fx(1:nx,ny+1) = south_buf(1:nx,3)
       if(iand(has_boundary, SOUTH_BOUND) == 0) fy(1:nx,ny+1) = south_buf(1:nx,4)
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            fx(i,1) = north_buf(i,1)
+            fy(i,1) = north_buf(i,2)
+            fy(i,0) = north_buf(i,3)
+            fx(i,0) = north_buf(i,4)
+            fy(i,-1) = north_buf(i,5)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            fx(i,ny) = south_buf(i,1)
+            fy(i,ny) = south_buf(i,2)
+            fx(i,ny+1) = south_buf(i,3)
+            fy(i,ny+1) = south_buf(i,4)
+         end if
+      end do
+#endif
 
       !**************************************
       !*                                    *
@@ -1114,6 +2213,7 @@ contains
       east_buf  => grid%edges%feb
       west_buf  => grid%edges%fwb
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
           east_edge(0:ny+1,1) = fx(nx-1,0:ny+1)
           east_edge(0:ny+1,2) = fx(nx-2,0:ny+1)
@@ -1125,14 +2225,39 @@ contains
       if(iand(has_boundary, WEST_BOUND) == 0) west_edge(-1:ny+1,2) = fy(2,-1:ny+1)
       if(iand(has_boundary, WEST_BOUND) == 0) west_edge( 0:ny+1,3) = fx(3, 0:ny+1)
       if(iand(has_boundary, WEST_BOUND) == 0) west_edge(-1:ny+1,4) = fy(3,-1:ny+1)
+#else
+!$omp target teams distribute parallel do
+      do j = -1, ny+1
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            if(j >= 0) east_edge(j,1) = fx(nx-1,j)
+            if(j >= 0) east_edge(j,2) = fx(nx-2,j)
+            east_edge(j,3) = fy(nx-1,j)
+            if(j >= 0) east_edge(j,4) = fx(nx-3,j)
+            east_edge(j,5) = fy(nx-2,j)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            if(j >= 0) west_edge(j,1) = fx(2,j)
+            west_edge(j,2) = fy(2,j)
+            if(j >= 0) west_edge(j,3) = fx(3,j)
+            west_edge(j,4) = fy(3,j)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
       call MPI_Irecv(east_buf,  4*(ny+3), REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(west_buf,  5*(ny+3), REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(east_edge, 5*(ny+3), REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(west_edge, 4*(ny+3), REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) fx(nx,   0:ny+1) = east_buf( 0:ny+1,1)
       if(iand(has_boundary, EAST_BOUND) == 0) fy(nx,  -1:ny+1) = east_buf(-1:ny+1,2)
       if(iand(has_boundary, EAST_BOUND) == 0) fx(nx+1, 0:ny+1) = east_buf( 0:ny+1,3)
@@ -1144,6 +2269,24 @@ contains
       end if
       if(iand(has_boundary, WEST_BOUND) == 0) fy(1,-1:ny+1) = west_buf(-1:ny+1,3)
       if(iand(has_boundary, WEST_BOUND) == 0) fy(0,-1:ny+1) = west_buf(-1:ny+1,5)
+#else
+!$omp target teams distribute parallel do
+      do j = -1, ny+1
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            if(j >= 0) fx(nx,  j) = east_buf(j,1)
+            fy(nx,  j) = east_buf(j,2)
+            if(j >= 0) fx(nx+1,j) = east_buf(j,3)
+            fy(nx+1,j) = east_buf(j,4)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            if(j >= 0) fx( 1,j) = west_buf(j,1)
+            if(j >= 0) fx( 0,j) = west_buf(j,2)
+            fy(1,j) = west_buf(j,3)
+            if(j >= 0) fx(-1,j) = west_buf(j,4)
+            fy(0,j) = west_buf(j,5)
+         end if
+      end do
+#endif
 
       return
    end subroutine exchange_edges_btxbty
@@ -1168,6 +2311,9 @@ contains
       integer(kind=4), dimension(2) :: sreqs, rreqs
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: sstat, rstat
       integer(kind=4) :: ierr = 0
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
 
       nx = grid%my%nx
       ny = grid%my%ny
@@ -1185,26 +2331,56 @@ contains
       north_buf  => grid%edges%hnb
       south_buf  => grid%edges%hsb
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          north_edge(1:nx,1) = nm_P(1:nx,2)
       end if
       if(iand(has_boundary, SOUTH_BOUND) == 0) then
          south_edge(1:nx,1) = nm_P(1:nx,ny-1)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            north_edge(i,1) = nm_P(i,2)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            south_edge(i,1) = nm_P(i,ny-1)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(north_buf,south_buf,north_edge,south_edge)
+#endif
       call MPI_Irecv(north_buf,  nx, REAL_MPI, north_rank, 0, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(south_buf,  nx, REAL_MPI, south_rank, 1, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(north_edge, nx, REAL_MPI, north_rank, 1, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(south_edge, nx, REAL_MPI, south_rank, 0, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, NORTH_BOUND) == 0) then
          nm_P(1:nx,1) = north_buf(1:nx,1)
       end if
       if(iand(has_boundary, SOUTH_BOUND) == 0) then
          nm_P(1:nx,ny) = south_buf(1:nx,1)
       end if
+#else
+!$omp target teams distribute parallel do
+      do i = 1, nx
+         if(iand(has_boundary, NORTH_BOUND) == 0) then
+            nm_P(i,1) = north_buf(i,1)
+         end if
+         if(iand(has_boundary, SOUTH_BOUND) == 0) then
+            nm_P(i,ny) = south_buf(i,1)
+         end if
+      end do
+#endif
 
       !**************************************
       !*                                    *
@@ -1216,26 +2392,56 @@ contains
       east_buf  => grid%edges%heb
       west_buf  => grid%edges%hwb
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          east_edge(1:ny,1) = nm_P(nx-1,1:ny)
       end if
       if(iand(has_boundary, WEST_BOUND) == 0) then
          west_edge(1:ny,1) = nm_P(2,1:ny)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 1, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            east_edge(j,1) = nm_P(nx-1,j)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            west_edge(j,1) = nm_P(2,j)
+         end if
+      end do
+#endif
 
+#ifdef USE_GPU
+!$omp target data use_device_ptr(east_buf,west_buf,east_edge,west_edge)
+#endif
       call MPI_Irecv(east_buf,  ny, REAL_MPI, east_rank, 2, __MPICOMM__, rreqs(1), ierr)
       call MPI_Irecv(west_buf,  ny, REAL_MPI, west_rank, 3, __MPICOMM__, rreqs(2), ierr)
       call MPI_Isend(east_edge, ny, REAL_MPI, east_rank, 3, __MPICOMM__, sreqs(1), ierr)
       call MPI_Isend(west_edge, ny, REAL_MPI, west_rank, 2, __MPICOMM__, sreqs(2), ierr)
       call MPI_Waitall(2, sreqs, sstat, ierr)
       call MPI_Waitall(2, rreqs, rstat, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
+#ifndef USE_GPU
       if(iand(has_boundary, EAST_BOUND) == 0) then
          nm_P(nx,1:ny) = east_buf(1:ny,1)
       end if
       if(iand(has_boundary, WEST_BOUND) == 0) then
          nm_P(1,1:ny) = west_buf(1:ny,1)
       end if
+#else
+!$omp target teams distribute parallel do
+      do j = 1, ny
+         if(iand(has_boundary, EAST_BOUND) == 0) then
+            nm_P(nx,j) = east_buf(j,1)
+         end if
+         if(iand(has_boundary, WEST_BOUND) == 0) then
+            nm_P(1,j) = west_buf(j,1)
+         end if
+      end do
+#endif
 
       return
    end subroutine exchange_edges_P

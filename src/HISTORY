@@ -628,13 +628,41 @@ If you want the old version to work, specify "-DNONESTDEBUG" on Makefile and mak
 - DEBUG for latest gfortran and serial (non-MPI) mode have been applied.
 
 --------------------------------------------------------------------------------
-2024.XX.XX V0601???
+2025.03.31 V0610
+
+- Code branching using the C preprocessor has been simplified.
 
 - NEC SX is not available now. Please use NEC SX-Aurora TSUBASA.
 
---------------------------------------------------------------------------------
-2025.05.02 V0610
+- The absorbing boundary conditions (ABC) have been improved by alleviating
+  discontinuities at the boundaries of the east-west terminal regions and the north-south
+  terminal regions.
 
-- Arbitrary water level & flow quantity distributions (Hot start) is available.
+- Introduced the "Arbitrary Water Level & Flow Quantity Distributions (Hot Start)" feature.
+
+- Modification of normal mode calculations.
+   - Normal mode calculations have been modified to reflect the effects of atmospheric
+     pressure on elastic loading.
+
+   - For pressure snapshots in normal mode calculations, the initial pressure distribution
+     is output as the value at time zero. if "dumpp=1" is specified in "tsun.par".
+
+--------------------------------------------------------------------------------
+2026.06.30 V0700
+
+- Temporal nesting is supported.
+
+- GPU computing is supported. See the README.
+
+- Point source is supported.
+
+- Tsunami Travel Time (TTT) is supported.
+
+- The newer PROJ library is supported.
+
+- GitHub issues #23 and #24 have been resolved.
+
+- Other bugs have been fixed.
+
 --------------------------------------------------------------------------------
 

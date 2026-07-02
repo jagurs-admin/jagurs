@@ -20,7 +20,11 @@ contains
       dz     => dg%depth_field%dz
       m_rhoC => dg%wave_field%m_rhoC
 
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             m_rhoC(i,j) = (1.0d0 + m_rho*dz(i,j)*g/(2.0d0*m_K)) &

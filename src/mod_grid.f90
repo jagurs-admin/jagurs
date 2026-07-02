@@ -29,6 +29,10 @@ end type ncdio_info
 #endif
 type grid_info
    integer(kind=4) :: id = 1
+   integer(kind=4) :: nl = 1
+   integer(kind=4) :: maxnl = 1
+   integer(kind=4) :: numneststeps, neststephgt, neststepvel, calchgt, calcvel
+   real(kind=REAL_BYTE) :: dt
    real(kind=REAL_BYTE) :: mlon0
    real(kind=REAL_BYTE) :: mlat0
    real(kind=REAL_BYTE) :: dh
@@ -143,6 +147,13 @@ type wave_arrays
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fx
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fy
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hz
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fx_a, fx_b
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fy_a, fy_b
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hz_a, hz_b
+
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fx_i2f0, fx_i2f1
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: fy_i2f0, fy_i2f1
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hz_i2f0, hz_i2f1
 #ifndef NONESTDEBUG
    integer(kind=4), allocatable, dimension(:,:) :: noi2f
 #endif
@@ -176,6 +187,8 @@ type wave_arrays
    integer(kind=4), allocatable, dimension(:,:) :: arrivedat
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: arrival_time
 ! ==============================================================================
+   integer(kind=4), allocatable, dimension(:,:) :: tttdat
+   real(kind=REAL_BYTE), allocatable, dimension(:,:) :: tt_time
 #ifdef BANKFILE
    integer(kind=4), allocatable, dimension(:,:) :: ir
    real(kind=REAL_BYTE), allocatable, dimension(:,:) :: btx, bty

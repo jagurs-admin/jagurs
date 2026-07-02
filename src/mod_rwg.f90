@@ -17,6 +17,7 @@ use mod_grid
 !use mod_params, only : VEL, HGT, missing_value
 use mod_params, only : VEL, HGT, missing_value, check_arrival_time, check_arrival_height
 ! ==============================================================================
+use mod_params, only : check_tt_time, check_ttt_height
 ! ==============================================================================
 use mod_mygmt_gridio, only : read_gmt_grd
 #ifdef MPI
@@ -65,7 +66,11 @@ contains
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(out) :: hzmax
       integer(kind=4), intent(in) :: nlon, nlat
       integer :: i, j
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
 ! === For negative max. height =================================================
@@ -81,7 +86,11 @@ contains
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(out) :: hzmin
       integer(kind=4), intent(in) :: nlon, nlat
       integer :: i, j
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
 ! === For negative min. height =================================================
@@ -113,7 +122,11 @@ contains
       hz => wfld%hz
 
       !** if wet check for hzmax **
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             if(wod(i,j) == 1) then
@@ -144,7 +157,11 @@ contains
       hz => wfld%hz
 
       !** if wet check for hzmin **
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             if(wod(i,j) == 1) then
@@ -163,7 +180,11 @@ contains
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(out) :: vmax
       integer(kind=4), intent(in) :: nlon, nlat
       integer :: i, j
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             vmax(i,j) = 0.0d0
@@ -221,7 +242,11 @@ contains
       !** if wet check for vmax **
 ! === Conversion from flux to velocity should be done right after calc. ========
       if(linear_flag == 0) then
+#ifndef USE_GPU
 !$omp parallel do private(i, im, ip, jm, jp, tdxm, tdxp, tdym, tdyp, tx, ty, vel)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,im,ip,jm,jp,tdxm,tdxp,tdym,tdyp,tx,ty,vel)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                tx = 0.0d0
@@ -265,7 +290,11 @@ contains
             end do
          end do
       else
+#ifndef USE_GPU
 !$omp parallel do private(i, im, ip, jm, jp, tdxm, tdxp, tdym, tdyp, tx, ty, vel)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,im,ip,jm,jp,tdxm,tdxp,tdym,tdyp,tx,ty,vel)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                tx = 0.0d0
@@ -333,16 +362,26 @@ contains
       integer(kind=4) :: i, j
       real(kind=REAL_BYTE), parameter :: zap = 0.0d0
 
-      hz => wfld%hz
+      if(timenest /= 1) then
+         hz => wfld%hz
+      else
+         hz => wfld%hz_b
+      end if
       dz => dfld%dz
 
       hb => hbnd%north
       ub => ubnd%north
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #ifdef MPI
       if(iand(bflag, NORTH_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
       do i = 1, nlon-1
          if(dz(i,1) <= zap) then
             hz(i,1) = zap
@@ -355,14 +394,22 @@ contains
       end if
 #endif
 
+#ifndef USE_GPU
 !$omp single
+#endif
       hb => hbnd%east
       ub => ubnd%east
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef MPI
       if(iand(bflag, EAST_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
       do j = 1, nlat-1
          if(dz(nlon,j) <= zap) then
             hz(nlon,j) = zap
@@ -375,14 +422,22 @@ contains
       end if
 #endif
 
+#ifndef USE_GPU
 !$omp single
+#endif
       hb => hbnd%south
       ub => ubnd%south
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef MPI
       if(iand(bflag, SOUTH_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
       do i = 1, nlon-1
          if(dz(nlon-i+1,nlat) <= zap) then
             hz(nlon-i+1,nlat) = zap
@@ -395,14 +450,22 @@ contains
       end if
 #endif
 
+#ifndef USE_GPU
 !$omp single
+#endif
       hb => hbnd%west
       ub => ubnd%west
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef MPI
       if(iand(bflag, WEST_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
       do j = 1, nlat-1
          if(dz(1,nlat-j+1) <= zap) then
             hz(1,nlat-j+1) = zap
@@ -414,7 +477,9 @@ contains
 #ifdef MPI
       end if
 #endif
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 
       return
    end subroutine outsea_rwg
@@ -440,6 +505,10 @@ contains
       integer(kind=4), pointer, dimension(:,:) :: wod
       type(boundary_arrays), pointer :: hbnd, ubnd
       integer(kind=4) :: rank, joff, bflag
+      integer(kind=4) :: calchgt, numneststeps, neststephgt
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz_old, hz_new, hz
+      real(kind=REAL_BYTE) :: rate
+      integer(kind=4) :: i, j
 
       ! set pointers for function calls
       wfld   => fg%wave_field
@@ -470,6 +539,7 @@ contains
       bflag = 0
       joff  = 0
 #endif
+      if(timenest == 1) conv_step = 0
 
       if(mode == VEL) then
          if(lflag == 1) then
@@ -484,7 +554,7 @@ contains
 #ifndef CARTESIAN
 ! === Coriolis force is supported on linear calc. ==============================
                else
-                  call fxy_rwg_Coriolis(wfld,dfld,crls,dt,th0,dth,joff,niz,njz,ig,bflag)
+                  call fxy_rwg_Coriolis(wfld,dfld,wod,crls,dt,th0,dth,joff,niz,njz,ig,bflag,fg)
                end if
 ! ==============================================================================
 #endif
@@ -498,7 +568,7 @@ contains
 #ifndef CARTESIAN
 ! === Coriolis force is supported on linear calc. ==============================
                else
-                  call fxy_rwg_Coriolis_disp(wfld,dfld,crls,dt,th0,dth,joff,niz,njz,ig,bflag,fg,cg,conv_step)
+                  call fxy_rwg_Coriolis_disp(wfld,dfld,wod,crls,dt,th0,dth,joff,niz,njz,ig,bflag,fg,cg,conv_step)
                end if
 ! ==============================================================================
 #endif
@@ -514,19 +584,28 @@ contains
             end if
 #ifdef MPI
 ! === Flood Change =============================================================
-            call exchange_edges(HGT,fg)
+            if(timenest /= 1) then
+               call exchange_edges(HGT,fg)
+            else
+               call exchange_edges_b(HGT,fg)
+            end if
 ! ==============================================================================
 #endif
             TIMER_STOP('- fxynl_rwg')
          end if
          if(with_abc == 1) then
-            if(ig == 1) call apply_abc(mode,wfld,niz,njz)
+            if(timenest /= 1) then
+               if(ig == 1) call apply_abc(mode,wfld,niz,njz)
+            else
+               if(ig == 1 .and. fg%my%calcvel == 1) call apply_abc(mode,wfld,niz,njz)
+            end if
          end if
 #ifdef MPI
 ! === For 9-point averaging on copy2coarse, exchange_edges is necessary! =======
          if(c2p_all == 1) then
             TIMER_START('- exch_edges_vel')
             call exchange_edges(mode,fg)
+            if(timenest == 1) call exchange_edges_b(mode,fg)
             TIMER_STOP('- exch_edges_vel')
          end if
 ! ==============================================================================
@@ -535,9 +614,14 @@ contains
          TIMER_STOP('- mapgrids_vel')
 ! === DEBUG by tkato 2013/10/10 ================================================
          if(ig /= 1) call exchange_edges(mode,cg)
+         if((timenest == 1) .and. (ig /= 1)) then
+            call exchange_edges_b(mode,cg)
+            call exchange_edges_b(mode,fg)
+         end if
 ! ==============================================================================
          TIMER_START('- exch_edges_vel')
          call exchange_edges(mode,fg)
+         if(timenest == 1) call exchange_edges_b(mode,fg)
          TIMER_STOP('- exch_edges_vel')
 ! === Modification to fit pointer version! =====================================
          TIMER_START('- exch_edges_wod')
@@ -548,11 +632,11 @@ contains
       else if(mode == HGT) then
          if(lflag == 1) then
             TIMER_START('- hxy_rwg')
-            call hxy_rwg(wfld,dt,th0,dth,joff,niz,njz)
+            call hxy_rwg(wfld,dt,th0,dth,joff,niz,njz,fg)
             TIMER_STOP('- hxy_rwg')
          else
             TIMER_START('- hxynl_rwg')
-            call hxynl_rwg(wfld,dfld,wod,dt,th0,dth,joff,niz,njz,smallh_xy,bflag)
+            call hxynl_rwg(wfld,dfld,wod,dt,th0,dth,joff,niz,njz,smallh_xy,bflag,fg)
             TIMER_STOP('- hxynl_rwg')
          end if
 #ifndef CARTESIAN
@@ -561,15 +645,19 @@ contains
 ! === Elastic loading with interpolation =======================================
          if(elastic_loading_interpolation == 0) then
 ! ==============================================================================
-            TIMER_START('- loading_run')
-            call loading_run(fg)
-            TIMER_STOP('- loading_run')
-! === Elastic loading with interpolation =======================================
-         else
-            if(ig == 1) then
+            if((timenest == 0) .or. (fg%my%calchgt == 1)) then
                TIMER_START('- loading_run')
                call loading_run(fg)
                TIMER_STOP('- loading_run')
+            end if
+! === Elastic loading with interpolation =======================================
+         else
+            if(ig == 1) then
+               if((timenest == 0) .or. (fg%my%calchgt == 1)) then
+                  TIMER_START('- loading_run')
+                  call loading_run(fg)
+                  TIMER_STOP('- loading_run')
+               end if
             else
                TIMER_START('- interp2fine_elastic_loading')
                call interp2fine_elastic_loading(cg,fg)
@@ -585,6 +673,7 @@ contains
          if(c2p_all == 1) then
             TIMER_START('- exch_edges_hgt')
             call exchange_edges(mode,fg)
+            if(timenest == 1) call exchange_edges_b(mode,fg)
             TIMER_STOP('- exch_edges_hgt')
 ! === DEBUG by tkato 2013/10/10 ================================================
             if(lflag == 0) call recheck_wod(wfld,dfld,wod,niz,njz,smallh_xy)
@@ -596,21 +685,74 @@ contains
          TIMER_STOP('- mapgrids_hgt')
 ! === DEBUG by tkato 2013/10/10 ================================================
          if(ig /= 1) call exchange_edges(mode,cg)
+         if((timenest == 1) .and. (ig /= 1)) then
+            call exchange_edges_b(mode,cg)
+            call exchange_edges_b(mode,fg)
+         end if
 ! ==============================================================================
 ! === recheck_wod should be called after outsea_rwg. by tkato 2012/09/11 =======
 !        if(lflag == 0) call recheck_wod(wfld,dfld,wod,niz,njz,smallh_wod)
 !        if(ig == 1) call outsea_rwg(wfld,dfld,hbnd,ubnd,niz,njz,bflag)
 !        call exchange_edges(mode,fg)
 !        call exchange_edges_wod(fg)
-         TIMER_START('- outsea_rwg')
-         if(ig == 1) call outsea_rwg(wfld,dfld,hbnd,ubnd,niz,njz,bflag)
-         TIMER_STOP('- outsea_rwg')
-         TIMER_START('- exch_edges_hgt')
-         if(with_abc == 1) then
-            if(ig == 1) call apply_abc(mode,wfld,niz,njz)
+         if(timenest /= 1) then
+            TIMER_START('- outsea_rwg')
+            if(ig == 1) call outsea_rwg(wfld,dfld,hbnd,ubnd,niz,njz,bflag)
+            TIMER_STOP('- outsea_rwg')
+            TIMER_START('- exch_edges_hgt')
+            if(with_abc == 1) then
+               if(ig == 1) call apply_abc(mode,wfld,niz,njz)
+            end if
+            call exchange_edges(mode,fg)
+            TIMER_STOP('- exch_edges_hgt')
+         else
+            calchgt      = fg%my%calchgt
+            numneststeps = fg%my%numneststeps
+            neststephgt  = fg%my%neststephgt
+
+            TIMER_START('- outsea_rwg')
+            if(ig == 1 .and. calchgt == 1) call outsea_rwg(wfld,dfld,hbnd,ubnd,niz,njz,bflag)
+            TIMER_STOP('- outsea_rwg')
+            TIMER_START('- exch_edges_hgt')
+            if(with_abc == 1) then
+               if(ig == 1 .and. calchgt == 1) call apply_abc(mode,wfld,niz,njz)
+            end if
+            call exchange_edges_b(mode,fg)
+            TIMER_STOP('- exch_edges_hgt')
+
+            if(neststephgt == numneststeps - 1) then
+               hz     => wfld%hz
+               hz_old => wfld%hz_a
+               hz_new => wfld%hz_b
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = lbound(hz,2), ubound(hz,2)
+                  do i = lbound(hz,1), ubound(hz,1)
+                     hz(i,j) = hz_new(i,j)
+                     hz_old(i,j) = hz_new(i,j)
+                  end do
+               end do
+            else
+               hz     => wfld%hz
+               hz_old => wfld%hz_a
+               hz_new => wfld%hz_b
+               call exchange_edges_b(mode,fg)
+               rate = dble(neststephgt + 1)/dble(numneststeps)
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = lbound(hz,2), ubound(hz,2)
+                  do i = lbound(hz,1), ubound(hz,1)
+                     hz(i,j) = hz_old(i,j)*(1.0d0 - rate) + hz_new(i,j)*rate
+                  end do
+               end do
+            end if
          end if
-         call exchange_edges(mode,fg)
-         TIMER_STOP('- exch_edges_hgt')
          TIMER_START('- recheck_wod')
 ! === Flood Change =============================================================
 !        if(lflag == 0) call recheck_wod(wfld,dfld,wod,niz,njz,smallh_wod)
@@ -625,18 +767,68 @@ contains
       end if
 
 #ifndef MPI
+      if(timenest == 1 .and. mode == HGT .and. lflag == 0) call recheck_wod(wfld,dfld,wod,niz,njz,smallh_xy)
       TIMER_START('- mapgrids')
       if(ig > 1) call mapgrids(mode,cg,fg,c2p_all)
       TIMER_STOP('- mapgrids')
 
 ! === recheck_wod should be called after outsea_rwg. by tkato 2012/09/11 =======
-      TIMER_START('- outsea_rwg')
-      if(mode == HGT .and. ig == 1) call outsea_rwg(wfld,dfld,hbnd,ubnd,niz,njz)
-      TIMER_STOP('- outsea_rwg')
+      if(timenest /= 1) then
+         TIMER_START('- outsea_rwg')
+         if(mode == HGT .and. ig == 1) call outsea_rwg(wfld,dfld,hbnd,ubnd,niz,njz)
+         TIMER_STOP('- outsea_rwg')
 ! ==============================================================================
-      if(with_abc == 1) then
-         if(mode == HGT .and. ig == 1) call apply_abc(mode,wfld,niz,njz)
+         if(with_abc == 1) then
+            if(mode == HGT .and. ig == 1) call apply_abc(mode,wfld,niz,njz)
+         end if
+      else
+         calchgt      = fg%my%calchgt
+         numneststeps = fg%my%numneststeps
+         neststephgt  = fg%my%neststephgt
+
+         TIMER_START('- outsea_rwg')
+         if(mode == HGT .and. ig == 1 .and. calchgt == 1) call outsea_rwg(wfld,dfld,hbnd,ubnd,niz,njz)
+         TIMER_STOP('- outsea_rwg')
+
+         if(with_abc == 1) then
+            if(mode == HGT .and. ig == 1 .and. calchgt == 1) call apply_abc(mode,wfld,niz,njz)
+         end if
+
+         if(mode == HGT) then
+            if(neststephgt == numneststeps - 1) then
+               hz     => wfld%hz
+               hz_old => wfld%hz_a
+               hz_new => wfld%hz_b
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = lbound(hz,2), ubound(hz,2)
+                  do i = lbound(hz,1), ubound(hz,1)
+                     hz(i,j) = hz_new(i,j)
+                     hz_old(i,j) = hz_new(i,j)
+                  end do
+               end do
+            else
+               hz     => wfld%hz
+               hz_old => wfld%hz_a
+               hz_new => wfld%hz_b
+               rate = dble(neststephgt + 1)/dble(numneststeps)
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = lbound(hz,2), ubound(hz,2)
+                  do i = lbound(hz,1), ubound(hz,1)
+                     hz(i,j) = hz_old(i,j)*(1.0d0 - rate) + hz_new(i,j)*rate
+                  end do
+               end do
+            end if
+         end if
       end if
+
       TIMER_START('- recheck_wod')
       if(mode == HGT .and. lflag == 0) call recheck_wod(wfld,dfld,wod,niz,njz,smallh_wod)
       TIMER_STOP('- recheck_wod')
@@ -665,7 +857,11 @@ contains
       hz => wfld%hz
       dz => dfld%dz
 
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             if(dz(i,j) + hz(i,j) > smallh) then
@@ -705,10 +901,16 @@ contains
          dev = 1.0d0
       end if
 
+#ifndef USE_GPU
 !$omp parallel
+#endif
       ! Burbidge Only deform bathymetry if defbathy_flag = 1
       if(defbathy_flag == 1) then
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                dz(i,j) = dz(i,j) - dev*zz(i,j)
@@ -717,7 +919,11 @@ contains
       end if
 
       if(linear == 1) then
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon-1
                if(dz(i+1,j) < zap .or. dz(i,j) < zap) then
@@ -726,6 +932,11 @@ contains
                   dx(i,j) = 0.5d0*(dz(i+1,j) + dz(i,j))
                end if
             end do
+#ifdef USE_GPU
+         end do
+!$omp target teams distribute parallel do
+         do j = 1, nlat
+#endif
             if(dz(nlon,j) < zap) then
                dx(nlon,j) = zap
             else
@@ -733,7 +944,11 @@ contains
             end if
          end do
 
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat-1
             do i = 1, nlon
                if(dz(i,j+1) < zap .or. dz(i,j) < zap) then
@@ -744,7 +959,11 @@ contains
             end do
          end do
 
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do i = 1, nlon
             if(dz(i,nlat) < zap) then
                dy(i,nlat) = zap
@@ -753,27 +972,46 @@ contains
             end if
          end do
       else
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon-1
                dx(i,j) = half*(dz(i+1,j) + dz(i,j))
             end do
+#ifdef USE_GPU
+         end do
+!$omp target teams distribute parallel do
+         do j = 1, nlat
+#endif
             dx(nlon,j) = dz(nlon,j)
          end do
 
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat-1
             do i = 1, nlon
                dy(i,j) = half*(dz(i,j+1) + dz(i,j))
             end do
          end do
 
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do i = 1, nlon
             dy(i,nlat) = dz(i,nlat)
          end do
       end if
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 
       return
    end subroutine drise_rwg
@@ -799,7 +1037,11 @@ contains
       integer(kind=4) :: i, j
       real(kind=REAL_BYTE) :: dev
 
-      hz => wfld%hz
+      if(timenest /= 1) then
+         hz => wfld%hz
+      else
+         hz => wfld%hz_b
+      end if
 
       if(tau > 0.0d0) then
          dev = dt/tau
@@ -810,7 +1052,11 @@ contains
 ! === When "def_bathy=0", hz is changed on dry cell and it can become wet. =====
       if(defbathy_flag == 1) then
 ! ==============================================================================
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             hz(i,j) = hz(i,j) + dev*zz(i,j)
@@ -818,7 +1064,11 @@ contains
       end do
 ! === When "def_bathy=0", hz is changed on dry cell and it can become wet. =====
       else
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                if(wod(i,j) == 1) hz(i,j) = hz(i,j) + dev*zz(i,j)
@@ -867,11 +1117,17 @@ contains
 
       ! north
       ub => ubnd%north
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #ifdef MPI
       if(iand(bflag, NORTH_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do private(cfac)
+#else
+!$omp target teams distribute parallel do private(cfac)
+#endif
       do ib = 1, nlon
          if(dy(ib,1) > zap) then
             cfac = dtds*sqrt(dy(ib,1))
@@ -882,7 +1138,11 @@ contains
       end do
 #ifdef MPI
       else
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do ib = 1, nlon
             ub(ib) = 1.0d0
          end do
@@ -890,13 +1150,21 @@ contains
 #endif
 
       ! east
+#ifndef USE_GPU
 !$omp single
+#endif
       ub => ubnd%east
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef MPI
       if(iand(bflag, EAST_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do private(theta, sint, cfac)
+#else
+!$omp target teams distribute parallel do private(theta,sint,cfac)
+#endif
       do jb = 1, nlat
 #ifndef MPI
          theta = th0 + (jb-1)*dth
@@ -913,7 +1181,11 @@ contains
       end do
 #ifdef MPI
       else
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do jb = 1, nlat
             ub(jb) = 1.0d0
          end do
@@ -921,13 +1193,21 @@ contains
 #endif
 
       ! south; be careful, here we go backwards across bottom of grid
+#ifndef USE_GPU
 !$omp single
+#endif
       ub => ubnd%south
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef MPI
       if(iand(bflag, SOUTH_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do private(cfac)
+#else
+!$omp target teams distribute parallel do private(cfac)
+#endif
       do ib = 1, nlon
          if(dy(nlon-ib+1,nlat-1) > zap) then
             cfac = dtds*sqrt(dy(nlon-ib+1,nlat-1))
@@ -938,7 +1218,11 @@ contains
       end do
 #ifdef MPI
       else
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do ib = 1, nlon
             ub(ib) = 1.0d0
          end do
@@ -946,13 +1230,21 @@ contains
 #endif
 
       ! west; be careful, here we go backwards up the left of grid
+#ifndef USE_GPU
 !$omp single
+#endif
       ub => ubnd%west
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef MPI
       if(iand(bflag, WEST_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do private(theta, sint, cfac)
+#else
+!$omp target teams distribute parallel do private(theta,sint,cfac)
+#endif
       do jb = 1, nlat
 #ifndef MPI
          theta = th0 + (nlat-jb)*dth
@@ -969,13 +1261,19 @@ contains
       end do
 #ifdef MPI
       else
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do jb = 1, nlat
             ub(jb) = 1.0d0
          end do
       end if
 #endif
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 
       return
    end subroutine boundary_rwg
@@ -1014,11 +1312,17 @@ contains
 
       ! north
       ub => ubnd%north
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #ifdef MPI
       if(iand(bflag, NORTH_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do private(cfac)
+#else
+!$omp target teams distribute parallel do private(cfac)
+#endif
       do ib = 1, nlon
          if(dy(ib,1) > zap) then
             cfac = dtds*sqrt(dy(ib,1))
@@ -1029,7 +1333,11 @@ contains
       end do
 #ifdef MPI
       else
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do ib = 1, nlon
             ub(ib) = 1.0d0
          end do
@@ -1037,13 +1345,21 @@ contains
 #endif
 
       ! east
+#ifndef USE_GPU
 !$omp single
+#endif
       ub => ubnd%east
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef MPI
       if(iand(bflag, EAST_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do private(cfac)
+#else
+!$omp target teams distribute parallel do private(cfac)
+#endif
       do jb = 1, nlat
          if(dx(nlon-1,jb) > zap) then
             cfac = dtds*sqrt(dx(nlon-1,jb))
@@ -1054,7 +1370,11 @@ contains
       end do
 #ifdef MPI
       else
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do jb = 1, nlat
             ub(jb) = 1.0d0
          end do
@@ -1062,13 +1382,21 @@ contains
 #endif
 
       ! south; be careful, here we go backwards across bottom of grid
+#ifndef USE_GPU
 !$omp single
+#endif
       ub => ubnd%south
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef MPI
       if(iand(bflag, SOUTH_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do private(cfac)
+#else
+!$omp target teams distribute parallel do private(cfac)
+#endif
       do ib = 1, nlon
          if(dy(nlon-ib+1,nlat-1) > zap) then
             cfac = dtds*sqrt(dy(nlon-ib+1,nlat-1))
@@ -1079,7 +1407,11 @@ contains
       end do
 #ifdef MPI
       else
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do ib = 1, nlon
             ub(ib) = 1.0d0
          end do
@@ -1087,13 +1419,21 @@ contains
 #endif
 
       ! west; be careful, here we go backwards up the left of grid
+#ifndef USE_GPU
 !$omp single
+#endif
       ub => ubnd%west
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef MPI
       if(iand(bflag, WEST_BOUND) /= 0) then
 #endif
+#ifndef USE_GPU
 !$omp do private(cfac)
+#else
+!$omp target teams distribute parallel do private(cfac)
+#endif
       do jb = 1, nlat
          if(dx(1,nlat-jb+1) > zap) then
             cfac = dtds*sqrt(dx(1,nlat-jb+1))
@@ -1104,13 +1444,19 @@ contains
       end do
 #ifdef MPI
       else
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do jb = 1, nlat
             ub(jb) = 1.0d0
          end do
       end if
 #endif
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 
       return
    end subroutine boundary_rwg
@@ -1150,6 +1496,7 @@ contains
 ! === Arrival time =============================================================
       integer(kind=4), pointer, dimension(:,:) :: arrivedat
 ! ==============================================================================
+      integer(kind=4), pointer, dimension(:,:) :: tttdat
       real(kind=REAL_BYTE) :: zap = 0.0d0
       integer(kind=4) :: i, j
 #if defined(MPI) && defined(ONEFILE)
@@ -1168,13 +1515,18 @@ contains
 ! === Arrival time =============================================================
       if(check_arrival_time == 1) arrivedat => wfld%arrivedat
 ! ==============================================================================
+      if(check_tt_time == 1) tttdat => wfld%tttdat
 
 #ifndef __NEC__
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #endif
       if(trim(fname(1:11)) == 'NO_WETORDRY') then
 #ifndef __NEC__
+#ifndef USE_GPU
 !$omp single
+#endif
 #endif
 #if defined(MPI) && defined(ONEFILE)
          if(myrank == 0) then
@@ -1183,11 +1535,15 @@ contains
 #if defined(MPI) && defined(ONEFILE)
          end if
 #endif
+#ifndef USE_GPU
 #ifndef __NEC__
 !$omp end single
 !$omp do private(i)
 #else
 !$omp parallel do private(i)
+#endif
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
 #endif
          do j = 1, nlat
             do i = 1, nlon
@@ -1202,7 +1558,9 @@ contains
          end do
       else
 #ifndef __NEC__
+#ifndef USE_GPU
 !$omp single
+#endif
 #endif
 #if !defined(MPI) || !defined(ONEFILE)
          write(6,'(8x,a,a)') 'WETORDRY_FILE_GIVEN:', trim(fname)
@@ -1236,11 +1594,15 @@ contains
          call onefile_scatter_array(wod_all,wod,dg)
          deallocate(wod_all)
 #endif
+#ifndef USE_GPU
 #ifndef __NEC__
 !$omp end single
 !$omp do private(i)
 #else
 !$omp parallel do private(i)
+#endif
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
 #endif
          do j = 1, nlat
             do i = 1, nlon
@@ -1265,10 +1627,14 @@ contains
       end if
 ! === Arrival time =============================================================
       if(check_arrival_time == 1) then
+#ifndef USE_GPU
 #ifndef __NEC__
 !$omp do private(i)
 #else
 !$omp parallel do private(i)
+#endif
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
 #endif
          do j = 1, nlat
             do i = 1, nlon
@@ -1281,8 +1647,30 @@ contains
          end do
       end if
 ! ==============================================================================
+      if(check_tt_time == 1) then
+#ifndef USE_GPU
 #ifndef __NEC__
+!$omp do private(i)
+#else
+!$omp parallel do private(i)
+#endif
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+         do j = 1, nlat
+            do i = 1, nlon
+               if(ifz(i,j) == 1) then ! wet first
+                  tttdat(i,j) = -1
+               else ! dry first
+                  tttdat(i,j) = -2
+               end if
+            end do
+         end do
+      end if
+#ifndef __NEC__
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 #endif
 
       return
@@ -1314,14 +1702,14 @@ contains
       logical, optional, intent(in) :: flag_missing_value
 ! ==============================================================================
 
-      real(kind=REAL_BYTE) :: min, max
+      real(kind=REAL_BYTE) :: vmin, vmax
       integer(kind=4) :: i, j
 #ifdef MPI
       integer(kind=4) :: ierr
 #endif
 #ifdef _OPENMP
 #ifndef __NEC__
-      integer(kind=4), parameter :: mt = 64
+      integer(kind=4), parameter :: mt = 256
 #else
       integer(kind=4), parameter :: mt = 8
 #endif
@@ -1351,21 +1739,22 @@ contains
 
       if(missing_value_is_available) then
 ! ==============================================================================
-         min = -missing_value
-         max =  missing_value
+         vmin = -missing_value
+         vmax =  missing_value
 
+#ifndef USE_GPU
          do j = 1, ny
             do i = 1, nx
                if(a(i,j) /= missing_value) then
-                  if(a(i,j) < min) then
-                     min = a(i,j)
+                  if(a(i,j) < vmin) then
+                     vmin = a(i,j)
 #ifndef MPI
                      imin = i
                      jmin = j
 #endif
                   end if
-                  if(a(i,j) > max) then
-                     max = a(i,j)
+                  if(a(i,j) > vmax) then
+                     vmax = a(i,j)
 #ifndef MPI
                      imax = i
                      jmax = j
@@ -1374,23 +1763,36 @@ contains
                end if
             end do
          end do
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) &
+!$omp reduciton(min:vmin,max:vmax)
+         do j = 1, ny
+            do i = 1, nx
+               if(a(i,j) /= missing_value) then
+                  vmin = min(vmin, a(i,j))
+                  vmax = max(vmax, a(i,j))
+               end if
+            end do
+         end do
+#endif
 ! === For negative max. height =================================================
       else
 ! ==============================================================================
-      min = a(1,1)
-      max = a(1,1)
+      vmin = a(1,1)
+      vmax = a(1,1)
 
+#ifndef USE_GPU
       do j = 1, ny
          do i = 1, nx
-            if(a(i,j) < min) then
-               min = a(i,j)
+            if(a(i,j) < vmin) then
+               vmin = a(i,j)
 #ifndef MPI
                imin = i
                jmin = j
 #endif
             end if
-            if(a(i,j) > max) then
-               max = a(i,j)
+            if(a(i,j) > vmax) then
+               vmax = a(i,j)
 #ifndef MPI
                imax = i
                jmax = j
@@ -1398,9 +1800,38 @@ contains
             end if
          end do
       end do
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) &
+!$omp reduciton(min:vmin,max:vmax)
+         do j = 1, ny
+            do i = 1, nx
+               vmin = min(vmin, a(i,j))
+               vmax = max(vmax, a(i,j))
+            end do
+         end do
+#endif
 ! === For negative max. height =================================================
       end if
 ! ==============================================================================
+#ifndef MPI
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, ny
+         do i = 1, nx
+            if(a(i,j) == vmin) then
+!$omp atomic write
+               imin = i
+!$omp atomic write
+               jmin = j
+            end if
+            if(a(i,j) == vmax) then
+!$omp atomic write
+               imax = i
+!$omp atomic write
+               jmax = j
+            end if
+         end do
+      end do
+#endif
 #else
       missing_value_is_available = .false.
       if(present(flag_missing_value)) then
@@ -1410,10 +1841,10 @@ contains
       end if
 
       if(missing_value_is_available) then
-         min = -missing_value
-         max =  missing_value
-         min_ = min
-         max_ = max
+         vmin = -missing_value
+         vmax =  missing_value
+         min_ = vmin
+         max_ = vmax
 
 !$omp parallel private(t)
          t = omp_get_thread_num()
@@ -1440,15 +1871,15 @@ contains
          end do
 !$omp end parallel
          do t = 0, mt-1
-            if(min_(t) < min) then
-               min = min_(t)
+            if(min_(t) < vmin) then
+               vmin = min_(t)
 #ifndef MPI
                imin = imin_(t)
                jmin = jmin_(t)
 #endif
             end if
-            if(max_(t) > max) then
-               max = max_(t)
+            if(max_(t) > vmax) then
+               vmax = max_(t)
 #ifndef MPI
                imax = imax_(t)
                jmax = jmax_(t)
@@ -1456,10 +1887,10 @@ contains
             end if
          end do
       else
-         min = a(1,1)
-         max = a(1,1)
-         min_ = min
-         max_ = max
+         vmin = a(1,1)
+         vmax = a(1,1)
+         min_ = vmin
+         max_ = vmax
 
 !$omp parallel private(t)
          t = omp_get_thread_num()
@@ -1484,15 +1915,15 @@ contains
          end do
 !$omp end parallel
          do t = 0, mt-1
-            if(min_(t) < min) then
-               min = min_(t)
+            if(min_(t) < vmin) then
+               vmin = min_(t)
 #ifndef MPI
                imin = imin_(t)
                jmin = jmin_(t)
 #endif
             end if
-            if(max_(t) > max) then
-               max = max_(t)
+            if(max_(t) > vmax) then
+               vmax = max_(t)
 #ifndef MPI
                imax = imax_(t)
                jmax = jmax_(t)
@@ -1503,12 +1934,12 @@ contains
 #endif
 
 #ifndef MPI
-      zmin = min
-      zmax = max
+      zmin = vmin
+      zmax = vmax
 #else
-      call MPI_Allreduce(min, zmin, 1, REAL_MPI, MPI_MIN, __MPICOMM__, ierr)
+      call MPI_Allreduce(vmin, zmin, 1, REAL_MPI, MPI_MIN, __MPICOMM__, ierr)
       if(ierr /= 0) write(0,'(a)') 'MPI Error : MPI_Allreduce in minmax_rwg'
-      call MPI_Allreduce(max, zmax, 1, REAL_MPI, MPI_MAX, __MPICOMM__, ierr)
+      call MPI_Allreduce(vmax, zmax, 1, REAL_MPI, MPI_MAX, __MPICOMM__, ierr)
       if(ierr /= 0) write(0,'(a)') 'MPI Error : MPI_Allreduce in minmax_rwg'
 #endif
 
@@ -2231,12 +2662,23 @@ contains
       real(kind=REAL_BYTE) :: tmp
       integer(kind=4) :: i, j, ii, jj
 
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #ifndef MPI
+#ifndef USE_GPU
 !$omp do private(jj, ii, i, tmp)
+#else
+!$omp target teams distribute parallel do collapse(2) private(jj,ii,i,tmp)
+#endif
       do j = 1, nlat
+#ifndef USE_GPU
          jj = min(j, nlat+1-j)
+#endif
          do i = 1, nlon
+#ifdef USE_GPU
+           jj = min(j, nlat+1-j)
+#endif
             ii = min(i, nlon+1-i)
             if(ii <= nxa .and. jj > nya) then
                tmp = exp(-((apara*(nxa-ii))**2))
@@ -2251,11 +2693,21 @@ contains
          end do
       end do
 #else
+#ifndef USE_GPU
 !$omp do private(jj, ii, i, ig, jg, tmp)
+#else
+!$omp target teams distribute parallel do collapse(2) private(jj,ii,i,ig,jg,tmp)
+#endif
       do j = 1, nlat
+#ifndef USE_GPU
          jg = ky+j-1
          jj = min(jg, totalNy+1-jg)
+#endif
          do i = 1, nlon
+#ifdef USE_GPU
+           jg = ky+j-1
+           jj = min(jg, totalNy+1-jg)
+#endif
             ig = kx+i-1
             ii = min(ig, totalNx+1-ig)
             if(ii <= nxa .and. jj > nya) then
@@ -2271,7 +2723,9 @@ contains
          end do
       end do
 #endif
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 
       return
    end subroutine make_abc
@@ -2286,9 +2740,18 @@ contains
       abc => wfld%abc
 
       if(mode == VEL) then
-         fx => wfld%fx
-         fy => wfld%fy
+         if(timenest /= 1) then
+            fx => wfld%fx
+            fy => wfld%fy
+         else
+            fx => wfld%fx_b
+            fy => wfld%fy_b
+         end if
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                fx(i,j) = fx(i,j) * abc(i,j)
@@ -2296,8 +2759,16 @@ contains
             end do
          end do
       else
-          hz => wfld%hz
+         if(timenest /= 1) then
+            hz => wfld%hz
+         else
+            hz => wfld%hz_b
+         end if
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
           do j = 1, nlat
              do i = 1, nlon
                 hz(i,j) = hz(i,j) * abc(i,j)
@@ -2323,7 +2794,11 @@ contains
       dz        => dfld%dz
       arrivedat => wfld%arrivedat
 
+#ifndef USE_GPU
 !$omp parallel do private(i, td)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,td)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             if(arrivedat(i,j) == -1) then ! wet first
@@ -2350,7 +2825,11 @@ contains
       arrival_time => wfld%arrival_time
       arrivedat    => wfld%arrivedat
 
+#ifndef USE_GPU
 !$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             if(arrivedat(i,j) < 0) then
@@ -2364,5 +2843,67 @@ contains
       return
    end subroutine calc_arrival_time
 ! ==============================================================================
+   subroutine check_ttt(wfld,dfld,nlon,nlat,istep)
+      type(wave_arrays), target, intent(inout) :: wfld
+      type(depth_arrays), target, intent(in) :: dfld
+      integer(kind=4), intent(in) :: nlon, nlat, istep
+
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: hz, dz
+      real(kind=REAL_BYTE) :: td
+      integer(kind=4), pointer, dimension(:,:) :: tttdat
+      integer(kind=4) :: i, j
+
+      hz     => wfld%hz
+      dz     => dfld%dz
+      tttdat => wfld%tttdat
+
+#ifndef USE_GPU
+!$omp parallel do private(i, td)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,td)
+#endif
+      do j = 1, nlat
+         do i = 1, nlon
+            if(tttdat(i,j) == -1) then ! wet first
+               if(abs(hz(i,j)) > check_ttt_height) tttdat(i,j) = istep
+            else if(tttdat(i,j) == -2) then ! dry first
+               td = dz(i,j) + hz(i,j)
+               if(td > check_ttt_height) tttdat(i,j) = istep
+            end if
+         end do
+      end do
+
+      return
+   end subroutine check_ttt
+
+   subroutine calc_tt_time(wfld,nlon,nlat,dt)
+      type(wave_arrays), target, intent(inout) :: wfld
+      integer(kind=4), intent(in) :: nlon, nlat
+      real(kind=REAL_BYTE), intent(in) :: dt
+
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: tt_time
+      integer(kind=4), pointer, dimension(:,:) :: tttdat
+      integer(kind=4) :: i, j
+
+      tt_time => wfld%tt_time
+      tttdat  => wfld%tttdat
+
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+      do j = 1, nlat
+         do i = 1, nlon
+            if(tttdat(i,j) < 0) then
+               tt_time(i,j) = missing_value
+            else
+               tt_time(i,j) = dt*tttdat(i,j)
+            end if
+         end do
+      end do
+
+      return
+   end subroutine calc_tt_time
 
 end module mod_rwg

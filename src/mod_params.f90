@@ -26,10 +26,10 @@ integer(kind=4), parameter :: IFY = 6
 
 !*** check undefined values ***
 #if !defined(PIXELIN) && defined(NONESTDEBUG)
-integer(kind=4),   private, parameter :: IUDEF = 999999
+integer(kind=4),   private, parameter :: IUDEF = 9999999
 real(kind=REAL_BYTE),      private, parameter :: RUDEF = 999999.9d0
 #else
-integer(kind=4),            parameter :: IUDEF = 999999
+integer(kind=4),            parameter :: IUDEF = 9999999
 real(kind=REAL_BYTE),               parameter :: RUDEF = 999999.9d0
 #endif
 character(len=32), private, parameter :: SUDEF = ''
@@ -148,10 +148,13 @@ integer(kind=4) :: max_time_i = 0
 ! ==============================================================================
 ! === For negative max. height =================================================
 real(kind=REAL_BYTE), parameter :: missing_value = -1.0d10
+real(kind=REAL_BYTE) :: fill_value
+integer(kind=4) :: fill_value_is_nan = 0
 ! ==============================================================================
 ! === For MRI ==================================================================
 integer(kind=4) :: init_disp_gaussian = 0
 ! ==============================================================================
+integer(kind=4) :: init_disp_pointsource = 0
 #ifndef CARTESIAN
 ! === Elastic Loading ==========================================================
 integer(kind=4) :: with_elastic_loading = 0
@@ -194,6 +197,9 @@ real(kind=REAL_BYTE) :: min_depth_hde = 50.0d0
 integer(kind=4) :: check_arrival_time = 0
 real(kind=REAL_BYTE) :: check_arrival_height = 0.01d0 ! [m]
 ! ==============================================================================
+integer(kind=4) :: check_tt_time = 0
+real(kind=REAL_BYTE) :: check_ttt_height = 0.01d0 ! [m]
+character(len=256) :: ttt_file = 'tt_time'
 ! === Elastic loading with interpolation =======================================
 integer(kind=4) :: elastic_loading_interpolation = 1
 ! ==============================================================================
@@ -204,6 +210,9 @@ real(kind=REAL_BYTE) :: broken_rate = -1.0d0
 integer(kind=4) :: dumpp = 0
 #endif
 integer(kind=4), parameter :: id_cf17 = 17
+integer(kind=4) :: timenest = 0
+integer(kind=4) :: max_nest_level = 3
+integer(kind=4) :: grd_nan2zero = 0
 
 contains
 
@@ -212,11 +221,12 @@ contains
       integer(kind=4) :: num_arg, len_arg
 #endif
       character(len=128) :: arg
-      namelist /params/ gridfile, dt, tau, tend, itmap, cf, cfl, coriolis, &
+      namelist /params/ timenest, max_nest_level, gridfile, dt, tau, tend, itmap, cf, cfl, coriolis, &
 ! === To add max velocity output. by tkato 2012/10/02 ==========================
 !        maxgrdfn, tgstafn, tgsoutfile, pointers, smooth_edges, &
          maxgrdfn, vmaxgrdfn, tgstafn, tgsoutfile, pointers, smooth_edges, &
 ! ==============================================================================
+         fill_value_is_nan, grd_nan2zero, &
 #ifdef NORMALMODE
          dumpp, &
 #endif
@@ -262,6 +272,7 @@ contains
 #ifndef CARTESIAN
 ! === For MRI ==================================================================
          init_disp_gaussian, &
+         init_disp_pointsource , &
 ! === SINWAVE ==================================================================
          init_disp_sinwave, &
 ! ==============================================================================
@@ -290,6 +301,7 @@ contains
 ! === Elastic loading with interpolation =======================================
 !        min_depth_hde, check_arrival_time, check_arrival_height
          min_depth_hde, check_arrival_time, check_arrival_height, &
+         check_tt_time, check_ttt_height, ttt_file, &
          elastic_loading_interpolation
 ! ==============================================================================
 ! ==============================================================================
@@ -299,6 +311,7 @@ contains
 ! === Elastic loading with interpolation =======================================
 !        min_depth_hde, broken_rate, check_arrival_time, check_arrival_height
          min_depth_hde, broken_rate, check_arrival_time, check_arrival_height, &
+         check_tt_time, check_ttt_height, ttt_file, &
          elastic_loading_interpolation
 ! ==============================================================================
 ! ==============================================================================
@@ -314,6 +327,7 @@ contains
 #else
 ! === For MRI ==================================================================
          init_disp_gaussian, &
+         init_disp_pointsource , &
 ! ==============================================================================
 ! === SINWAVE ==================================================================
          init_disp_sinwave, &
@@ -336,6 +350,7 @@ contains
 ! === Elastic loading with interpolation =======================================
 !        min_depth_hde, check_arrival_time, check_arrival_height
          min_depth_hde, check_arrival_time, check_arrival_height, &
+         check_tt_time, check_ttt_height, ttt_file, &
          elastic_loading_interpolation
 ! ==============================================================================
 ! ==============================================================================
@@ -345,6 +360,7 @@ contains
 ! === Elastic loading with interpolation =======================================
 !        min_depth_hde, broken_rate, check_arrival_time, check_arrival_height
          min_depth_hde, broken_rate, check_arrival_time, check_arrival_height, &
+         check_tt_time, check_ttt_height, ttt_file, &
          elastic_loading_interpolation
 ! ==============================================================================
 ! ==============================================================================
@@ -425,6 +441,15 @@ contains
 ! ==============================================================================
       end if
 ! ==============================================================================
+      if(fill_value_is_nan == 1) then
+#if !defined(__NEC__) && !defined(__GFORTRAN__) && !defined(__amdflang__)
+         fill_value = transfer(Z'FFFFFFFF', 0.e0)
+#else
+         fill_value = Z'FFFFFFFF'
+#endif
+      else
+         fill_value = missing_value
+      end if
 
       return
    end subroutine getpar
@@ -666,6 +691,8 @@ contains
       write(6,'(a,i3)') '- Initial disp. with Gaussian (init_disp_gaussian=1:ON/0:OFF): ', &
          init_disp_gaussian
 ! ==============================================================================
+      write(6,'(a,i3)') '- Initial disp. with point source (init_disp_pointsource=1:ON/0:OFF): ', &
+         init_disp_pointsource
 ! === SINWAVE ==================================================================
       write(6,'(a,i3)') '- Initial disp. with sin wave (init_disp_sinwave=1:ON/0:OFF): ', &
          init_disp_sinwave
@@ -711,6 +738,10 @@ contains
          write(6,'(a,e15.6)') '   - Threshold height[m] (check_arrival_height): ', check_arrival_height
       end if
 ! ==============================================================================
+      write(6,'(a,i3)') '- Check tsunami travel time (check_tt_time=1:ON/0:OFF): ', check_tt_time
+      if(check_tt_time == 1) then
+         write(6,'(a,e15.6)') '   - Threshold height[m] (check_ttt_height): ', check_ttt_height
+      end if
 ! ----------------------------------------------------------------------------------------
       write(6,'(/,a)') '(Domains)'
       write(6,'(a,a)') '- Grid file: ', trim(gfile)
@@ -790,6 +821,8 @@ contains
       write(6,'(a,i7)') '- Number of threads: ', omp_get_max_threads()
 #endif
 ! ========================================================================================
+      write(6,'(a,i3)') '- Time nesting (timenest=1:ON/0:OFF): ', timenest
+      if(timenest == 1) write(6,'(a,i3)') '   - Max nest level (max_nest_level): ', max_nest_level
       write(6,'(a)') '============================================================'
       write(6,'(a)') '=== Check configurations! [End] ============================'
       write(6,'(a)') '============================================================'

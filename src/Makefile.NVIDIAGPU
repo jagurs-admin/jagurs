@@ -1,33 +1,37 @@
 # FC: Specify Fortran90 compiler command.
-FC=mpif90
+FC=mpifort
 
 # Added for displacement.
 # PRJ4_DIR: Specify PROJ.4 install directory.
 # CC&CFLAGS: Specify C compiler command and flags.
-PROJ_DIR=$(HOME)/JAGURS/local
-CC=gcc
-CFLAGS=-g -I$(PROJ_DIR)/include
+PROJ_DIR=/usr/uhome/aurora/hw/t-katou/SL/JAGURS_etc/JAGURS/GPU/local
+CC=nvc
+CFLAGS=-mp=gpu -Minfo=mp,accel -gpu=cc90 -g -traceback -I$(PROJ_DIR)/include
 
 # BASE: Specify basic compiler options.
-BASE=-cpp -fallow-invalid-boz -ffree-line-length-none
+BASE=-cpp
 
 # FFTW3_INCLUDE_DIR: Specify FFTW3 include directory.
-FFTW3_INCLUDE_DIR=$(HOME)/JAGURS/local/include
+FFTW3_INCLUDE_DIR=/usr/uhome/aurora/hw/t-katou/SL/JAGURS_etc/JAGURS/GPU/local/include
 
 # FFTW3_LIB: Specify linker options to link FFTW3.
-FFTW3_LIB=-lfftw3
+FFTW3_LIB=-L/usr/uhome/aurora/hw/t-katou/SL/JAGURS_etc/JAGURS/GPU/local/lib -lfftw3
 
 # OPT: Specify compiler options about optimization level.
-OPT=-O2 -fopenmp -I$(FFTW3_INCLUDE_DIR)
+OPT=-O2 -fopenmp -mp=gpu -Minfo=mp,accel -gpu=cc90,mem:managed -I$(FFTW3_INCLUDE_DIR) -DUSE_GPU
 
 # NETCDF: Specify the path to NetCDF library.
-NETCDF=/usr
+NETCDF=/usr/uhome/aurora/hw/t-katou/SL/JAGURS_etc/JAGURS/GPU/local
 
 # LIBS: Specify linker options.
-LIBS=-L$(NETCDF)/lib -lnetcdff -lnetcdf -lsz -L$(PROJ_DIR)/lib -lproj $(FFTW3_LIB) -lm
+LIBS=-lnetcdff -lnetcdf -L$(PROJ_DIR)/lib -lproj $(FFTW3_LIB)
 
 # EXEC: Specify the name of executable.
 EXEC=jagurs
+
+NVCC=nvcc
+NVCCFLAGS=
+LIBS+=-L$(NVHPC_ROOT)/math_libs/lib64 -lcufft -L$(NVHPC_ROOT)/cuda/lib64 -lcudart
 
 ################################################################################
 ### Set parameters here!                                                     ###
@@ -40,7 +44,7 @@ PREC=REAL_DBLE
 
 # MPI=ON: MPI version is made.
 # Else, serial version is made.
-MPI=ON
+#MPI=ON
 
 # USE_ALLTOALLV=ON: Use MPI_Alltoallv for inter-nest communications.
 # Else, MPI_Allreduce is used.
@@ -272,6 +276,7 @@ endif
 ifeq ($(PROJ9),ON)
    CFLAGS+=-DPROJ9
 endif
+OBJS+=wrapper.o
 
 ################################################################################
 ### Make rules                                                               ###
@@ -288,5 +293,8 @@ $(EXEC): $(OBJS)
 %.o: %.c
 	$(CC) -c $(CFLAGS) $^
 
+wrapper.o: wrapper.cu
+	$(NVCC) -c $(NVCCCFLAGS) $^
+
 clean:
-	rm -f *.o *.mod *__genmod.f90 *.optrpt $(EXEC)
+	rm -f *.o *.mod $(EXEC)

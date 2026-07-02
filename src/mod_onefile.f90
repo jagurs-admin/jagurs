@@ -62,7 +62,7 @@ contains
       if(myrank == 0) then
          allocate(dg%my%buf_g(srcount))
 #ifdef NCDIO
-         allocate(dg%my%buf_g_ncdio(srcount))
+         allocate(dg%my%buf_g_ncdio(srcount*nprocs))
 #endif
       else
          allocate(dg%my%buf_g(1))
@@ -124,6 +124,9 @@ contains
          end if
 
          if(myrank == 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,ind)
+#endif
             do j = ky_all(p), kyend_all(p)
                do i = kx_all(p), kxend_all(p)
                  ind = (i - kx_all(p) + 1) + (j - ky_all(p))*srcount_x
@@ -137,6 +140,9 @@ contains
          if(myrank == p) then
             call MPI_Wait(ireq, istat, ierr)
 
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
             do j = 1, ny
                do i = 1, nx
                   aout(i,j) = buf_l(i,j)
@@ -182,6 +188,9 @@ contains
          end if
 
          if(myrank == p) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
             do j = 1, ny
                do i = 1, nx
                   buf_l(i,j) = ain(i,j)
@@ -194,6 +203,9 @@ contains
          if(myrank == 0) then
             call MPI_Wait(ireq, istat, ierr)
 
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,ind)
+#endif
             do j = iy_all(p), iyend_all(p)
                do i = ix_all(p), ixend_all(p)
                  ind = (i - kx_all(p) + 1) + (j - ky_all(p))*srcount_x
@@ -234,6 +246,9 @@ contains
       buf_g     => dg%my%buf_g_ncdio
       buf_l     => dg%my%buf_l_ncdio
 
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, ny
          do i = 1, nx
             buf_l(i,j) = ain(i,j)
@@ -243,6 +258,9 @@ contains
       call MPI_Gather(buf_l, srcount, MPI_REAL4, buf_g, srcount, MPI_REAL4, 0, __MPICOMM__, ierr)
 
       if(myrank == 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(3) private(j,i,ind)
+#endif
          do p = 0, nprocs - 1
             do j = iy_all(p), iyend_all(p)
                do i = ix_all(p), ixend_all(p)

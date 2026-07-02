@@ -321,16 +321,27 @@ contains
       y_max = real(y_max)
       write(6,'(a,4f15.6)') '[displacement] x_min, x_inc, y_min, y_inc: ', x_min, x_inc, y_min, y_inc
 
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #ifndef CARTESIAN
+#ifndef USE_GPU
 !$omp do private(lat, i, lon)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,lat,lon)
+#endif
       do j = 1, nlat
+#ifdef USE_GPU
+         do i = 1, nlon
+#endif
 #ifndef MPI
          lat = y_min + y_inc*(j - 1)
 #else
          lat = y_min + y_inc*(dg%my%totalNy - dg%my%kyend + j - 1)
 #endif
+#ifndef USE_GPU
          do i = 1, nlon
+#endif
 #ifndef MPI
             lon = x_min + x_inc*(i - 1)
 #else
@@ -341,7 +352,9 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
 #ifndef MPI
       write(6,'(a,2f15.6)') '[displacement] lon-range: ', x_min, x_min + x_inc*(nlon - 1)
       write(6,'(a,2f15.6)') '[displacement] lat-range: ', y_min, y_min + y_inc*(nlat - 1)
@@ -350,16 +363,27 @@ contains
       write(6,'(a,2f15.6)') '[displacement] lat-range: ', y_min + y_inc*(dg%my%totalNy - dg%my%kyend), &
                                                           y_min + y_inc*(dg%my%totalNy - dg%my%kyend + nlat - 1)
 #endif
+#ifndef USE_GPU
 !$omp end single
+#endif
 #else
+#ifndef USE_GPU
 !$omp do private(y, i, x)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,y,x)
+#endif
       do j = 1, nlat
+#ifdef USE_GPU
+         do i = 1, nlon
+#endif
 #ifndef MPI
          y = y_min + y_inc*(j - 1)
 #else
          y = y_min + y_inc*(dg%my%totalNy - dg%my%kyend + j - 1)
 #endif
+#ifndef USE_GPU
          do i = 1, nlon
+#endif
 #ifndef MPI
             x = x_min + x_inc*(i - 1)
 #else
@@ -370,7 +394,9 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
 #ifndef MPI
       write(6,'(a,2f15.6)') '[displacement] x-range: ', x_min, x_min + x_inc*(nlon - 1)
       write(6,'(a,2f15.6)') '[displacement] y-range: ', y_min, y_min + y_inc*(nlat - 1)
@@ -379,21 +405,33 @@ contains
       write(6,'(a,2f15.6)') '[displacement] y-range: ', y_min + y_inc*(dg%my%totalNy - dg%my%kyend), &
                                                         y_min + y_inc*(dg%my%totalNy - dg%my%kyend + nlat - 1)
 #endif
+#ifndef USE_GPU
 !$omp end single
 #endif
+#endif
 
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             zz(i,j) = 0.0d0
          end do
       end do
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 
 ! === Check distance============================================================
       do n = 1, num_faults
 #ifndef CARTESIAN
+#ifndef USE_GPU
 !$omp parallel do private(i, r)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,r)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                r = dsqrt((lonlat(i,j,1) - lon_0(n))**2 + (lonlat(i,j,2) - lat_0(n))**2)
@@ -432,7 +470,11 @@ contains
          st  = dsin(strike(n)*DEG2RAD)
 
          num_distance_zero = 0
+#ifndef USE_GPU
 !$omp parallel do private(i, x, y, p, q, xi, et, r, d, rd, l_, w_)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,x,y,p,q,xi,et,r,d,rd,l_,w_)
+#endif
          do j = 1, nlat
             do i = 1, nlon
 #ifndef CARTESIAN
@@ -451,9 +493,15 @@ contains
                         d = et*sd - q*cd
                         rd = r + d
                         if(rd < tiny(rd)) then
+#ifndef USE_GPU
 !$omp critical
+#else
+!$omp atomic
+#endif
                            num_distance_zero = num_distance_zero + 1
+#ifndef USE_GPU
 !$omp end critical
+#endif
                         end if
                      end do
                   end do
@@ -477,7 +525,11 @@ contains
 ! ==============================================================================
       do n = 1, num_faults
 #ifndef CARTESIAN
+#ifndef USE_GPU
 !$omp parallel do private(i, r)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,r)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                r = dsqrt((lonlat(i,j,1) - lon_0(n))**2 + (lonlat(i,j,2) - lat_0(n))**2)
@@ -498,15 +550,21 @@ contains
          call ll2xy(nlon, nlat, lltmp(1,1,1), lltmp(1,1,2), xy(1,1,1), xy(1,1,2))
          call mapproject_finalize()
 #endif
+#ifndef USE_GPU
 !$omp parallel
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                uz(i,j) = 0.d0
             end do
          end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
          cd = dcos(dip(n)*DEG2RAD)
          sd = dsin(dip(n)*DEG2RAD)
 
@@ -522,12 +580,14 @@ contains
          dep = depth(n) + width(n)*sd
          ct  = dcos(strike(n)*DEG2RAD)
          st  = dsin(strike(n)*DEG2RAD)
+#ifndef USE_GPU
 !$omp end single
 
 #ifndef __NEC__
 !$omp do private(i, x, y, u1, u2, u3, dumm)
 #else
 !$omp do private(i, x, y, u1, u2, u3)
+#endif
 #endif
          do j = 1, nlat
             do i = 1, nlon
@@ -557,10 +617,16 @@ contains
             end do
          end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
          ulim = 0.d0
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                if(dabs(uz(i,j)) < ulim) then
@@ -570,7 +636,11 @@ contains
          end do
 
          ! cm to m
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                uh1(i,j) =  uh1(i,j)*0.01d0
@@ -582,10 +652,16 @@ contains
          end do
 
          if(hzdisp_effect == 1) then
+#ifndef USE_GPU
 !$omp single
+#endif
             write(6,'(a)') '[displacement] Horizontal displacement effect is adopted!'
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(i, dist)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,dist)
+#endif
             do j = 1, nlat
                do i = 2, nlon-1
 #ifndef CARTESIAN
@@ -602,13 +678,21 @@ contains
                end do
             end do
 
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
             do j = 1, nlat
                dxy(1,   j,1) = dxy(2,     j,1)
                dxy(nlon,j,1) = dxy(nlon-1,j,1)
             end do
 
+#ifndef USE_GPU
 !$omp do private(i, dist)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,dist)
+#endif
             do j = 2, nlat-1
                do i = 1, nlon
 #ifndef CARTESIAN
@@ -625,13 +709,21 @@ contains
                end do
             end do
 
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
             do i = 1, nlon
                dxy(i,1,   2) = dxy(i,2,     2)
                dxy(i,nlat,2) = dxy(i,nlat-1,2)
             end do
 
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
             do j = 1, nlat
                do i = 1, nlon
 ! === Specify lower limit of depth to adopt horizontal displacement effect. ====
@@ -644,7 +736,9 @@ contains
                end do
             end do
          end if
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 
          if(apply_kj_filter == 1) then
 #ifndef CARTESIAN
@@ -656,41 +750,61 @@ contains
 #endif
          end if
 
+#ifndef USE_GPU
 !$omp parallel
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                zz(i,j) = zz(i,j) + uz(i,j)
             end do
          end do
+#ifndef USE_GPU
 !$omp end parallel
+#endif
       end do
 
 #ifdef MPI
       call exchange_edges_zz(dg)
 #endif
 
+#ifndef USE_GPU
 !$omp parallel
 !$omp single
+#endif
       umax = -huge(umax)
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(i) reduction(max:umax)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) reduction(max:umax)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             umax = max(umax,zz(i,j))
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       umin = huge(umin)
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(i) reduction(min:umin)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) reduction(min:umin)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             umin = min(umin,zz(i,j))
          end do
       end do
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 #ifdef MPI
       call MPI_Allreduce(MPI_IN_PLACE, umax, 1, REAL_MPI, MPI_MAX, __MPICOMM__, ierr)
       call MPI_Allreduce(MPI_IN_PLACE, umin, 1, REAL_MPI, MPI_MIN, __MPICOMM__, ierr)
@@ -718,10 +832,12 @@ contains
 #else
    subroutine displacement_apply_kj_filter(dg, zz, nlon, nlat, h0)
 #endif
+#ifndef USE_GPU
 #ifndef __NEC__
       include 'fftw3.f'
 #else
       include 'aslfftw3.f'
+#endif
 #endif
       type(data_grids), target, intent(inout) :: dg 
       real(kind=8), dimension(nlon,nlat), intent(inout) :: zz
@@ -900,7 +1016,11 @@ contains
 
 ! === OpenMP ===================================================================
 #ifdef _OPENMP
+#ifndef USE_GPU
       nthreads = omp_get_max_threads()
+#else
+      nthreads = 1
+#endif
 #else
       nthreads = 1
 #endif
@@ -954,18 +1074,29 @@ contains
 #endif
 
       ! First touch!
+#ifndef USE_GPU
 !$omp parallel do private(i, j)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = jts1(it), jte1(it)
             do i = 1, N_X
                realbuf(i,j) = 0.0d0
             end do
          end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = jts1(it), jte1(it)
             do i = 1, N_X/2+1
                xfftbuf(i,j) = dcmplx(0.0d0,0.0d0)
             end do
          end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j)
+#endif
          do i = its2(it), ite2(it)
             do j = 1, N_Y
                yfftbuf(j,i) = dcmplx(0.0d0,0.0d0)
@@ -974,6 +1105,7 @@ contains
       end do
 
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_plan_many_dft_r2c(xplan_forward(it), 1, N_X, jtn1(it), &
                                       realbuf(1,jts1(it)), 0, 1, N_X,      &
                                       xfftbuf(1,jts1(it)), 0, 1, N_X/2+1,  &
@@ -993,6 +1125,12 @@ contains
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,       &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,       &
                                   FFTW_BACKWARD, FFTW_MEASURE)
+#else
+         call make_plan_d2z(xplan_forward(it), N_X, jtn1(it))
+         call make_plan_z2z(yplan_forward(it), N_Y, itn2(it))
+         call make_plan_z2d(xplan_backward(it), N_X, jtn1(it))
+         call make_plan_z2z(yplan_backward(it), N_Y, itn2(it))
+#endif
       end do
 ! ==============================================================================
 ! === Initialize FFT End =======================================================
@@ -1043,10 +1181,17 @@ contains
 ! ==============================================================================
       coef_norm = 1.0d0/(dble(N_X)*dble(N_Y))
 
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #ifndef MPI
+#ifndef USE_GPU
 !$omp do private(j, i)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = jts1(it), jte1(it)
             do i = 1, N_X
                realbuf(i,j) = 0.0d0
@@ -1054,7 +1199,11 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             realbuf(i,j) = zz(i,j)
@@ -1062,14 +1211,25 @@ contains
       end do
 
       ! Forward FFT on X-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_execute_dft_r2c(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
+#else
+         call exec_d2z(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
+#endif
       end do
 
       ! Transposiion: (N_X,N_Y) -> (N_Y,N_X)
+#ifndef USE_GPU
 !$omp do private(i, j)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do i = its2(it), ite2(it)
             do j = 1, N_Y
                yfftbuf(j,i) = xfftbuf(i,j)
@@ -1078,39 +1238,72 @@ contains
       end do
 
       ! Forward FFT on Y-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_execute(yplan_forward(it))
+#else
+         call exec_z2z_forward(yplan_forward(it),yfftbuf(1,its2(it)),yfftbuf(1,its2(it)))
+#endif
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       dk_x = 2.0d0*M_PI/(m_dx*dble(N_X))
       dk_y = 2.0d0*M_PI/(m_dy*dble(N_Y))
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(i, k_x, j, k_y, k)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j,k_x,k_y,k)
+#endif
          do i = its2(it), ite2(it)
+#ifdef USE_GPU
+            do j = 1, N_Y
+#endif
             k_x = (i - 1)*dk_x
             if(i > N_X/2 + 1) k_x = (N_X - i + 1)*dk_x
 !NEC$ novector
+#ifndef USE_GPU
             do j = 1, N_Y
+#endif
                k_y = (j - 1)*dk_y
                if(j > N_Y/2 + 1) k_y = (N_Y - j + 1)*dk_y
                k = dsqrt(k_x**2 + k_y**2)
+#ifndef __amdflang__
                yfftbuf(j,i) = yfftbuf(j,i)/dcosh(k*h0)*coef_norm
+#else
+               yfftbuf(j,i) = yfftbuf(j,i)*(1.0d0/dcosh(k*h0))*coef_norm
+#endif
             end do
          end do
       end do
 
       ! Backward FFT on Y-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_execute(yplan_backward(it))
+#else
+         call exec_z2z_backward(yplan_backward(it),yfftbuf(1,its2(it)),yfftbuf(1,its2(it)))
+#endif
       end do
 
       ! Transposiion: (N_Y,N_X) -> (N_X,N_Y)
+#ifndef USE_GPU
 !$omp do private(j, i)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = jts1(it), jte1(it)
             do i = 1, N_X/2+1
                xfftbuf(i,j) = yfftbuf(j,i)
@@ -1119,12 +1312,22 @@ contains
       end do
 
       ! Backward FFT on X-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_execute_dft_c2r(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
+#else
+         call exec_z2d(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
+#endif
       end do
 
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             zz(i,j) = realbuf(i,j)
@@ -1132,7 +1335,11 @@ contains
       end do
 #else
       ! Transposiion: (nx0,ny0) -> (N_X,ny1)
+#ifndef USE_GPU
 !$omp do private(i, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,ind)
+#endif
       do j = 1, ny0
          do i = 1, nx0
             ind = (j-1)*nx0 + i
@@ -1140,32 +1347,52 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(j_, i, i_, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,j_,i_,ind)
+#endif
       do j = 1, ny0
-         j_ = jbias + j
+#ifdef USE_GPU
          do i = 1, nx0
+#endif
+         j_ = jbias + j
+#ifndef USE_GPU
+         do i = 1, nx0
+#endif
             i_ = ibias + i
             ind = (j-1)*nx0 + i
             sendbuf1(ind) = zz(i_,j_)
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       call MPI_Alltoallv(sendbuf1, sendcounts1, sdispls1, MPI_DOUBLE_PRECISION, &
                          recvbuf1, recvcounts1, rdispls1, MPI_DOUBLE_PRECISION, MPI_X_WORLD, ierr)
+#ifndef USE_GPU
 !$omp end single
 
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, ny1
          do i = 1, N_X
             realbuf(i,j) = 0.0d0
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(xst, xlen, j, i, ind, i_)
+#endif
       do p = 0, npx-1
          xst = rdispls1(p)/ny1
          xlen = recvcounts1(p)/ny1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,ind,i_)
+#endif
          do j = 1, ny1
             do i = 1, xlen
                ind = rdispls1(p) + (j-1)*xlen + i
@@ -1176,13 +1403,23 @@ contains
       end do
 
       ! Forward FFT on X-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_execute_dft_r2c(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
+#else
+         call exec_d2z(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
+#endif
       end do
 
       ! Transposiion: (N_X,ny1) -> (N_Y,nx2)
+#ifndef USE_GPU
 !$omp do private(j, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(j,ind)
+#endif
       do i = 1, N_X/2+1
          do j = 1, ny1
             ind = ny1*(i-1) + j
@@ -1190,22 +1427,33 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       call MPI_Alltoallv(sendbuf2, sendcounts2, sdispls2, MPI_DOUBLE_COMPLEX, &
                          recvbuf2, recvcounts2, rdispls2, MPI_DOUBLE_COMPLEX, __MPICOMM__, ierr)
+#ifndef USE_GPU
 !$omp end single
 
 !$omp do private(j)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do i = 1, nx2
          do j = 1, N_Y
             yfftbuf(j,i) = dcmplx(0.0d0,0.0d0)
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(yst, ylen, i, j, ind, j_)
+#endif
       do p = 0, nprocs-1
          yst = rdispls2(p)/nx2
          ylen = recvcounts2(p)/nx2
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j,ind,j_)
+#endif
          do i = 1, nx2
             do j = 1, ylen
                ind = rdispls2(p) + (i-1)*ylen + j
@@ -1216,46 +1464,79 @@ contains
       end do
 
       ! Forward FFT on Y-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_execute(yplan_forward(it))
+#else
+         call exec_z2z_forward(yplan_forward(it),yfftbuf(1,its2(it)),yfftbuf(1,its2(it)))
+#endif
       end do
 
       ! Calc. F(hz)*F(g)
+#ifndef USE_GPU
 !$omp single
+#endif
       num = (N_X/2+1)/nprocs
       ist = myrank*num
       ist = ist + min(mod(N_X/2+1,nprocs),myrank) + 1
       dk_x = 2.0d0*M_PI/(m_dx*dble(N_X))
       dk_y = 2.0d0*M_PI/(m_dy*dble(N_Y))
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(i, i_, k_x, j, k_y, k)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j,i_,k_x,k_y,k)
+#endif
          do i = its2(it), ite2(it)
+#ifdef USE_GPU
+            do j = 1, N_Y
+#endif
             i_ = ist + i - 1
             k_x = (i_ - 1)*dk_x
             if(i_ > N_X/2 + 1) k_x = (N_X - i_ + 1)*dk_x
 !NEC$ novector
+#ifndef USE_GPU
             do j = 1, N_Y
+#endif
                k_y = (j - 1)*dk_y
                if(j > N_Y/2 + 1) k_y = (N_Y - j + 1)*dk_y
                k = dsqrt(k_x**2 + k_y**2)
+#ifndef __amdflang__
                yfftbuf(j,i) = yfftbuf(j,i)/dcosh(k*h0)*coef_norm
+#else
+               yfftbuf(j,i) = yfftbuf(j,i)*(1.0d0/dcosh(k*h0))*coef_norm
+#endif
             end do
          end do
       end do
 
       ! Backward FFT on Y-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_execute(yplan_backward(it))
+#else
+         call exec_z2z_backward(yplan_backward(it),yfftbuf(1,its2(it)),yfftbuf(1,its2(it)))
+#endif
       end do
 
       ! Transposiion: (N_Y,nx2) -> (N_X,ny1)
+#ifndef USE_GPU
 !$omp do private(yst, ylen, i, j, ind, j_)
+#endif
       do p = 0, nprocs-1
          yst = rdispls2(p)/nx2
          ylen = recvcounts2(p)/nx2
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j,ind,j_)
+#endif
          do i = 1, nx2
             do j = 1, ylen
                ind = rdispls2(p) + (i-1)*ylen + j
@@ -1265,12 +1546,18 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       call MPI_Alltoallv(recvbuf2, recvcounts2, rdispls2, MPI_DOUBLE_COMPLEX, &
                          sendbuf2, sendcounts2, sdispls2, MPI_DOUBLE_COMPLEX, __MPICOMM__, ierr)
+#ifndef USE_GPU
 !$omp end single
 
 !$omp do private(i, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,ind)
+#endif
       do j = 1, ny1
          do i = 1, N_X/2+1
             ind = ny1*(i-1) + j
@@ -1279,16 +1566,27 @@ contains
       end do
 
       ! Backward FFT on X-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_execute_dft_c2r(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
+#else
+         call exec_z2d(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
+#endif
       end do
 
       ! Transposiion: (N_X,ny1) -> (nx0,ny0)
+#ifndef USE_GPU
 !$omp do private(xst, xlen, j, i, ind, i_)
+#endif
       do p = 0, npx-1
          xst = rdispls1(p)/ny1
          xlen = recvcounts1(p)/ny1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,ind,i_)
+#endif
          do j = 1, ny1
             do i = 1, xlen
                ind = rdispls1(p) + (j-1)*xlen + i
@@ -1298,22 +1596,35 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       call MPI_Alltoallv(recvbuf1, recvcounts1, rdispls1, MPI_DOUBLE_PRECISION, &
                          sendbuf1, sendcounts1, sdispls1, MPI_DOUBLE_PRECISION, MPI_X_WORLD, ierr)
+#ifndef USE_GPU
 !$omp end single
 
 !$omp do private(j_, i, i_, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(j_, i, i_, ind)
+#endif
       do j = 1, ny0
-         j_ = jbias + j
+#ifdef USE_GPU
          do i = 1, nx0
+#endif
+         j_ = jbias + j
+#ifndef USE_GPU
+         do i = 1, nx0
+#endif
             i_ = ibias + i
             ind = (j-1)*nx0 + i
             zz(i_,j_) = sendbuf1(ind)
          end do
       end do
 #endif
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 ! ==============================================================================
 ! === Apply filter End =========================================================
 ! ==============================================================================
@@ -1322,10 +1633,17 @@ contains
 ! === Finalize FFT Begin =======================================================
 ! ==============================================================================
       do it = 0, nthreads-1
+#ifndef USE_GPU
          call dfftw_destroy_plan(xplan_forward(it))
          call dfftw_destroy_plan(yplan_forward(it))
          call dfftw_destroy_plan(xplan_backward(it))
          call dfftw_destroy_plan(yplan_backward(it))
+#else
+         call destroy_plan(xplan_forward(it))
+         call destroy_plan(yplan_forward(it))
+         call destroy_plan(xplan_backward(it))
+         call destroy_plan(yplan_backward(it))
+#endif
       end do
 
       deallocate(xplan_forward)
@@ -1450,15 +1768,22 @@ contains
 ! === get-large-area.f90 2015/06/19 ============================================
       disp_max = -huge(disp_max)
       disp_min =  huge(disp_min)
+#ifndef USE_GPU
 !$omp parallel
 !$omp do private(i) reduction(max:disp_max) reduction(min:disp_min)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) &
+!$omp reduction(max:disp_max) reduction(min:disp_min)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             disp_max = max(disp_max,zz(i,j))
             disp_min = min(disp_min,zz(i,j))
          end do
       end do
+#ifndef USE_GPU
 !$omp single
+#endif
 #ifdef MPI
       call MPI_Allreduce(MPI_IN_PLACE, disp_max, 1, MPI_DOUBLE_PRECISION, MPI_MAX, __MPICOMM__, ierr)
       call MPI_Allreduce(MPI_IN_PLACE, disp_min, 1, MPI_DOUBLE_PRECISION, MPI_MIN, __MPICOMM__, ierr)
@@ -1468,10 +1793,17 @@ contains
       imax = -huge(imax)
       jmin =  huge(jmin)
       jmax = -huge(jmax)
+#ifndef USE_GPU
 !$omp end single
+#endif
       ! Case-1: all the disp is POSITIVE
       if(disp_max >= 0.0d0 .and. disp_min >= 0.0d0) then
+#ifndef USE_GPU
 !$omp do private(i) reduction(min:imin, jmin) reduction(max:imax, jmax)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) &
+!$omp reduction(min:imin, jmin) reduction(max:imax, jmax)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                if(zz(i,j) >= disp_max*disp_thres_ratio) then
@@ -1484,7 +1816,12 @@ contains
          end do
       ! Case-2: all the disp is NEGATIVE
       else if(disp_max <= 0.0d0 .and. disp_min <= 0.0d0) then
+#ifndef USE_GPU
 !$omp do private(i) reduction(min:imin, jmin) reduction(max:imax, jmax)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) &
+!$omp reduction(min:imin, jmin) reduction(max:imax, jmax)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                if(zz(i,j) <= disp_min*disp_thres_ratio) then
@@ -1497,7 +1834,12 @@ contains
          end do
       ! Case-3: disp includes both POSITIVE and NEGATIVE
       else
+#ifndef USE_GPU
 !$omp do private(i) reduction(min:imin, jmin) reduction(max:imax, jmax)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) &
+!$omp reduction(min:imin, jmin) reduction(max:imax, jmax)
+#endif
          do j = 1, nlat
             do i = 1, nlon
                if((zz(i,j) >= disp_max*disp_thres_ratio) .or. &
@@ -1510,7 +1852,9 @@ contains
             end do
          end do
       end if
+#ifndef USE_GPU
 !$omp single
+#endif
 #ifndef MPI
 #ifndef CARTESIAN
       lat1 = (dble(jmax) + dble(jmin))/2.0d0
@@ -1542,11 +1886,21 @@ contains
       h0q = 0.0q0
 #endif
       num = 0
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifndef QUAD
+#ifndef USE_GPU
 !$omp do private(i) reduction(+:h0,num)
 #else
+!$omp target teams distribute parallel do collapse(2) private(i) reduction(+:h0,num)
+#endif
+#else
+#ifndef USE_GPU
 !$omp do private(i) reduction(+:h0q,num)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) reduction(+:h0q,num)
+#endif
 #endif
 ! === get-large-area.f90 2015/06/19 ============================================
 !     do j = 1, nlat
@@ -1564,7 +1918,9 @@ contains
             end if
          end do
       end do
+#ifndef USE_GPU
 !$omp single
+#endif
 #ifdef MPI
 #ifndef QUAD
       call MPI_Allreduce(MPI_IN_PLACE, h0, 1, MPI_DOUBLE_PRECISION, MPI_SUM, __MPICOMM__, ierr)
@@ -1594,8 +1950,10 @@ contains
 #else
       write(6,'(a,f15.6)')  '[displacement] h0: ', h0
 #endif
+#ifndef USE_GPU
 !$omp end single
 !$omp end parallel
+#endif
 
       return
 #ifndef CARTESIAN

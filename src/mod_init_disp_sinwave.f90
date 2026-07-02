@@ -128,7 +128,11 @@ contains
       integer(kind=4) :: ig, jg
 #endif
 
-      hz => wfld%hz
+      if(timenest /= 1) then
+         hz => wfld%hz
+      else
+         hz => wfld%hz_b
+      end if
 
 ! === FILE INPUT ===============================================================
       if(lcount == 0) then

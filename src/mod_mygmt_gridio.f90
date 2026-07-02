@@ -1,9 +1,9 @@
 #include "real.h"
 module mod_mygmt_gridio
 ! === For negative max. height =================================================
-use mod_params, only : missing_value
+use mod_params, only : missing_value, fill_value, fill_value_is_nan
 ! ==============================================================================
-use mod_params, only : id_cf17
+use mod_params, only : id_cf17, grd_nan2zero
 implicit none
 include 'netcdf.inc'
 
@@ -42,7 +42,7 @@ contains
       logical :: missing_value_is_available
       integer(kind=4), intent(in) :: formatid
       real(kind=8), allocatable, dimension(:) :: tmp
-#if !defined(__NEC__) && !defined(__GFORTRAN__)
+#if !defined(__NEC__) && !defined(__GFORTRAN__) && !defined(__amdflang__)
       real(kind=4), parameter :: NaN = transfer(Z'FFFFFFFF', 0.e0)
 #else
       real(kind=4), parameter :: NaN = Z'FFFFFFFF'
@@ -100,7 +100,7 @@ contains
 
       if(missing_value_is_available) then
          stat = nf_put_att_real(ncid, z_id, '_FillValue', NF_REAL, 1, &
-                                real(missing_value))
+                                real(fill_value))
       end if
 ! ==============================================================================
       ! Burbidge - changed this to normal    z_node_offset[0] = 1;
@@ -187,7 +187,7 @@ contains
 
          if(missing_value_is_available) then
             stat = nf_put_att_real(ncid, z_id, '_FillValue', NF_REAL, 1, &
-                                   real(missing_value))
+                                   real(fill_value))
          else
             stat = nf_put_att_real(ncid, z_id, '_FillValue', NF_REAL, 1, NaN)
          end if
@@ -201,6 +201,9 @@ contains
 
          ! store x y and z range spacing
          allocate(tmp(nx))
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
          do i = 1, nx
             tmp(i) = dble(x0) + dble(dx)*(i - 1)
          end do
@@ -208,6 +211,9 @@ contains
          deallocate(tmp)
 
          allocate(tmp(ny))
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
          do i = 1, ny
             tmp(i) = dble(y0) + dble(dy)*(i - 1)
          end do
@@ -218,14 +224,56 @@ contains
       ! store z
 ! === Write buffer must be 4 byte. =============================================
       allocate(z_tmp(nx,ny))
-      if(formatid == nf_format_classic) then
-      z_tmp = z
-      else
-         do j = 1, ny
-            do i = 1, nx
-               z_tmp(i,ny-j+1) = z(i,j)
+      if(fill_value_is_nan == 0) then
+         if(formatid == nf_format_classic) then
+#ifndef USE_GPU
+            z_tmp = z
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+            do j = lbound(z_tmp,2), ubound(z_tmp,2)
+               do i = lbound(z_tmp,1), ubound(z_tmp,1)
+                  z_tmp(i,j) = z(i,j)
+               end do
             end do
-         end do
+#endif
+         else
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 1, ny
+               do i = 1, nx
+                  z_tmp(i,ny-j+1) = z(i,j)
+               end do
+            end do
+         end if
+      else
+         if(formatid == nf_format_classic) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = lbound(z_tmp,2), ubound(z_tmp,2)
+               do i = lbound(z_tmp,1), ubound(z_tmp,1)
+                  if(z(i,j) == missing_value) then
+                     z_tmp(i,j) = real(fill_value)
+                  else
+                     z_tmp(i,j) = z(i,j)
+                  end if
+               end do
+            end do
+         else
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 1, ny
+               do i = 1, nx
+                  if(z(i,j) == missing_value) then
+                     z_tmp(i,ny-j+1) = real(fill_value)
+                  else
+                     z_tmp(i,ny-j+1) = z(i,j)
+                  end if
+               end do
+            end do
+         end if
       end if
       stat = nf_put_var_real(ncid, z_id, z_tmp)
       deallocate(z_tmp)
@@ -243,7 +291,11 @@ contains
 
    subroutine read_gmt_grd_hdr(infilename, nx, ny, dx, dy, west, east, south, north, zmin, zmax, nxorg, nyorg, formatid, read_header)
       use mod_params, only : RUDEF, IUDEF
+#ifndef __GFORTRAN__
       character(len=256), intent(in) :: infilename
+#else
+      character(len=*), intent(in) :: infilename
+#endif
       integer(kind=4), intent(out) :: nx, ny
       real(kind=REAL_BYTE), intent(out) :: dx, dy, west, east, south, north, zmin, zmax
 
@@ -445,7 +497,11 @@ contains
    end subroutine read_gmt_grd_hdr
 
    subroutine read_gmt_grd(infilename,z,nx,ny,formatid)
+#ifndef __GFORTRAN__
       character(len=256), intent(in) :: infilename
+#else
+      character(len=*), intent(in) :: infilename
+#endif
       real(kind=REAL_BYTE), dimension(nx,ny), intent(inout) :: z
 !     real(kind=REAL_BYTE), intent(inout) :: z
       integer(kind=4), intent(in) :: nx, ny
@@ -455,7 +511,7 @@ contains
       real(kind=4), allocatable, dimension(:,:) :: z_tmp
 ! ==============================================================================
       integer(kind=4), intent(in) :: formatid
-      integer(kind=4) :: i, j
+      integer(kind=4) :: i, j, ierr
 
       !*** open file again ***
       err = nf_open(infilename, NF_NOWRITE, ncid)
@@ -473,16 +529,73 @@ contains
 ! === Read buffer must be 4 byte. ==============================================
       allocate(z_tmp(nx,ny))
       err = nf_get_var_real(ncid, z_id, z_tmp)
+      ierr = 0
       if(formatid == nf_format_classic) then
-      z = z_tmp
+         ! NaN is modified into zero.
+#ifndef USE_GPU
+#ifndef __NEC__
+!$omp parallel do private(i)
+#else
+!$omp parallel do private(i) reduction(+:ierr)
+#endif
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) reduction(+:ierr)
+#endif
+         do j = lbound(z,2), ubound(z,2)
+            do i = lbound(z,1), ubound(z,1)
+               if(z_tmp(i,j) /= z_tmp(i,j)) then
+                  z_tmp(i,j) = 0.0d0
+#if !defined(__NEC__) && !defined(USE_GPU)
+!$omp critical
+                  ierr = 1
+!$omp end critical
+#else
+                  ierr = ierr + 1
+#endif
+               end if
+               z(i,j) = z_tmp(i,j)
+            end do
+         end do
       else
+         ! NaN is modified into zero.
+#ifndef USE_GPU
+#ifndef __NEC__
+!$omp parallel do private(i)
+#else
+!$omp parallel do private(i) reduction(+:ierr)
+#endif
+#else
+!$omp target teams distribute parallel do collapse(2) private(i) reduction(+:ierr)
+#endif
          do j = 1, ny
             do i = 1, nx
+               if(z_tmp(i,j) /= z_tmp(i,j)) then
+                  z_tmp(i,j) = 0.0d0
+#if !defined(__NEC__) && !defined(USE_GPU)
+!$omp critical
+                  ierr = 1
+!$omp end critical
+#else
+                  ierr = ierr + 1
+#endif
+               end if
                z(i,ny-j+1) = z_tmp(i,j)
             end do
          end do
       end if
       deallocate(z_tmp)
+
+      if((ierr /= 0) .and. (grd_nan2zero == 0)) then
+         write(0,'(a)')     '======================================================='
+         write(0,'(a)')     '======================================================='
+         write(0,'(a)')     '=== ERROR!!!'
+         write(0,'(a,a,a)') '=== Input file "', trim(infilename), '" includes NaN!'
+         write(0,'(a)')     '=== Check the file or specify "grd_nan2zero = 1"'
+         write(0,'(a)')     '=== to replace NaNs into zeros.'
+         write(0,'(a)')     '======================================================='
+         write(0,'(a)')     '======================================================='
+         stop
+      end if
 ! ==============================================================================
 
       !*** close file and return pointer to array ***

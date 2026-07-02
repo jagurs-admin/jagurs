@@ -1,5 +1,5 @@
 How to install JAGURS-D
-May 23, 2024
+June 30, 2024
 
 [TOC]
 1. Requirements
@@ -19,7 +19,7 @@ JAGURS-D requires the followings.
 
    - GNU make
 
-   - NetCDF library (URL: http://www.unidata.ucar.edu/software/netcdf/)
+   - NetCDF C and Fortran (URL: https://www.unidata.ucar.edu/software/netcdf/)
      If you need NetCDF4 functions (i.e. single record over 4 GByte),
      more libraries (HDF5, cURL, etc...) may be required to link.
 
@@ -27,8 +27,7 @@ JAGURS-D requires the followings.
       - FFW3 (URL: http://www.fftw.org/) for others
         (MKL FFTW3 interface is also okay)
 
-   - PROJ.4 library (URL: https://trac.osgeo.org/proj/)
-     Currently, only proj-4.9.1 is confirmed.
+   - PROJ library (URL: https://trac.osgeo.org/proj/)
 
    - [optional] MPI library
      If MPI parallelization is required. (MPI=ON)
@@ -44,25 +43,21 @@ About the following platforms, sample makefiles "Makefile.[platform]" exist.
 In other platforms, you need to make makefile for your platform based on
 existing samples.
 
-   DA: For JAMSTEC DA system
-      Intel Fortran/C++ compilers, Intel MPI and MKL FFTW3 interface are
-      utilized.
-
-   Aurora: For the Earth simulator 4 and NEC SX-Aurora TSUBASA
+   ifx:: For Intel OneAPI
+      Intel new Fortran/C++ compilers (ifx/icx), Intel MPI and MKL FFTW3 interface
+      are utilized.
 
    gfortran: For GNU SDK (gcc and gfortran) and OpenMPI on usual Linux system
 
-   Windows: For nmake at Windows system
+   Aurora: For the Earth simulator 4 and NEC SX-Aurora TSUBASA
 
-   NEC: NEC internal use [NOTE!] Not for NEC SX-Aurora TSUBASA!
+   NVIDIAGPU: For NVIDIA GPU with NVIDIA HPC SDK
+
+   AMDGPU: For AMD GPU with ROCm
+
+   DA (obsolete):: For JAMSTEC DA system
       Intel Fortran/C++ compilers, Intel MPI and MKL FFTW3 interface are
       utilized.
-
-   SC_ICE (obsolete): SGI Altix ICE X system
-      Intel Fortran/C++ compilers, SGI MPT and MKL FFTW3 interface are
-      utilized.
-
-   K (obsolete): Cross environment for K computer
 
 Typically, you need to modify install path of each libraries.
 
@@ -73,7 +68,9 @@ Typically, you need to modify install path of each libraries.
    FFTW3_LIB: Arguments to link FFTW3 library
               (Typically, "-L${FFTW3_INSTALL_DIR}/lib -lfftw3")
 
-   PROJ4_DIR: Install path of PROJ.4 library
+   PROJ_DIR: Install path of PROJ library
+             By default, PROJ 4 is used, but you can use PROJ 9 by
+             uncommenting "PROJ9=ON" in the Makefile. See, 4.3 below.
 
 After necessary modifications are applied, type "make -f Makefile.[platform]"
 in JAGURS-D_V???? directory.
@@ -81,24 +78,13 @@ in JAGURS-D_V???? directory.
 ================================================================================
 3. Special instructions for each platform
 --------------------------------------------------------------------------------
-3.1. K computer
+3.1. GPU computing
 
-(1) How to install PROJ.4 library
-
-Installation on own environment (computational node) with interactive mode is
-highly recommended.
-For example, invoke the following commands on cross/own environment.
-Here, PROJ.4 install path is ${PROJ4_DIR}.
-
-   [fornt end]$ tar -zxvf proj-4.9.1.tar.gz
-   [fornt end]$ cd proj-4.9.1
-   [fornt end]$ pjsub --interact --rsc-list "node=1" --rsc-list "elapse=1:0:0" \
-   --sparam "wait-time=3600"
-   [computational node]$ . /work/system/Env_base
-   [computational node]$ ./configure --build=sparc64 --prefix=${PROJ4_DIR}
-   [computational node]$ make
-   [computational node]$ make install
-   [computational node]$ exit
+Both NVIDIA and AMD GPUs are supported.
+Multi-GPU execution with MPI parallelization is available, but it provides
+adequate performance only for very large cases because MPI communication
+overhead becomes significant.
+For typical cases, a single GPU is sufficient.
 
 ================================================================================
 4. Troubleshooting
@@ -111,14 +97,20 @@ If you are trying to link NetCDF4, not only libnetcdf.so but also libnetcdff.so
 (Fortran lapper library) have to be liked.
 
 --------------------------------------------------------------------------------
-4.2. PROJ.4 library is not found and it fails in execution with the message
-     like "./jagurs: error while loading shared libraries: libproj.so.9:
+4.2. PROJ library is not found and it fails in execution with the message
+     like "./jagurs: error while loading shared libraries: libproj.so.X:
      cannot open shared object file: No such file or directory".
 
-Add the path to "${PROJ4_DIR}/lib" to the environment variable LD_LIBRARY_PATH.
+Add the path to "${PROJ_DIR}/lib" to the environment variable LD_LIBRARY_PATH.
 In sh/bash, add the following line into your execution script.
 
-   export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${PROJ4_DIR}/lib"
+   export LD_LIBRARY_PATH="${LD_LIBRARY_PATH}:${PROJ_DIR}/lib"
+
+--------------------------------------------------------------------------------
+4.3. Support for newer versions of the PROJ library has been added.
+     To enable PROJ 9, uncomment the following line in the Makefile:
+
+   PROJ9=ON
 
 ================================================================================
 

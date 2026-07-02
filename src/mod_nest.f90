@@ -1,3 +1,11 @@
+#undef TIMER
+#ifdef TIMER
+#   define TIMER_START(a) call start_timer(a)
+#   define TIMER_STOP(a)  call stop_timer(a)
+#else
+#   define TIMER_START(a)
+#   define TIMER_STOP(a)
+#endif
 #ifdef DBLE_MATH
 #include "dble_math.h"
 #endif
@@ -18,6 +26,10 @@ use mod_params, only : VEL, HGT, nest_1way
 use mod_params, only : VEL, HGT, nest_1way, RUDEF
 #endif
 ! ==============================================================================
+use mod_params, only : timenest
+#ifdef TIMER
+use mod_timer
+#endif
 implicit none
 
 contains
@@ -26,11 +38,24 @@ contains
       integer(kind=4), intent(in) :: mode
       type(data_grids), target, intent(inout) :: cg, fg
       integer(kind=4), intent(in) :: c2p_all
-! === 1-way nest ===============================================================
-!     call copy2coarse(mode,cg,fg,c2p_all)
-      if(nest_1way == 0) call copy2coarse(mode,cg,fg,c2p_all)
-! ==============================================================================
-      call interp2fine(mode,cg,fg)
+      integer(kind=4) :: neststep
+      if(timenest /= 1) then
+         if(nest_1way == 0) call copy2coarse(mode,cg,fg,c2p_all)
+         call interp2fine(mode,cg,fg,0)
+      else
+         if(nest_1way == 0) then
+            if((mode == HGT) .and. (cg%my%calchgt == 1)) call copy2coarse(mode,cg,fg,c2p_all)
+            if((mode == VEL) .and. (cg%my%calcvel == 1)) call copy2coarse(mode,cg,fg,c2p_all)
+         end if
+         if((mode == HGT) .and. (fg%my%calchgt == 1)) then
+            neststep = cg%my%neststephgt / fg%my%numneststeps
+            call interp2fine(mode,cg,fg,neststep)
+         end if
+         if((mode == VEL) .and. (fg%my%calcvel == 1)) then
+            neststep = cg%my%neststepvel / fg%my%numneststeps
+            call interp2fine(mode,cg,fg,neststep)
+         end if
+      end if
       return
    end subroutine mapgrids
 
@@ -1541,56 +1566,94 @@ contains
       integer(kind=4) :: k_
 #endif
 
-      fxc => cg%wave_field%fx
-      fyc => cg%wave_field%fy
+      if(timenest /= 1) then
+         fxc => cg%wave_field%fx
+         fyc => cg%wave_field%fy
 
-      fxf => fg%wave_field%fx
-      fyf => fg%wave_field%fy
+         fxf => fg%wave_field%fx
+         fyf => fg%wave_field%fy
+      else
+         fxc => cg%wave_field%fx_b
+         fyc => cg%wave_field%fy_b
+
+         fxf => fg%wave_field%fx_b
+         fyf => fg%wave_field%fy_b
+      end if
 
       fxo => fg%fxo
       fyo => fg%fyo
 
       if(mode == VEL) then
 #ifndef MPI
+#ifndef USE_GPU
 !$omp parallel
+#endif
          if(c2p_all == 0) then
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
             do k = 1, fxo%np
+               if((fxo%cndx0(k,1) == fg%my%zeroIX) .or. (fxo%cndx0(k,1) == fg%my%zeroIX + fg%my%bigNX - 2)) cycle
                fxc(fxo%cndx0(k,1),fxo%cndx0(k,2)) = fxf(fxo%fndx(k,1),fxo%fndx(k,2))
             end do
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
             do k = 1, fyo%np
+               if((fyo%cndx0(k,2) == fg%my%zeroIY) .or. (fyo%cndx0(k,2) == fg%my%zeroIY + fg%my%bigNY - 2)) cycle
                fyc(fyo%cndx0(k,1),fyo%cndx0(k,2)) = fyf(fyo%fndx(k,1),fyo%fndx(k,2))
             end do
          else
+#ifndef USE_GPU
 !$omp do private(i, j)
+#else
+!$omp target teams distribute parallel do private(i,j)
+#endif
             do k = 1, fxo%np
                i = fxo%fndx(k,1)
                j = fxo%fndx(k,2)
+               if((i == int(fg%my%nr/2) + 1) .or. (i == (fg%my%nx-2) - fg%my%nr/2 + 1)) cycle
                fxc(fxo%cndx0(k,1),fxo%cndx0(k,2)) = &
                &  (fxf(i-1,j-1) + fxf(i,j-1) + fxf(i+1,j-1) &
                & + fxf(i-1,j  ) + fxf(i,j  ) + fxf(i+1,j  ) &
                & + fxf(i-1,j+1) + fxf(i,j+1) + fxf(i+1,j+1))/9.0d0
             end do
+#ifndef USE_GPU
 !$omp do private(i, j)
+#else
+!$omp target teams distribute parallel do private(i,j)
+#endif
             do k = 1, fyo%np
                i = fyo%fndx(k,1)
                j = fyo%fndx(k,2)
+               if((j == int(fg%my%nr/2) + 1) .or. (j == (fg%my%ny-2) - fg%my%nr/2 + 1)) cycle
                fyc(fyo%cndx0(k,1),fyo%cndx0(k,2)) = &
                &  (fyf(i-1,j-1) + fyf(i,j-1) + fyf(i+1,j-1) &
                & + fyf(i-1,j  ) + fyf(i,j  ) + fyf(i+1,j  ) &
                & + fyf(i-1,j+1) + fyf(i,j+1) + fyf(i+1,j+1))/9.0d0
             end do
          end if
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 #else
 #ifndef USE_ALLTOALLV
+#ifndef USE_GPU
 !$omp parallel
 !$omp single
+#endif
          xfbuf => fxo%fb
          xcbuf => fxo%cb
+#ifndef USE_GPU
 !$omp end single
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do k = 1, fxo%np+fyo%np
             xfbuf(k) = 0.0d0
             xcbuf(k) = 0.0d0
@@ -1599,7 +1662,11 @@ contains
          !*  fine2buf    * must not read from edges.
          !*==============*
          if(c2p_all == 0) then
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
             do k = 1, fxo%np
                ix = fxo%fndx(k,1)
                iy = fxo%fndx(k,2)
@@ -1609,7 +1676,11 @@ contains
                   xfbuf(k) = fxf(i,j)
                end if
             end do
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
             do k = 1, fyo%np
                ix = fyo%fndx(k,1)
                iy = fyo%fndx(k,2)
@@ -1620,7 +1691,11 @@ contains
                end if
             end do
          else
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
             do k = 1, fxo%np
                ix = fxo%fndx(k,1)
                iy = fxo%fndx(k,2)
@@ -1632,7 +1707,11 @@ contains
                           & + fxf(i-1,j+1) + fxf(i,j+1) + fxf(i+1,j+1))/9.0d0
                end if
             end do
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
             do k = 1, fyo%np
                ix = fyo%fndx(k,1)
                iy = fyo%fndx(k,2)
@@ -1648,7 +1727,11 @@ contains
          !*==============*
          !*  allreduce   *
          !*==============*
+#ifndef USE_GPU
 !$omp single
+#else
+!$omp target data use_device_ptr(xfbuf,xcbuf)
+#endif
          call MPI_Allreduce(xfbuf, xcbuf, fxo%np+fyo%np, REAL_MPI, MPI_SUM, __MPICOMM__, ierr)
          if(ierr /= 0) then
             select case (ierr)
@@ -1667,31 +1750,47 @@ contains
             end select
             call fatal_error(ierr)
          end if
+#ifndef USE_GPU
 !$omp end single
+#else
+!$omp end target data
+#endif
          !*==============*
          !*  buf2coarce  * must write to edges.
          !*==============*
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
          do k = 1, fxo%np
             ix = fxo%cndx0(k,1)
             iy = fxo%cndx0(k,2)
             if(cg%my%kx <= ix .and. ix <= cg%my%kxend .and. cg%my%ky <= iy .and. iy <= cg%my%kyend) then
                i = ix - cg%my%kx + 1 ! with egde 
                j = iy - cg%my%ky + 1 ! with edge 
+               if((ix == fg%my%zeroIX) .or. (ix == fg%my%zeroIX + fg%my%bigNX - 2)) cycle
                fxc(i,j) = xcbuf(k)
             end if
          end do
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
          do k = 1, fyo%np
             ix = fyo%cndx0(k,1)
             iy = fyo%cndx0(k,2)
             if(cg%my%kx <= ix .and. ix <= cg%my%kxend .and. cg%my%ky <= iy .and. iy <= cg%my%kyend) then
                i = ix - cg%my%kx + 1 ! with egde 
                j = iy - cg%my%ky + 1 ! with edge 
+               if((iy == fg%my%zeroIY) .or. (iy == fg%my%zeroIY + fg%my%bigNY - 2)) cycle
                fyc(i,j) = xcbuf(fxo%np+k)
             end if
          end do
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 #else
 ! === USE_MPI_ALLTOALLV ========================================================
 #ifndef SINGLE_A2A
@@ -1707,6 +1806,10 @@ contains
          !*  fine2buf    * must not read from edges.
          !*==============*
          if(c2p_all == 0) then
+TIMER_START('___cc:reg01')
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
             do k = 1, fxo%snp0
                i = fxo%fndx0_l(k,1)
                j = fxo%fndx0_l(k,2)
@@ -1716,6 +1819,9 @@ contains
                yfbuf(fxo%smap0(k)) = fxf(i,j)
 #endif
             end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
             do k = 1, fyo%snp0
                i = fyo%fndx0_l(k,1)
                j = fyo%fndx0_l(k,2)
@@ -1725,8 +1831,14 @@ contains
                yfbuf(fyo%smap0(k)) = fyf(i,j)
 #endif
             end do
+TIMER_STOP('___cc:reg01')
          else
+TIMER_START('___cc:reg02')
+#ifndef USE_GPU
 !$omp parallel do private(i, j)
+#else
+!$omp target teams distribute parallel do private(i,j)
+#endif
             do k = 1, fxo%snp0
                i = fxo%fndx0_l(k,1)
                j = fxo%fndx0_l(k,2)
@@ -1738,7 +1850,11 @@ contains
                        & + fxf(i-1,j  ) + fxf(i,j  ) + fxf(i+1,j  ) &
                        & + fxf(i-1,j+1) + fxf(i,j+1) + fxf(i+1,j+1))/9.0d0
             end do
+#ifndef USE_GPU
 !$omp parallel do private(i, j)
+#else
+!$omp target teams distribute parallel do private(i,j)
+#endif
             do k = 1, fyo%snp0
                i = fyo%fndx0_l(k,1)
                j = fyo%fndx0_l(k,2)
@@ -1750,17 +1866,28 @@ contains
                        & + fyf(i-1,j  ) + fyf(i,j  ) + fyf(i+1,j  ) &
                        & + fyf(i-1,j+1) + fyf(i,j+1) + fyf(i+1,j+1))/9.0d0
             end do
+TIMER_STOP('___cc:reg02')
          end if
          !*==============*
          !*  alltoallv   *
          !*==============*
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___cc:reg03')
 #ifndef A2A3D
+#ifdef USE_GPU
+!$omp target data use_device_ptr(xfbuf,xcbuf,yfbuf,ycbuf)
+#endif
 #ifndef SINGLE_A2A
          call MPI_Alltoallv(xfbuf, fxo%sendcnts0, fxo%sdispls0, REAL_MPI, &
                             xcbuf, fxo%recvcnts0, fxo%rdispls0, REAL_MPI, __MPICOMM__, ierr)
 #endif
          call MPI_Alltoallv(yfbuf, fyo%sendcnts0, fyo%sdispls0, REAL_MPI, &
                             ycbuf, fyo%recvcnts0, fyo%rdispls0, REAL_MPI, __MPICOMM__, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 #else
 #ifndef SINGLE_A2A
          call A2A3D_execute(fxo%snp0, xfbuf, fxo%rnp0, xcbuf, fxo%handler0)
@@ -1769,36 +1896,53 @@ contains
          call A2A3D_execute(fxo%snp0+fyo%snp0, yfbuf, fxo%rnp0+fyo%rnp0, ycbuf, fyo%handler0)
 #endif
 #endif
+TIMER_STOP('___cc:reg03')
          !*==============*
          !*  buf2coarce  * must write to edges.
          !*==============*
+TIMER_START('___cc:reg04')
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
          do k = 1, fxo%rnp0
             i = fxo%cndx0_l(k,1)
             j = fxo%cndx0_l(k,2)
+            if((i + cg%my%kx - 1 == fg%my%zeroIX) .or. (i + cg%my%kx - 1 == fg%my%zeroIX + fg%my%bigNX - 2)) cycle
 #ifndef SINGLE_A2A
             fxc(i,j) = xcbuf(k)
 #else
             fxc(i,j) = ycbuf(fxo%rmap0(k))
 #endif
          end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
          do k = 1, fyo%rnp0
             i = fyo%cndx0_l(k,1)
             j = fyo%cndx0_l(k,2)
+            if((j + cg%my%ky - 1 == fg%my%zeroIY) .or. (j + cg%my%ky - 1 == fg%my%zeroIY + fg%my%bigNY - 2)) cycle
 #ifndef SINGLE_A2A
             fyc(i,j) = ycbuf(k)
 #else
             fyc(i,j) = ycbuf(fyo%rmap0(k))
 #endif
          end do
+TIMER_STOP('___cc:reg04')
 ! === USE_MPI_ALLTOALLV ========================================================
 #endif
 #endif
       end if
 ! === copy2coarse for hz =======================================================
       if(c2p_all == 1) then
-         hzc => cg%wave_field%hz
+         if(timenest /= 1) then
+            hzc => cg%wave_field%hz
 
-         hzf => fg%wave_field%hz
+            hzf => fg%wave_field%hz
+         else
+            hzc => cg%wave_field%hz_b
+
+            hzf => fg%wave_field%hz_b
+         end if
 
          hzo => fg%hzo
 
@@ -1809,13 +1953,22 @@ contains
          if(mode == HGT) then
 #ifndef MPI
 #ifndef __NEC__
+#ifndef USE_GPU
 !$omp parallel
 !$omp do private(i, j, ic, jc, tmp, i_, j_)
+#else
+!$omp target teams distribute parallel do private(i,j,ic,jc,tmp,i_,j_)
+#endif
 !cdir nodep
             do k = 1, hzo%np
 #else
+#ifdef USE_GPU
+            write(0,'(a)') 'ERROR! __NEC__ is NOT supported on GPU!'; stop
+#endif
+#ifndef USE_GPU
 !$omp parallel
 !$omp do private(i, j, ic, jc, tmp, i_, j_, k)
+#endif
             do k_ = 1, hzo%np, blksz
 !$NEC ivdep
                do k = k_, min(k_+blksz-1,hzo%np)
@@ -1848,15 +2001,24 @@ contains
                end do
 #endif
             end do
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 #else
 #ifndef USE_ALLTOALLV
+#ifndef USE_GPU
 !$omp parallel
 !$omp single
+#endif
             zfbuf => hzo%fb
             zcbuf => hzo%cb
+#ifndef USE_GPU
 !$omp end single
 !$omp do
+#endif
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
             do k = 1, hzo%np
                zfbuf(k) = 0.0d0
                zcbuf(k) = 0.0d0
@@ -1864,7 +2026,11 @@ contains
             !*==============*
             !*  fine2buf    * must not read from edges.
             !*==============*
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j, tmp, i_, j_)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j,tmp,i_,j_)
+#endif
             do k = 1, hzo%np
                ix = hzo%fndx(k,1)
                iy = hzo%fndx(k,2)
@@ -1885,7 +2051,11 @@ contains
             !*==============*
             !*  allreduce   *
             !*==============*
+#ifndef USE_GPU
 !$omp single
+#else
+!$omp target data use_device_ptr(zfbuf,zcbuf)
+#endif
             call MPI_Allreduce(zfbuf, zcbuf, hzo%np, REAL_MPI, MPI_SUM, __MPICOMM__, ierr)
             if(ierr /= 0) then
                select case (ierr)
@@ -1904,11 +2074,19 @@ contains
                end select
                call fatal_error(ierr)
             end if
+#ifndef USE_GPU
 !$omp end single
+#else
+!$omp end target data
+#endif
             !*==============*
             !*  buf2coarce  * must write to edges.
             !*==============*
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
             do k = 1, hzo%np
                ix = hzo%cndx0(k,1)
                iy = hzo%cndx0(k,2)
@@ -1925,7 +2103,9 @@ contains
                   end if
                end if
             end do
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 #else
 ! === USE_MPI_ALLTOALLV ========================================================
             zfbuf => hzo%fb
@@ -1933,7 +2113,12 @@ contains
             !*==============*
             !*  fine2buf    * must not read from edges.
             !*==============*
+TIMER_START('___cc:reg05')
+#ifndef USE_GPU
 !$omp parallel do private(i, j, tmp, i_, j_)
+#else
+!$omp target teams distribute parallel do private(i,j,tmp,i_,j_)
+#endif
             do k = 1, hzo%snp0
                i = hzo%fndx0_l(k,1)
                j = hzo%fndx0_l(k,2)
@@ -1951,20 +2136,36 @@ contains
                end do
                zfbuf(k) = tmp/9.0d0
             end do
+TIMER_STOP('___cc:reg05')
             !*==============*
             !*  alltoallv   *
             !*==============*
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___cc:reg06')
 #ifndef A2A3D
+#ifdef USE_GPU
+!$omp target data use_device_ptr(zfbuf,zcbuf)
+#endif
             call MPI_Alltoallv(zfbuf, hzo%sendcnts0, hzo%sdispls0, REAL_MPI, &
                                zcbuf, hzo%recvcnts0, hzo%rdispls0, REAL_MPI, __MPICOMM__, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 #else
             call A2A3D_execute(hzo%snp0, zfbuf, hzo%rnp0, zcbuf, hzo%handler0)
 #endif
+TIMER_STOP('___cc:reg06')
             !*==============*
             !*  buf2coarce  * must write to edges.
             !*==============*
 !$NEC ivdep
 !cdir nodep
+TIMER_START('___cc:reg07')
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
             do k = 1, hzo%rnp0
                i = hzo%cndx0_l(k,1)
                j = hzo%cndx0_l(k,2)
@@ -1977,6 +2178,7 @@ contains
                   end if
                end if
             end do
+TIMER_STOP('___cc:reg07')
 ! === USE_MPI_ALLTOALLV ========================================================
 #endif
 #endif
@@ -1987,12 +2189,13 @@ contains
       return
    end subroutine copy2coarse
 
-   subroutine interp2fine(mode,cg,fg)
+   subroutine interp2fine(mode,cg,fg,neststep)
 #ifdef USE_ALLTOALLV
 #ifdef A2A3D
       use mod_a2a3d
 #endif
 #endif
+      integer(kind=4), intent(in) :: neststep
       integer(kind=4), intent(in) :: mode
       type(data_grids), target, intent(inout) :: cg, fg
 
@@ -2054,20 +2257,42 @@ contains
 #ifndef NONESTDEBUG
       integer(kind=4), pointer, dimension(:,:) :: wodc, noi2f
 #endif
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: fxold, fyold, hzold
+      real(kind=REAL_BYTE), pointer, dimension(:,:) :: fxdiff, fydiff, hzdiff
    
-      fxc => cg%wave_field%fx
-      fyc => cg%wave_field%fy
-      hzc => cg%wave_field%hz
+      if(timenest /= 1) then
+         fxc => cg%wave_field%fx
+         fyc => cg%wave_field%fy
+         hzc => cg%wave_field%hz
+      else
+         fxc => cg%wave_field%fx_b
+         fyc => cg%wave_field%fy_b
+         hzc => cg%wave_field%hz_b
+      end if
       dzc => cg%depth_field%dz
 
-      fxf => fg%wave_field%fx
-      fyf => fg%wave_field%fy
-      hzf => fg%wave_field%hz
+      if(timenest /= 1) then
+         fxf => fg%wave_field%fx
+         fyf => fg%wave_field%fy
+         hzf => fg%wave_field%hz
+      else
+         fxf => fg%wave_field%fx_b
+         fyf => fg%wave_field%fy_b
+         hzf => fg%wave_field%hz_b
+      end if
       dzf => fg%depth_field%dz
 
       fxi => fg%fxi
       fyi => fg%fyi
       hzi => fg%hzi
+      if(timenest == 1) then
+         fxold  => fg%wave_field%fx_i2f0
+         fyold  => fg%wave_field%fy_i2f0
+         hzold  => fg%wave_field%hz_i2f0
+         fxdiff => fg%wave_field%fx_i2f1
+         fydiff => fg%wave_field%fy_i2f1
+         hzdiff => fg%wave_field%hz_i2f1
+      end if
 
 #ifndef NONESTDEBUG
       wodc => cg%wod_flags
@@ -2076,1319 +2301,2843 @@ contains
 
       if(mode == VEL) then
 #ifndef MPI
+         if(neststep == 0) then
+            if(timenest == 1) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -1, 1
+                  do i = -2, fg%my%nx+1
+                     fxold(i,j) = fxf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+1
+                  do i = -2, fg%my%nx+1
+                     fxold(i,j) = fxf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = 2, fg%my%ny-1
+                  do i = -2, 0
+                     fxold(i,j) = fxf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = 2, fg%my%ny-1
+                  do i = fg%my%nx, fg%my%nx+1
+                     fxold(i,j) = fxf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -2, fg%my%ny+1
+                  do i = -1, 1
+                     fyold(i,j) = fyf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -2, fg%my%ny+1
+                  do i = fg%my%nx, fg%my%nx+1
+                     fyold(i,j) = fyf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -2, 0
+                 do i = 2, fg%my%nx-1
+                     fyold(i,j) = fyf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+1
+                  do i = 2, fg%my%nx-1
+                     fyold(i,j) = fyf(i,j)
+                  end do
+               end do
+            end if
+#ifndef USE_GPU
 !$omp parallel
 !$omp do
-         do k = 1, fxi%np
-            fxf(fxi%fndx(k,1),fxi%fndx(k,2)) = &
-               fxc(fxi%cndx0(k,1),fxi%cndx0(k,2))*fxi%wt0(k) + &
-               fxc(fxi%cndx1(k,1),fxi%cndx1(k,2))*fxi%wt1(k)
-         end do
+#else
+!$omp target teams distribute parallel do
+#endif
+            do k = 1, fxi%np
+               fxf(fxi%fndx(k,1),fxi%fndx(k,2)) = &
+                  fxc(fxi%cndx0(k,1),fxi%cndx0(k,2))*fxi%wt0(k) + &
+                  fxc(fxi%cndx1(k,1),fxi%cndx1(k,2))*fxi%wt1(k)
+            end do
+#ifndef USE_GPU
 !$omp do
-         do k = 1, fyi%np
-            fyf(fyi%fndx(k,1),fyi%fndx(k,2)) = &
-               fyc(fyi%cndx0(k,1),fyi%cndx0(k,2))*fyi%wt0(k) + &
-               fyc(fyi%cndx1(k,1),fyi%cndx1(k,2))*fyi%wt1(k)
-         end do
+#else
+!$omp target teams distribute parallel do
+#endif
+            do k = 1, fyi%np
+               fyf(fyi%fndx(k,1),fyi%fndx(k,2)) = &
+                  fyc(fyi%cndx0(k,1),fyi%cndx0(k,2))*fyi%wt0(k) + &
+                  fyc(fyi%cndx1(k,1),fyi%cndx1(k,2))*fyi%wt1(k)
+            end do
+#ifndef USE_GPU
 !$omp end parallel
-! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
-         lfac = 1.0d0/REAL_FUNC(fg%my%nr)
-
-!$NEC ivdep
-         do j = 1, fg%my%ny-1
-            imod = mod(j-1,fg%my%nr)
-            ind0 = j - imod
-            ind1 = ind0 + fg%my%nr
-            fac0 = 1.0d0 - imod*lfac
-            fac1 = 1.0d0 - fac0
-            fxf(0,       j) = fxf(0,       ind0)*fac0 + fxf(0,       ind1)*fac1
-            fxf(fg%my%nx,j) = fxf(fg%my%nx,ind0)*fac0 + fxf(fg%my%nx,ind1)*fac1
-         end do
-
-!$NEC ivdep
-         do i = 1, fg%my%nx-1
-            imod = mod(i-1,fg%my%nr)
-            ind0 = i - imod
-            ind1 = ind0 + fg%my%nr
-            fac0 = 1.0d0 - imod*lfac
-            fac1 = 1.0d0 - fac0
-            fyf(i,0)        = fyf(ind0,0       )*fac0 + fyf(ind1,0       )*fac1
-            fyf(i,fg%my%ny) = fyf(ind0,fg%my%ny)*fac0 + fyf(ind1,fg%my%ny)*fac1
-         end do
-! ==============================================================================
-         t0 = 1.0d0/REAL_FUNC(fg%my%nr)
-         t1 = 1.0d0 - t0
-         do i = 0, fg%my%nx
-            fxf(i,0) = fxf(i,0)*t0 + fxf(i,1)*t1
-         end do
-         do j = 0, fg%my%ny
-            fyf(0,j) = fyf(0,j)*t0 + fyf(1,j)*t1
-         end do
-! === Upwind3 ==================================================================
-         nx = fg%my%nx
-         ny = fg%my%ny
-
-         fac0 = lfac
-         fac1 = 1.0d0 - fac0
-         fxf(1,      -1) = fxf(1,     -1)*fac0 + fxf(2,   -1)*fac1
-         fxf(1,    ny+1) = fxf(1,   ny+1)*fac0 + fxf(2, ny+1)*fac1
-         fxf(nx-1,   -1) = fxf(nx-2,  -1)*fac1 + fxf(nx,  -1)*fac0
-         fxf(nx-1, ny+1) = fxf(nx-2,ny+1)*fac1 + fxf(nx,ny+1)*fac0
-         fxf(nx,     -1) = fxf(nx-2,  -1)*fac0 + fxf(nx,  -1)*fac1
-         fxf(nx,   ny+1) = fxf(nx-2,ny+1)*fac0 + fxf(nx,ny+1)*fac1
-!$NEC ivdep
-         do i = 2, nx - fg%my%nr
-            imod = mod(i-2,fg%my%nr)
-            ind0 = i - imod
-            ind1 = ind0 + fg%my%nr
-            fac0 = 1.0d0 - imod*lfac
-            fac1 = 1.0d0 - fac0
-            fxf(i,  -1) = fxf(ind0,  -1)*fac0 + fxf(ind1,  -1)*fac1
-            fxf(i,ny+1) = fxf(ind0,ny+1)*fac0 + fxf(ind1,ny+1)*fac1
-         end do
-
-!$NEC ivdep
-         do j = 1, ny - 1
-            imod = mod(j-1,fg%my%nr)
-            ind0 = j - imod
-            ind1 = ind0 + fg%my%nr
-            fac0 = 1.0d0 - imod*lfac
-            fac1 = 1.0d0 - fac0
-            fxf(-2,j) = fxf(-2,ind0)*fac0 + fxf(-2,ind1)*fac1
-         end do
-
-         fac0 = lfac
-         fac1 = 1.0d0 - fac0
-         fyf(-1,      1) = fyf(-1,     1)*fac0 + fyf(-1,   2)*fac1
-         fyf(nx+1,    1) = fyf(nx+1,   1)*fac0 + fyf(nx+1, 2)*fac1
-         fyf(-1,   ny-1) = fyf(-1,  ny-2)*fac1 + fyf(-1,  ny)*fac0
-         fyf(nx+1, ny-1) = fyf(nx+1,ny-2)*fac1 + fyf(nx+1,ny)*fac0
-         fyf(-1,     ny) = fyf(-1,  ny-2)*fac0 + fyf(-1,  ny)*fac1
-         fyf(nx+1,   ny) = fyf(nx+1,ny-2)*fac0 + fyf(nx+1,ny)*fac1
-!$NEC ivdep
-         do j = 2, ny - fg%my%nr
-            imod = mod(j-2,fg%my%nr)
-            ind0 = j - imod
-            ind1 = ind0 + fg%my%nr
-            fac0 = 1.0d0 - imod*lfac
-            fac1 = 1.0d0 - fac0
-            fyf(-1,  j) = fyf(-1,  ind0)*fac0 + fyf(-1,  ind1)*fac1
-            fyf(nx+1,j) = fyf(nx+1,ind0)*fac0 + fyf(nx+1,ind1)*fac1
-         end do
-
-!$NEC ivdep
-         do i = 1, nx - 1
-            imod = mod(i-1,fg%my%nr)
-            ind0 = i - imod
-            ind1 = ind0 + fg%my%nr
-            fac0 = 1.0d0 - imod*lfac
-            fac1 = 1.0d0 - fac0
-            fyf(i,-2) = fyf(ind0,-2)*fac0 + fyf(ind1,-2)*fac1
-         end do
-! ==============================================================================
-#else
-#ifndef USE_ALLTOALLV
-!$omp parallel
-!$omp single
-         xfbuf => fxi%fb
-         xcbuf => fxi%cb
-!$omp end single
-!$omp do
-         do k = 1, fxi%np+fyi%np
-            xfbuf(k) = 0.0d0
-            xcbuf(k) = 0.0d0
-         end do
-         !*==============*
-         !*  coarse2buf  * must not read from edges
-         !*==============*
-!$omp do private(ix, iy, i, j)
-         do k = 1, fxi%np
-            ix = fxi%cndx0(k,1)
-            iy = fxi%cndx0(k,2)
-            if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
-               i = ix - cg%my%kx + 1 ! with edges 
-               j = iy - cg%my%ky + 1 ! with edges
-               xcbuf(k) = xcbuf(k) + fxc(i,j)*fxi%wt0(k)
-            end if
-         end do
-!$omp do private(ix, iy, i, j)
-         do k = 1, fxi%np
-            ix = fxi%cndx1(k,1)
-            iy = fxi%cndx1(k,2)
-            if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
-               i = ix - cg%my%kx + 1 ! with edges 
-               j = iy - cg%my%ky + 1 ! with edges 
-               xcbuf(k) = xcbuf(k) + fxc(i,j)*fxi%wt1(k)
-            end if
-         end do
-!$omp do private(ix, iy, i, j)
-         do k = 1, fyi%np
-            ix = fyi%cndx0(k,1)
-            iy = fyi%cndx0(k,2)
-            if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
-               i = ix - cg%my%kx + 1 ! with edges 
-               j = iy - cg%my%ky + 1 ! with edges 
-               xcbuf(fxi%np+k) = xcbuf(fxi%np+k) + fyc(i,j)*fyi%wt0(k)
-            end if
-         end do
-!$omp do private(ix, iy, i, j)
-         do k = 1, fyi%np
-            ix = fyi%cndx1(k,1)
-            iy = fyi%cndx1(k,2)
-            if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
-               i = ix - cg%my%kx + 1 ! with edges 
-               j = iy - cg%my%ky + 1 ! with edges 
-               xcbuf(fxi%np+k) = xcbuf(fxi%np+k) + fyc(i,j)*fyi%wt1(k)
-            end if
-         end do
-         !*==============*
-         !*  allreduce   *
-         !*==============*
-!$omp single
-         call MPI_Allreduce(xcbuf, xfbuf, fxi%np+fyi%np, REAL_MPI, MPI_SUM, __MPICOMM__, ierr)
-         if(ierr /= 0) then
-            select case (ierr)
-               case(MPI_ERR_BUFFER)
-                  write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-               case(MPI_ERR_COUNT)
-                  write(0,'(a)') 'MPI Error : Invalid count argument'
-               case(MPI_ERR_TYPE)
-                  write(0,'(a)') 'MPI Error : Invalid datatype argument'
-               case(MPI_ERR_OP)
-                  write(0,'(a)') 'MPI Error : Invalid operation'
-               case(MPI_ERR_COMM)
-                  write(0,'(a)') 'MPI Error : Invalid communicator'
-               case default
-                  write(0,'(a)') 'MPI Error : Unknown error'
-            end select
-            call fatal_error(ierr)
-         end if
-!$omp end single
-         !*==============*
-         !*  buf2fine    * write to edges
-         !*==============*
-!$omp single
-         ixst = fg%my%kx
-         iyst = fg%my%ky
-! === Upwind3 ==================================================================
-!        if(iand(fg%my%has_boundary, WEST_BOUND)  /= 0) ixst = -1
-!        if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) iyst = 0
-         if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ixst = -2
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) iyst = -1
-         ixen = fg%my%kxend
-         iyen = fg%my%kyend
-         if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ixen = fg%my%kxend+1
-         if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) iyen = fg%my%kyend+1
-! ==============================================================================
-!$omp end single
-!$omp do private(ix, iy, i, j)
-         do k = 1, fxi%np
-            ix = fxi%fndx(k,1)
-            iy = fxi%fndx(k,2)
-! === Upwind3 ==================================================================
-!           if(ixst <= ix .and. ix <= fg%my%kxend .and. iyst <= iy .and. iy <= fg%my%kyend) then
-            if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
-! ==============================================================================
-               i = ix - fg%my%kx + 1 ! with edges
-               j = iy - fg%my%ky + 1 ! with edges
-               fxf(i,j) = xfbuf(k)
-            end if
-         end do
-!$omp single
-         ixst = fg%my%kx
-         iyst = fg%my%ky
-! === Upwind3 ==================================================================
-!        if(iand(fg%my%has_boundary, WEST_BOUND)  /= 0) ixst = 0
-!        if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) iyst = -1
-         if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ixst = -1
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) iyst = -2
-         ixen = fg%my%kxend
-         iyen = fg%my%kyend
-         if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ixen = fg%my%kxend+1
-         if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) iyen = fg%my%kyend+1
-! ==============================================================================
-!$omp end single
-!$omp do private(ix, iy, i, j)
-         do k = 1, fyi%np
-            ix = fyi%fndx(k,1)
-            iy = fyi%fndx(k,2)
-! === Upwind3 ==================================================================
-!           if(ixst <= ix .and. ix <= fg%my%kxend .and. iyst <= iy .and. iy <= fg%my%kyend) then
-            if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
-! ==============================================================================
-               i = ix - fg%my%kx + 1 ! with edges
-               j = iy - fg%my%ky + 1 ! with edges
-               fyf(i,j) = xfbuf(fxi%np+k)
-            end if
-         end do
-!$omp end parallel
-#else
-! === USE_MPI_ALLTOALLV ========================================================
-#ifndef SINGLE_A2A
-         xfbuf0 => fxi%fb0
-         xfbuf1 => fxi%fb1
-         xcbuf0 => fxi%cb0
-         xcbuf1 => fxi%cb1
-         yfbuf0 => fyi%fb0
-         yfbuf1 => fyi%fb1
-         ycbuf0 => fyi%cb0
-         ycbuf1 => fyi%cb1
-#else
-         yfbuf1 => fyi%fb1
-         ycbuf1 => fyi%cb1
-#endif
-         !*==============*
-         !*  coarse2buf  * must not read from edges
-         !*==============*
-         do k = 1, fxi%snp0
-            i = fxi%cndx0_l(k,1)
-            j = fxi%cndx0_l(k,2)
-#ifndef SINGLE_A2A
-            xcbuf0(k) = fxc(i,j)*fxi%wt0_l(k)
-#else
-            ycbuf1(fxi%smap0(k)) = fxc(i,j)*fxi%wt0_l(k)
-#endif
-         end do
-         do k = 1, fxi%snp1
-            i = fxi%cndx1_l(k,1)
-            j = fxi%cndx1_l(k,2)
-#ifndef SINGLE_A2A
-            xcbuf1(k) = fxc(i,j)*fxi%wt1_l(k)
-#else
-            ycbuf1(fxi%smap1(k)) = fxc(i,j)*fxi%wt1_l(k)
-#endif
-         end do
-         do k = 1, fyi%snp0
-            i = fyi%cndx0_l(k,1)
-            j = fyi%cndx0_l(k,2)
-#ifndef SINGLE_A2A
-            ycbuf0(k) = fyc(i,j)*fyi%wt0_l(k)
-#else
-            ycbuf1(fyi%smap0(k)) = fyc(i,j)*fyi%wt0_l(k)
-#endif
-         end do
-         do k = 1, fyi%snp1
-            i = fyi%cndx1_l(k,1)
-            j = fyi%cndx1_l(k,2)
-#ifndef SINGLE_A2A
-            ycbuf1(k) = fyc(i,j)*fyi%wt1_l(k)
-#else
-            ycbuf1(fyi%smap1(k)) = fyc(i,j)*fyi%wt1_l(k)
-#endif
-         end do
-         !*==============*
-         !*  alltoallv   *
-         !*==============*
-#ifndef A2A3D
-#ifndef SINGLE_A2A
-         call MPI_Alltoallv(xcbuf0, fxi%sendcnts0, fxi%sdispls0, REAL_MPI, &
-                            xfbuf0, fxi%recvcnts0, fxi%rdispls0, REAL_MPI, __MPICOMM__, ierr)
-         call MPI_Alltoallv(xcbuf1, fxi%sendcnts1, fxi%sdispls1, REAL_MPI, &
-                            xfbuf1, fxi%recvcnts1, fxi%rdispls1, REAL_MPI, __MPICOMM__, ierr)
-         call MPI_Alltoallv(ycbuf0, fyi%sendcnts0, fyi%sdispls0, REAL_MPI, &
-                            yfbuf0, fyi%recvcnts0, fyi%rdispls0, REAL_MPI, __MPICOMM__, ierr)
-#endif
-         call MPI_Alltoallv(ycbuf1, fyi%sendcnts1, fyi%sdispls1, REAL_MPI, &
-                            yfbuf1, fyi%recvcnts1, fyi%rdispls1, REAL_MPI, __MPICOMM__, ierr)
-#else
-#ifndef SINGLE_A2A
-         call A2A3D_execute(fxi%snp0, xcbuf0, fxi%rnp0, xfbuf0, fxi%handler0)
-         call A2A3D_execute(fxi%snp1, xcbuf1, fxi%rnp1, xfbuf1, fxi%handler1)
-         call A2A3D_execute(fyi%snp0, ycbuf0, fyi%rnp0, yfbuf0, fyi%handler0)
-         call A2A3D_execute(fyi%snp1, ycbuf1, fyi%rnp1, yfbuf1, fyi%handler1)
-#else
-         call A2A3D_execute(fxi%snp0+fxi%snp1+fyi%snp0+fyi%snp1, ycbuf1, &
-                            fxi%rnp0+fxi%rnp1+fyi%rnp0+fyi%rnp1, yfbuf1, fyi%handler1)
-#endif
-#endif
-         !*==============*
-         !*  buf2fine    * write to edges
-         !*==============*
-         do k = 1, fxi%rnp0
-            i = fxi%fndx0_l(k,1)
-            j = fxi%fndx0_l(k,2)
-#ifndef SINGLE_A2A
-            fxf(i,j) = xfbuf0(k)
-#else
-            fxf(i,j) = yfbuf1(fxi%rmap0(k))
-#endif
-         end do
-!$NEC ivdep
-         do k = 1, fxi%rnp1
-            i = fxi%fndx1_l(k,1)
-            j = fxi%fndx1_l(k,2)
-#ifndef SINGLE_A2A
-            fxf(i,j) = fxf(i,j) + xfbuf1(k)
-#else
-            fxf(i,j) = fxf(i,j) + yfbuf1(fxi%rmap1(k))
-#endif
-         end do
-         do k = 1, fyi%rnp0
-            i = fyi%fndx0_l(k,1)
-            j = fyi%fndx0_l(k,2)
-#ifndef SINGLE_A2A
-            fyf(i,j) = yfbuf0(k)
-#else
-            fyf(i,j) = yfbuf1(fyi%rmap0(k))
-#endif
-         end do
-!$NEC ivdep
-         do k = 1, fyi%rnp1
-            i = fyi%fndx1_l(k,1)
-            j = fyi%fndx1_l(k,2)
-#ifndef SINGLE_A2A
-            fyf(i,j) = fyf(i,j) + yfbuf1(k)
-#else
-            fyf(i,j) = fyf(i,j) + yfbuf1(fyi%rmap1(k))
-#endif
-         end do
-! === USE_MPI_ALLTOALLV ========================================================
 #endif
 ! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
-         lfac = 1.0d0/REAL_FUNC(fg%my%nr)
+            lfac = 1.0d0/REAL_FUNC(fg%my%nr)
 
-         nx = fg%my%nx
-         ny = fg%my%ny
-         px = fg%my%px
-         py = fg%my%py
-         rx = fg%my%rx
-         ry = fg%my%ry
-         north_rank = (ry-1)*px+rx
-         south_rank = (ry+1)*px+rx
-         east_rank = ry*px+rx+1
-         west_rank = ry*px+rx-1
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) north_rank = MPI_PROC_NULL
-         if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) south_rank = MPI_PROC_NULL
-         if(iand(fg%my%has_boundary, EAST_BOUND)  /= 0) east_rank  = MPI_PROC_NULL
-         if(iand(fg%my%has_boundary, WEST_BOUND)  /= 0) west_rank  = MPI_PROC_NULL
-
-         ! Num. of shift indices to first element has a value.
-         shift_st = mod(fg%my%nr-mod(fg%my%iy-1,fg%my%nr),fg%my%nr)
-! === Upwind3 ==================================================================
-         shift_st2 = mod(fg%my%nr-mod(fg%my%iy-1,fg%my%nr)+1,fg%my%nr)
-! ==============================================================================
-         ! Num. of shift indices to last element has a value.
-         shift_en = mod(fg%my%iyend-1,fg%my%nr)
-! === Upwind3 ==================================================================
-!        shift_en2 = mod(fg%my%iyend,fg%my%nr)
-         shift_en2 = mod(fg%my%iyend-2,fg%my%nr)
-! ==============================================================================
-
-         if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
-            jst = 1        + shift_st
-            jen = fg%my%ny - shift_en
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst = jst + 1
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen = jen - 1
-! === Upwind3 ==================================================================
-            jst2 = 1        + shift_st2
-            jen2 = fg%my%ny - shift_en2
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst2 = jst2 + 1
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
-! ==============================================================================
-! === Upwind3 ==================================================================
-            call MPI_Irecv(recv_from_n, 3, REAL_MPI, north_rank, 0, __MPICOMM__, ireq11(1), ierr)
-            call MPI_Irecv(recv_from_s, 3, REAL_MPI, south_rank, 0, __MPICOMM__, ireq21(1), ierr)
-            send_to_n(1) = fxf(0, jst)
-            send_to_n(2) = fxf(-2,jst)
-            send_to_n(3) = fyf(-1,jst2)
-            call MPI_Isend(send_to_n, 3, REAL_MPI, north_rank, 0, __MPICOMM__, ireq11(2), ierr)
-            send_to_s(1) = fxf(0, jen)
-            send_to_s(2) = fxf(-2,jen)
-            send_to_s(3) = fyf(-1,jen2)
-            call MPI_Isend(send_to_s, 3, REAL_MPI, south_rank, 0, __MPICOMM__, ireq21(2), ierr)
-! ==============================================================================
-         end if
-
-         if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
-            jst = 1        + shift_st
-            jen = fg%my%ny - shift_en
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst = jst + 1
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen = jen - 1
-! === Upwind3 ==================================================================
-            jst2 = 1        + shift_st2
-            jen2 = fg%my%ny - shift_en2
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst2 = jst2 + 1
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
-! ==============================================================================
-! === Upwind3 ==================================================================
-            call MPI_Irecv(recv_from_n, 2, REAL_MPI, north_rank, 1, __MPICOMM__, ireq12(1), ierr)
-            call MPI_Irecv(recv_from_s, 2, REAL_MPI, south_rank, 1, __MPICOMM__, ireq22(1), ierr)
-            send_to_n(1) = fxf(fg%my%nx,  jst)
-            send_to_n(2) = fyf(fg%my%nx+1,jst2)
-            call MPI_Isend(send_to_n, 2, REAL_MPI, north_rank, 1, __MPICOMM__, ireq12(2), ierr)
-            send_to_s(1) = fxf(fg%my%nx,  jen)
-            send_to_s(2) = fyf(fg%my%nx+1,jen2)
-            call MPI_Isend(send_to_s, 2, REAL_MPI, south_rank, 1, __MPICOMM__, ireq22(2), ierr)
-! ==============================================================================
-         end if
-         
-         ! Num. of shift indices to first element has a value.
-         shift_st = mod(fg%my%nr-mod(fg%my%ix-1,fg%my%nr),fg%my%nr)
-! === Upwind3 ==================================================================
-         shift_st2 = mod(fg%my%nr-mod(fg%my%ix-1,fg%my%nr)+1,fg%my%nr)
-! ==============================================================================
-         ! Num. of shift indices to last element has a value.
-         shift_en = mod(fg%my%ixend-1,fg%my%nr)
-! === Upwind3 ==================================================================
-!        shift_en2 = mod(fg%my%ixend,fg%my%nr)
-         shift_en2 = mod(fg%my%ixend-2,fg%my%nr)
-! ==============================================================================
-
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
-            ist = 1        + shift_st
-            ien = fg%my%nx - shift_en
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist = ist + 1
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien = ien - 1
-! === Upwind3 ==================================================================
-            ist2 = 1        + shift_st2
-            ien2 = fg%my%nx - shift_en2
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist2 = ist2 + 1
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
-! ==============================================================================
-! === Upwind3 ==================================================================
-            call MPI_Irecv(recv_from_w, 3, REAL_MPI, west_rank, 2, __MPICOMM__, ireq13(1), ierr)
-            call MPI_Irecv(recv_from_e, 3, REAL_MPI, east_rank, 2, __MPICOMM__, ireq23(1), ierr)
-            send_to_w(1) = fyf(ist, 0)
-            send_to_w(2) = fxf(ist2,-1)
-            send_to_w(3) = fyf(ist,-2)
-            call MPI_Isend(send_to_w, 3, REAL_MPI, west_rank, 2, __MPICOMM__, ireq13(2), ierr)
-            send_to_e(1) = fyf(ien, 0)
-            send_to_e(2) = fxf(ien2,-1)
-            send_to_e(3) = fyf(ien,-2)
-            call MPI_Isend(send_to_e, 3, REAL_MPI, east_rank, 2, __MPICOMM__, ireq23(2), ierr)
-! ==============================================================================
-         end if
-
-         if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
-            ist = 1        + shift_st
-            ien = fg%my%nx - shift_en
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist = ist + 1
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien = ien - 1
-! === Upwind3 ==================================================================
-            ist2 = 1        + shift_st2
-            ien2 = fg%my%nx - shift_en2
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist2 = ist2 + 1
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
-! ==============================================================================
-! === Upwind3 ==================================================================
-            call MPI_Irecv(recv_from_w, 2, REAL_MPI, west_rank, 3, __MPICOMM__, ireq14(1), ierr)
-            call MPI_Irecv(recv_from_e, 2, REAL_MPI, east_rank, 3, __MPICOMM__, ireq24(1), ierr)
-            send_to_w(1) = fyf(ist,  fg%my%ny)
-            send_to_w(2) = fxf(ist2,fg%my%ny+1)
-            call MPI_Isend(send_to_w, 2, REAL_MPI, west_rank, 3, __MPICOMM__, ireq14(2), ierr)
-            send_to_e(1) = fyf(ien,  fg%my%ny)
-            send_to_e(2) = fxf(ien2,fg%my%ny+1)
-            call MPI_Isend(send_to_e, 2, REAL_MPI, east_rank, 3, __MPICOMM__, ireq24(2), ierr)
-! ==============================================================================
-         end if
-
-         ! Num. of shift indices to first element has a value.
-         shift_st = mod(fg%my%nr-mod(fg%my%iy-1,fg%my%nr),fg%my%nr)
-! === Upwind3 ==================================================================
-         shift_st2 = mod(fg%my%nr-mod(fg%my%iy-1,fg%my%nr)+1,fg%my%nr)
-! ==============================================================================
-         ! Num. of shift indices to last element has a value.
-         shift_en = mod(fg%my%iyend-1,fg%my%nr)
-! === Upwind3 ==================================================================
-!        shift_en2 = mod(fg%my%iyend,fg%my%nr)
-         shift_en2 = mod(fg%my%iyend-2,fg%my%nr)
-! ==============================================================================
-
-         if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
-            jst = 1        + shift_st
-            jen = fg%my%ny - shift_en
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst = jst + 1
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen = jen - 1
-! === Upwind3 ==================================================================
-            jst2 = 1        + shift_st2
-            jen2 = fg%my%ny - shift_en2
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst2 = jst2 + 1
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
-! ==============================================================================
-
-            ! Calc. others.
 !$NEC ivdep
-            do j = jst, jen-1
-               iy = j + fg%my%ky - 1
-               imod = mod(iy-1,fg%my%nr)
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(imod,ind0,ind1,fac0,fac1)
+#endif
+            do j = 1, fg%my%ny-1
+               imod = mod(j-1,fg%my%nr)
                ind0 = j - imod
                ind1 = ind0 + fg%my%nr
                fac0 = 1.0d0 - imod*lfac
                fac1 = 1.0d0 - fac0
                fxf(0,       j) = fxf(0,       ind0)*fac0 + fxf(0,       ind1)*fac1
-! === Upwind3 ==================================================================
-               fxf(-2,      j) = fxf(-2,      ind0)*fac0 + fxf(-2,      ind1)*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-!$NEC ivdep
-            do j = jst2, jen2-1
-               iy = j + fg%my%ky - 1
-               imod = mod(iy-2,fg%my%nr)
-               ind0 = j - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-               fyf(-1,      j) = fyf(-1,      ind0)*fac0 + fyf(-1,      ind1)*fac1
-            end do
-! ==============================================================================
-
-            ! Calc. north boundary elemnts.
-            call MPI_Waitall(2, ireq11, stat11, ierr)
-!$NEC ivdep
-            do j = jst-shift_st, jst-1
-               iy = j + fg%my%ky - 1
-               imod = mod(iy-1,fg%my%nr)
-               ind0 = j - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-! === Upwind3 ==================================================================
-!              fxf(0,       j) = recv_from_n*fac0 + fxf(0,       ind1)*fac1
-               fxf(0,       j) = recv_from_n(1)*fac0 + fxf(0,       ind1)*fac1
-               fxf(-2,      j) = recv_from_n(2)*fac0 + fxf(-2,      ind1)*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) then
-!$NEC ivdep
-               do j = jst2-shift_st2, jst2-1
-                  iy = j + fg%my%ky - 1
-                  imod = mod(iy-2,fg%my%nr)
-                  ind0 = j - imod
-                  ind1 = ind0 + fg%my%nr
-                  fac0 = 1.0d0 - imod*lfac
-                  fac1 = 1.0d0 - fac0
-                  fyf(-1,      j) = recv_from_n(3)*fac0 + fyf(-1,      ind1)*fac1
-               end do
-            end if
-! ==============================================================================
-            ! Calc. south boundary elemnts.
-            call MPI_Waitall(2, ireq21, stat21, ierr)
-!$NEC ivdep
-            do j = jen+1, jen+shift_en
-               iy = j + fg%my%ky - 1
-               imod = mod(iy-1,fg%my%nr)
-               ind0 = j - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-! === Upwind3 ==================================================================
-!              fxf(0,       j) = fxf(0,       ind0)*fac0 + recv_from_s*fac1
-               fxf(0,       j) = fxf(0,       ind0)*fac0 + recv_from_s(1)*fac1
-               fxf(-2,      j) = fxf(-2,      ind0)*fac0 + recv_from_s(2)*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) then
-!$NEC ivdep
-               do j = jen2+1, jen2+shift_en2
-                  iy = j + fg%my%ky - 1
-                  imod = mod(iy-2,fg%my%nr)
-                  ind0 = j - imod
-                  ind1 = ind0 + fg%my%nr
-                  fac0 = 1.0d0 - imod*lfac
-                  fac1 = 1.0d0 - fac0
-                  fyf(-1,      j) = fyf(-1,      ind0)*fac0 + recv_from_s(3)*fac1
-               end do
-            end if
-! ==============================================================================
-         end if
-
-         if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
-            jst = 1        + shift_st
-            jen = fg%my%ny - shift_en
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst = jst + 1
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen = jen - 1
-! === Upwind3 ==================================================================
-            jst2 = 1        + shift_st2
-            jen2 = fg%my%ny - shift_en2
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst2 = jst2 + 1
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
-! ==============================================================================
-
-            ! Calc. others.
-!$NEC ivdep
-            do j = jst, jen-1
-               iy = j + fg%my%ky - 1
-               imod = mod(iy-1,fg%my%nr)
-               ind0 = j - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
                fxf(fg%my%nx,j) = fxf(fg%my%nx,ind0)*fac0 + fxf(fg%my%nx,ind1)*fac1
             end do
-! === Upwind3 ==================================================================
-!$NEC ivdep
-            do j = jst2, jen2-1
-               iy = j + fg%my%ky - 1
-               imod = mod(iy-2,fg%my%nr)
-               ind0 = j - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-               fyf(fg%my%nx+1,j) = fyf(fg%my%nx+1,ind0)*fac0 + fyf(fg%my%nx+1,ind1)*fac1
-            end do
-! ==============================================================================
 
-            ! Calc. north boundary elemnts.
-            call MPI_Waitall(2, ireq12, stat12, ierr)
 !$NEC ivdep
-            do j = jst-shift_st, jst-1
-               iy = j + fg%my%ky - 1
-               imod = mod(iy-1,fg%my%nr)
-               ind0 = j - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-! === Upwind3 ==================================================================
-!              fxf(fg%my%nx,j) = recv_from_n*fac0 + fxf(fg%my%nx,ind1)*fac1
-               fxf(fg%my%nx,  j) = recv_from_n(1)*fac0 + fxf(fg%my%nx,  ind1)*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-            if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) then
-!$NEC ivdep
-               do j = jst2-shift_st2, jst2-1
-                  iy = j + fg%my%ky - 1
-                  imod = mod(iy-2,fg%my%nr)
-                  ind0 = j - imod
-                  ind1 = ind0 + fg%my%nr
-                  fac0 = 1.0d0 - imod*lfac
-                  fac1 = 1.0d0 - fac0
-                  fyf(fg%my%nx+1,j) = recv_from_n(2)*fac0 + fyf(fg%my%nx+1,ind1)*fac1
-               end do
-            end if
-! ==============================================================================
-            ! Calc. south boundary elemnts.
-            call MPI_Waitall(2, ireq22, stat22, ierr)
-!$NEC ivdep
-            do j = jen+1, jen+shift_en
-               iy = j + fg%my%ky - 1
-               imod = mod(iy-1,fg%my%nr)
-               ind0 = j - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-! === Upwind3 ==================================================================
-!              fxf(fg%my%nx,j) = fxf(fg%my%nx,ind0)*fac0 + recv_from_s*fac1
-               fxf(fg%my%nx,  j) = fxf(fg%my%nx,  ind0)*fac0 + recv_from_s(1)*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-            if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) then
-!$NEC ivdep
-               do j = jen2+1, jen2+shift_en2
-                  iy = j + fg%my%ky - 1
-                  imod = mod(iy-2,fg%my%nr)
-                  ind0 = j - imod
-                  ind1 = ind0 + fg%my%nr
-                  fac0 = 1.0d0 - imod*lfac
-                  fac1 = 1.0d0 - fac0
-                  fyf(fg%my%nx+1,j) = fyf(fg%my%nx+1,ind0)*fac0 + recv_from_s(2)*fac1
-               end do
-            end if
-! ==============================================================================
-         end if
-         
-         ! Num. of shift indices to first element has a value.
-         shift_st = mod(fg%my%nr-mod(fg%my%ix-1,fg%my%nr),fg%my%nr)
-! === Upwind3 ==================================================================
-         shift_st2 = mod(fg%my%nr-mod(fg%my%ix-1,fg%my%nr)+1,fg%my%nr)
-! ==============================================================================
-         ! Num. of shift indices to last element has a value.
-         shift_en = mod(fg%my%ixend-1,fg%my%nr)
-! === Upwind3 ==================================================================
-!        shift_en2 = mod(fg%my%ixend,fg%my%nr)
-         shift_en2 = mod(fg%my%ixend-2,fg%my%nr)
-! ==============================================================================
-
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
-            ist = 1        + shift_st
-            ien = fg%my%nx - shift_en
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist = ist + 1
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien = ien - 1
-! === Upwind3 ==================================================================
-            ist2 = 1        + shift_st2
-            ien2 = fg%my%nx - shift_en2
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist2 = ist2 + 1
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
-! ==============================================================================
-
-            ! Calc. others.
-!$NEC ivdep
-            do i = ist, ien-1
-               ix = i + fg%my%kx - 1
-               imod = mod(ix-1,fg%my%nr)
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(imod,ind0,ind1,fac0,fac1)
+#endif
+            do i = 1, fg%my%nx-1
+               imod = mod(i-1,fg%my%nr)
                ind0 = i - imod
                ind1 = ind0 + fg%my%nr
                fac0 = 1.0d0 - imod*lfac
                fac1 = 1.0d0 - fac0
                fyf(i,0)        = fyf(ind0,0       )*fac0 + fyf(ind1,0       )*fac1
-! === Upwind3 ==================================================================
-               fyf(i,-2)       = fyf(ind0,-2      )*fac0 + fyf(ind1,-2      )*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-!$NEC ivdep
-            do i = ist2, ien2-1
-               ix = i + fg%my%kx - 1
-               imod = mod(ix-2,fg%my%nr)
-               ind0 = i - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-               fxf(i,-1)       = fxf(ind0,-1      )*fac0 + fxf(ind1,-1      )*fac1
-            end do
-! ==============================================================================
-
-            ! Calc. west boundary elemnts.
-            call MPI_Waitall(2, ireq13, stat13, ierr)
-!$NEC ivdep
-            do i = ist-shift_st, ist-1
-               ix = i + fg%my%kx - 1
-               imod = mod(ix-1,fg%my%nr)
-               ind0 = i - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-! === Upwind3 ==================================================================
-!              fyf(i,0)        = recv_from_w*fac0 + fyf(ind1,0       )*fac1
-               fyf(i,0)        = recv_from_w(1)*fac0 + fyf(ind1,0       )*fac1
-               fyf(i,-2)       = recv_from_w(3)*fac0 + fyf(ind1,-2      )*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) then
-!$NEC ivdep
-               do i = ist2-shift_st2, ist2-1
-                  ix = i + fg%my%kx - 1
-                  imod = mod(ix-2,fg%my%nr)
-                  ind0 = i - imod
-                  ind1 = ind0 + fg%my%nr
-                  fac0 = 1.0d0 - imod*lfac
-                  fac1 = 1.0d0 - fac0
-                  fxf(i,-1)       = recv_from_w(2)*fac0 + fxf(ind1,-1      )*fac1
-               end do
-            end if
-! ==============================================================================
-            ! Calc. east boundary elemnts.
-            call MPI_Waitall(2, ireq23, stat23, ierr)
-!$NEC ivdep
-            do i = ien+1, ien+shift_en
-               ix = i + fg%my%kx - 1
-               imod = mod(ix-1,fg%my%nr)
-               ind0 = i - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-! === Upwind3 ==================================================================
-!              fyf(i,0)        = fyf(ind0,0       )*fac0 + recv_from_e*fac1
-               fyf(i,0)        = fyf(ind0,0       )*fac0 + recv_from_e(1)*fac1
-               fyf(i,-2)       = fyf(ind0,-2      )*fac0 + recv_from_e(3)*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) then
-!$NEC ivdep
-               do i = ien2+1, ien2+shift_en2
-                  ix = i + fg%my%kx - 1
-                  imod = mod(ix-2,fg%my%nr)
-                  ind0 = i - imod
-                  ind1 = ind0 + fg%my%nr
-                  fac0 = 1.0d0 - imod*lfac
-                  fac1 = 1.0d0 - fac0
-                  fxf(i,-1)       = fxf(ind0,-1      )*fac0 + recv_from_e(2)*fac1
-               end do
-            end if
-! ==============================================================================
-         end if
-
-         if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
-            ist = 1        + shift_st
-            ien = fg%my%nx - shift_en
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist = ist + 1
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien = ien - 1
-! === Upwind3 ==================================================================
-            ist2 = 1        + shift_st2
-            ien2 = fg%my%nx - shift_en2
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist2 = ist2 + 1
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
-! ==============================================================================
-
-            ! Calc. others.
-!$NEC ivdep
-            do i = ist, ien-1
-               ix = i + fg%my%kx - 1
-               imod = mod(ix-1,fg%my%nr)
-               ind0 = i - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
                fyf(i,fg%my%ny) = fyf(ind0,fg%my%ny)*fac0 + fyf(ind1,fg%my%ny)*fac1
             end do
-! === Upwind3 ==================================================================
-!$NEC ivdep
-            do i = ist2, ien2-1
-               ix = i + fg%my%kx - 1
-               imod = mod(ix-2,fg%my%nr)
-               ind0 = i - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-               fxf(i,fg%my%ny+1) = fxf(ind0,fg%my%ny+1)*fac0 + fxf(ind1,fg%my%ny+1)*fac1
-            end do
 ! ==============================================================================
-
-            ! Calc. west boundary elemnts.
-            call MPI_Waitall(2, ireq14, stat14, ierr)
-!$NEC ivdep
-            do i = ist-shift_st, ist-1
-               ix = i + fg%my%kx - 1
-               imod = mod(ix-1,fg%my%nr)
-               ind0 = i - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-! === Upwind3 ==================================================================
-!              fyf(i,fg%my%ny) = recv_from_w*fac0 + fyf(ind1,fg%my%ny)*fac1
-               fyf(i  ,fg%my%ny) = recv_from_w(1)*fac0 + fyf(  ind1,fg%my%ny)*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-            if(iand(fg%my%has_boundary, WEST_BOUND) == 0) then
-!$NEC ivdep
-               do i = ist2-shift_st2, ist2-1
-                  ix = i + fg%my%kx - 1
-                  imod = mod(ix-2,fg%my%nr)
-                  ind0 = i - imod
-                  ind1 = ind0 + fg%my%nr
-                  fac0 = 1.0d0 - imod*lfac
-                  fac1 = 1.0d0 - fac0
-                  fxf(i,fg%my%ny+1) = recv_from_w(2)*fac0 + fxf(ind1,fg%my%ny+1)*fac1
-               end do
-            end if
-! ==============================================================================
-            ! Calc. east boundary elemnts.
-            call MPI_Waitall(2, ireq24, stat24, ierr)
-!$NEC ivdep
-            do i = ien+1, ien+shift_en
-               ix = i + fg%my%kx - 1
-               imod = mod(ix-1,fg%my%nr)
-               ind0 = i - imod
-               ind1 = ind0 + fg%my%nr
-               fac0 = 1.0d0 - imod*lfac
-               fac1 = 1.0d0 - fac0
-! === Upwind3 ==================================================================
-!              fyf(i,fg%my%ny) = fyf(ind0,fg%my%ny)*fac0 + recv_from_e*fac1
-               fyf(i,  fg%my%ny) = fyf(ind0,  fg%my%ny)*fac0 + recv_from_e(1)*fac1
-! ==============================================================================
-            end do
-! === Upwind3 ==================================================================
-            if(iand(fg%my%has_boundary, EAST_BOUND) == 0) then
-!$NEC ivdep
-               do i = ien2+1, ien2+shift_en2
-                  ix = i + fg%my%kx - 1
-                  imod = mod(ix-2,fg%my%nr)
-                  ind0 = i - imod
-                  ind1 = ind0 + fg%my%nr
-                  fac0 = 1.0d0 - imod*lfac
-                  fac1 = 1.0d0 - fac0
-                  fxf(i,fg%my%ny+1) = fxf(ind0,fg%my%ny+1)*fac0 + recv_from_e(2)*fac1
-               end do
-            end if
-! ==============================================================================
-         end if
-! ==============================================================================
-         t0 = 1.0d0/REAL_FUNC(fg%my%nr)
-         t1 = 1.0d0 - t0
-
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
-            ist = 1
-            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = 0
-            do i = ist, fg%my%nx
+            t0 = 1.0d0/REAL_FUNC(fg%my%nr)
+            t1 = 1.0d0 - t0
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
+            do i = 0, fg%my%nx
                fxf(i,0) = fxf(i,0)*t0 + fxf(i,1)*t1
             end do
-         end if
-
-         if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
-            jst = 1
-            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 0
-            do j = jst, fg%my%ny
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
+            do j = 0, fg%my%ny
                fyf(0,j) = fyf(0,j)*t0 + fyf(1,j)*t1
             end do
-         end if
 ! === Upwind3 ==================================================================
-         nx = fg%my%nx
-         ny = fg%my%ny
+            nx = fg%my%nx
+            ny = fg%my%ny
 
-         fac0 = lfac
-         fac1 = 1.0d0 - fac0
+            fac0 = lfac
+            fac1 = 1.0d0 - fac0
+#ifdef USE_GPU
+!$omp target
+#endif
+            fxf(1,      -1) = fxf(1,     -1)*fac0 + fxf(2,   -1)*fac1
+            fxf(1,    ny+1) = fxf(1,   ny+1)*fac0 + fxf(2, ny+1)*fac1
+            fxf(nx-1,   -1) = fxf(nx-2,  -1)*fac1 + fxf(nx,  -1)*fac0
+            fxf(nx-1, ny+1) = fxf(nx-2,ny+1)*fac1 + fxf(nx,ny+1)*fac0
+            fxf(nx,     -1) = fxf(nx-2,  -1)*fac0 + fxf(nx,  -1)*fac1
+            fxf(nx,   ny+1) = fxf(nx-2,ny+1)*fac0 + fxf(nx,ny+1)*fac1
+#ifdef USE_GPU
+!$omp end target
+#endif
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(imod,ind0,ind1,fac0,fac1)
+#endif
+            do i = 2, nx - fg%my%nr
+               imod = mod(i-2,fg%my%nr)
+               ind0 = i - imod
+               ind1 = ind0 + fg%my%nr
+               fac0 = 1.0d0 - imod*lfac
+               fac1 = 1.0d0 - fac0
+               fxf(i,  -1) = fxf(ind0,  -1)*fac0 + fxf(ind1,  -1)*fac1
+               fxf(i,ny+1) = fxf(ind0,ny+1)*fac0 + fxf(ind1,ny+1)*fac1
+            end do
 
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
-            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
-               fxf(1,  -1) = fxf(1, -1)*fac0 + fxf(2, -1)*fac1
-               fyf(-1,  1) = fyf(-1, 1)*fac0 + fyf(-1, 2)*fac1
-            end if
-            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
-               fxf(nx-1, -1) = fxf(nx-2, -1)*fac1 + fxf(nx,  -1)*fac0
-               fxf(nx,   -1) = fxf(nx-2, -1)*fac0 + fxf(nx,  -1)*fac1
-               fyf(nx+1,  1) = fyf(nx+1,  1)*fac0 + fyf(nx+1, 2)*fac1
-            end if
-         end if
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(imod,ind0,ind1,fac0,fac1)
+#endif
+            do j = 1, ny - 1
+               imod = mod(j-1,fg%my%nr)
+               ind0 = j - imod
+               ind1 = ind0 + fg%my%nr
+               fac0 = 1.0d0 - imod*lfac
+               fac1 = 1.0d0 - fac0
+               fxf(-2,j) = fxf(-2,ind0)*fac0 + fxf(-2,ind1)*fac1
+            end do
 
-         if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
-            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
-               fxf(1,    ny+1) = fxf(1,   ny+1)*fac0 + fxf(2, ny+1)*fac1
-               fyf(-1,   ny-1) = fyf(-1,  ny-2)*fac1 + fyf(-1,  ny)*fac0
-               fyf(-1,     ny) = fyf(-1,  ny-2)*fac0 + fyf(-1,  ny)*fac1
-            end if
-            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
-               fxf(nx-1, ny+1) = fxf(nx-2,ny+1)*fac1 + fxf(nx,ny+1)*fac0
-               fxf(nx,   ny+1) = fxf(nx-2,ny+1)*fac0 + fxf(nx,ny+1)*fac1
-               fyf(nx+1, ny-1) = fyf(nx+1,ny-2)*fac1 + fyf(nx+1,ny)*fac0
-               fyf(nx+1,   ny) = fyf(nx+1,ny-2)*fac0 + fyf(nx+1,ny)*fac1
-            end if
-         end if
+            fac0 = lfac
+            fac1 = 1.0d0 - fac0
+#ifdef USE_GPU
+!$omp target
+#endif
+            fyf(-1,      1) = fyf(-1,     1)*fac0 + fyf(-1,   2)*fac1
+            fyf(nx+1,    1) = fyf(nx+1,   1)*fac0 + fyf(nx+1, 2)*fac1
+            fyf(-1,   ny-1) = fyf(-1,  ny-2)*fac1 + fyf(-1,  ny)*fac0
+            fyf(nx+1, ny-1) = fyf(nx+1,ny-2)*fac1 + fyf(nx+1,ny)*fac0
+            fyf(-1,     ny) = fyf(-1,  ny-2)*fac0 + fyf(-1,  ny)*fac1
+            fyf(nx+1,   ny) = fyf(nx+1,ny-2)*fac0 + fyf(nx+1,ny)*fac1
+#ifdef USE_GPU
+!$omp end target
+#endif
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(imod,ind0,ind1,fac0,fac1)
+#endif
+            do j = 2, ny - fg%my%nr
+               imod = mod(j-2,fg%my%nr)
+               ind0 = j - imod
+               ind1 = ind0 + fg%my%nr
+               fac0 = 1.0d0 - imod*lfac
+               fac1 = 1.0d0 - fac0
+               fyf(-1,  j) = fyf(-1,  ind0)*fac0 + fyf(-1,  ind1)*fac1
+               fyf(nx+1,j) = fyf(nx+1,ind0)*fac0 + fyf(nx+1,ind1)*fac1
+            end do
+
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(imod,ind0,ind1,fac0,fac1)
+#endif
+            do i = 1, nx - 1
+               imod = mod(i-1,fg%my%nr)
+               ind0 = i - imod
+               ind1 = ind0 + fg%my%nr
+               fac0 = 1.0d0 - imod*lfac
+               fac1 = 1.0d0 - fac0
+               fyf(i,-2) = fyf(ind0,-2)*fac0 + fyf(ind1,-2)*fac1
+            end do
 ! ==============================================================================
+            if(timenest == 1) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -1, 1
+                  do i = -2, fg%my%nx+1
+                     fxdiff(i,j) = fxf(i,j) - fxold(i,j)
+                     fxf(i,j) = fxold(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+1
+                  do i = -2, fg%my%nx+1
+                     fxdiff(i,j) = fxf(i,j) - fxold(i,j)
+                     fxf(i,j) = fxold(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = 2, fg%my%ny-1
+                  do i = -2, 0
+                     fxdiff(i,j) = fxf(i,j) - fxold(i,j)
+                     fxf(i,j) = fxold(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = 2, fg%my%ny-1
+                  do i = fg%my%nx, fg%my%nx+1
+                     fxdiff(i,j) = fxf(i,j) - fxold(i,j)
+                     fxf(i,j) = fxold(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -2, fg%my%ny+1
+                  do i = -1, 1
+                     fydiff(i,j) = fyf(i,j) - fyold(i,j)
+                     fyf(i,j) = fyold(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -2, fg%my%ny+1
+                  do i = fg%my%nx, fg%my%nx+1
+                     fydiff(i,j) = fyf(i,j) - fyold(i,j)
+                     fyf(i,j) = fyold(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -2, 0
+                 do i = 2, fg%my%nx-1
+                     fydiff(i,j) = fyf(i,j) - fyold(i,j)
+                     fyf(i,j) = fyold(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+1
+                  do i = 2, fg%my%nx-1
+                     fydiff(i,j) = fyf(i,j) - fyold(i,j)
+                     fyf(i,j) = fyold(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+         else if(neststep == 1) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -1, 1
+               do i = -2, fg%my%nx+1
+                  fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = fg%my%ny, fg%my%ny+1
+               do i = -2, fg%my%nx+1
+                  fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 2, fg%my%ny-1
+               do i = -2, 0
+                  fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 2, fg%my%ny-1
+               do i = fg%my%nx, fg%my%nx+1
+                  fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -2, fg%my%ny+1
+               do i = -1, 1
+                  fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -2, fg%my%ny+1
+               do i = fg%my%nx, fg%my%nx+1
+                  fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -2, 0
+              do i = 2, fg%my%nx-1
+                  fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = fg%my%ny, fg%my%ny+1
+               do i = 2, fg%my%nx-1
+                  fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+               end do
+            end do
+         else if(neststep == 2) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -1, 1
+               do i = -2, fg%my%nx+1
+                  fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = fg%my%ny, fg%my%ny+1
+               do i = -2, fg%my%nx+1
+                  fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 2, fg%my%ny-1
+               do i = -2, 0
+                  fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 2, fg%my%ny-1
+               do i = fg%my%nx, fg%my%nx+1
+                  fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -2, fg%my%ny+1
+               do i = -1, 1
+                  fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -2, fg%my%ny+1
+               do i = fg%my%nx, fg%my%nx+1
+                  fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -2, 0
+              do i = 2, fg%my%nx-1
+                  fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = fg%my%ny, fg%my%ny+1
+               do i = 2, fg%my%nx-1
+                  fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+               end do
+            end do
+         end if
+#else
+         if(neststep == 0) then
+            if(timenest == 1) then
+TIMER_START('___if:reg01')
+               ist = -1
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -2
+               ien = fg%my%nx + 1
+
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = -1, 1
+                     do i = ist, ien
+                        fxold(i,j) = fxf(i,j)
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = fg%my%ny, fg%my%ny+1
+                     do i = ist, ien
+                        fxold(i,j) = fxf(i,j)
+                     end do
+                  end do
+               end if
+
+               jst = 0
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 2
+               jen = fg%my%ny + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%ny-1
+
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = -1, 0
+                        fxold(i,j) = fxf(i,j)
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = fg%my%nx, fg%my%nx+1
+                        fxold(i,j) = fxf(i,j)
+                     end do
+                  end do
+               end if
+
+               jst = -1
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = -2
+               jen = fg%my%ny + 1
+
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = -1, 1
+                        fyold(i,j) = fyf(i,j)
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = fg%my%nx, fg%my%nx+1
+                        fyold(i,j) = fyf(i,j)
+                     end do
+                  end do
+               end if
+
+               ist = 0
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = 2
+               ien = fg%my%nx + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ien = fg%my%nx - 1
+
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = -2, 0
+                     do i = ist, ien
+                        fyold(i,j) = fyf(i,j)
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = fg%my%ny, fg%my%ny+1
+                     do i = ist, ien
+                        fyold(i,j) = fyf(i,j)
+                     end do
+                  end do
+               end if
+TIMER_STOP('___if:reg01')
+            end if
+#ifndef USE_ALLTOALLV
+#ifndef USE_GPU
+!$omp parallel
+!$omp single
+#endif
+            xfbuf => fxi%fb
+            xcbuf => fxi%cb
+#ifndef USE_GPU
+!$omp end single
+!$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
+            do k = 1, fxi%np+fyi%np
+               xfbuf(k) = 0.0d0
+               xcbuf(k) = 0.0d0
+            end do
+            !*==============*
+            !*  coarse2buf  * must not read from edges
+            !*==============*
+#ifndef USE_GPU
+!$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
+            do k = 1, fxi%np
+               ix = fxi%cndx0(k,1)
+               iy = fxi%cndx0(k,2)
+               if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
+                  i = ix - cg%my%kx + 1 ! with edges 
+                  j = iy - cg%my%ky + 1 ! with edges
+                  xcbuf(k) = xcbuf(k) + fxc(i,j)*fxi%wt0(k)
+               end if
+            end do
+#ifndef USE_GPU
+!$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
+            do k = 1, fxi%np
+               ix = fxi%cndx1(k,1)
+               iy = fxi%cndx1(k,2)
+               if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
+                  i = ix - cg%my%kx + 1 ! with edges 
+                  j = iy - cg%my%ky + 1 ! with edges 
+                  xcbuf(k) = xcbuf(k) + fxc(i,j)*fxi%wt1(k)
+               end if
+            end do
+#ifndef USE_GPU
+!$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
+            do k = 1, fyi%np
+               ix = fyi%cndx0(k,1)
+               iy = fyi%cndx0(k,2)
+               if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
+                  i = ix - cg%my%kx + 1 ! with edges 
+                  j = iy - cg%my%ky + 1 ! with edges 
+                  xcbuf(fxi%np+k) = xcbuf(fxi%np+k) + fyc(i,j)*fyi%wt0(k)
+               end if
+            end do
+#ifndef USE_GPU
+!$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
+            do k = 1, fyi%np
+               ix = fyi%cndx1(k,1)
+               iy = fyi%cndx1(k,2)
+               if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
+                  i = ix - cg%my%kx + 1 ! with edges 
+                  j = iy - cg%my%ky + 1 ! with edges 
+                  xcbuf(fxi%np+k) = xcbuf(fxi%np+k) + fyc(i,j)*fyi%wt1(k)
+               end if
+            end do
+            !*==============*
+            !*  allreduce   *
+            !*==============*
+#ifndef USE_GPU
+!$omp single
+#endif
+#ifdef USE_GPU
+!$omp target data use_device_ptr(xcbuf,xfbuf)
+#endif
+            call MPI_Allreduce(xcbuf, xfbuf, fxi%np+fyi%np, REAL_MPI, MPI_SUM, __MPICOMM__, ierr)
+            if(ierr /= 0) then
+               select case (ierr)
+                  case(MPI_ERR_BUFFER)
+                     write(0,'(a)') 'MPI Error : Invalid buffer pointer'
+                  case(MPI_ERR_COUNT)
+                     write(0,'(a)') 'MPI Error : Invalid count argument'
+                  case(MPI_ERR_TYPE)
+                     write(0,'(a)') 'MPI Error : Invalid datatype argument'
+                  case(MPI_ERR_OP)
+                     write(0,'(a)') 'MPI Error : Invalid operation'
+                  case(MPI_ERR_COMM)
+                     write(0,'(a)') 'MPI Error : Invalid communicator'
+                  case default
+                     write(0,'(a)') 'MPI Error : Unknown error'
+               end select
+               call fatal_error(ierr)
+            end if
+#ifdef USE_GPU
+!$omp end target data
+#endif
+#ifndef USE_GPU
+!$omp end single
+#endif
+            !*==============*
+            !*  buf2fine    * write to edges
+            !*==============*
+#ifndef USE_GPU
+!$omp single
+#endif
+            ixst = fg%my%kx
+            iyst = fg%my%ky
+! === Upwind3 ==================================================================
+!        if(iand(fg%my%has_boundary, WEST_BOUND)  /= 0) ixst = -1
+!        if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) iyst = 0
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ixst = -2
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) iyst = -1
+            ixen = fg%my%kxend
+            iyen = fg%my%kyend
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ixen = fg%my%kxend+1
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) iyen = fg%my%kyend+1
+! ==============================================================================
+#ifndef USE_GPU
+!$omp end single
+!$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
+            do k = 1, fxi%np
+               ix = fxi%fndx(k,1)
+               iy = fxi%fndx(k,2)
+! === Upwind3 ==================================================================
+!           if(ixst <= ix .and. ix <= fg%my%kxend .and. iyst <= iy .and. iy <= fg%my%kyend) then
+               if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
+! ==============================================================================
+                  i = ix - fg%my%kx + 1 ! with edges
+                  j = iy - fg%my%ky + 1 ! with edges
+                  fxf(i,j) = xfbuf(k)
+               end if
+            end do
+#ifndef USE_GPU
+!$omp single
+#endif
+            ixst = fg%my%kx
+            iyst = fg%my%ky
+! === Upwind3 ==================================================================
+!        if(iand(fg%my%has_boundary, WEST_BOUND)  /= 0) ixst = 0
+!        if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) iyst = -1
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ixst = -1
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) iyst = -2
+            ixen = fg%my%kxend
+            iyen = fg%my%kyend
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ixen = fg%my%kxend+1
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) iyen = fg%my%kyend+1
+! ==============================================================================
+#ifndef USE_GPU
+!$omp end single
+!$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
+            do k = 1, fyi%np
+               ix = fyi%fndx(k,1)
+               iy = fyi%fndx(k,2)
+! === Upwind3 ==================================================================
+!           if(ixst <= ix .and. ix <= fg%my%kxend .and. iyst <= iy .and. iy <= fg%my%kyend) then
+               if(ixst <= ix .and. ix <= ixen .and. iyst <= iy .and. iy <= iyen) then
+! ==============================================================================
+                  i = ix - fg%my%kx + 1 ! with edges
+                  j = iy - fg%my%ky + 1 ! with edges
+                  fyf(i,j) = xfbuf(fxi%np+k)
+               end if
+            end do
+#ifndef USE_GPU
+!$omp end parallel
+#endif
+#else
+! === USE_MPI_ALLTOALLV ========================================================
+#ifndef SINGLE_A2A
+            xfbuf0 => fxi%fb0
+            xfbuf1 => fxi%fb1
+            xcbuf0 => fxi%cb0
+            xcbuf1 => fxi%cb1
+            yfbuf0 => fyi%fb0
+            yfbuf1 => fyi%fb1
+            ycbuf0 => fyi%cb0
+            ycbuf1 => fyi%cb1
+#else
+            yfbuf1 => fyi%fb1
+            ycbuf1 => fyi%cb1
+#endif
+            !*==============*
+            !*  coarse2buf  * must not read from edges
+            !*==============*
+TIMER_START('___if:reg02')
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, fxi%snp0
+               i = fxi%cndx0_l(k,1)
+               j = fxi%cndx0_l(k,2)
+#ifndef SINGLE_A2A
+               xcbuf0(k) = fxc(i,j)*fxi%wt0_l(k)
+#else
+               ycbuf1(fxi%smap0(k)) = fxc(i,j)*fxi%wt0_l(k)
+#endif
+            end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, fxi%snp1
+               i = fxi%cndx1_l(k,1)
+               j = fxi%cndx1_l(k,2)
+#ifndef SINGLE_A2A
+               xcbuf1(k) = fxc(i,j)*fxi%wt1_l(k)
+#else
+               ycbuf1(fxi%smap1(k)) = fxc(i,j)*fxi%wt1_l(k)
+#endif
+            end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, fyi%snp0
+               i = fyi%cndx0_l(k,1)
+               j = fyi%cndx0_l(k,2)
+#ifndef SINGLE_A2A
+               ycbuf0(k) = fyc(i,j)*fyi%wt0_l(k)
+#else
+               ycbuf1(fyi%smap0(k)) = fyc(i,j)*fyi%wt0_l(k)
+#endif
+            end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, fyi%snp1
+               i = fyi%cndx1_l(k,1)
+               j = fyi%cndx1_l(k,2)
+#ifndef SINGLE_A2A
+               ycbuf1(k) = fyc(i,j)*fyi%wt1_l(k)
+#else
+               ycbuf1(fyi%smap1(k)) = fyc(i,j)*fyi%wt1_l(k)
+#endif
+            end do
+TIMER_STOP('___if:reg02')
+            !*==============*
+            !*  alltoallv   *
+            !*==============*
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___if:reg03')
+#ifndef A2A3D
+#ifndef SINGLE_A2A
+#ifdef USE_GPU
+!$omp target data use_device_ptr(xcbuf0,xfbuf0,xcbuf1,xfbuf1,ycbuf0,yfbuf0)
+#endif
+            call MPI_Alltoallv(xcbuf0, fxi%sendcnts0, fxi%sdispls0, REAL_MPI, &
+                               xfbuf0, fxi%recvcnts0, fxi%rdispls0, REAL_MPI, __MPICOMM__, ierr)
+            call MPI_Alltoallv(xcbuf1, fxi%sendcnts1, fxi%sdispls1, REAL_MPI, &
+                               xfbuf1, fxi%recvcnts1, fxi%rdispls1, REAL_MPI, __MPICOMM__, ierr)
+            call MPI_Alltoallv(ycbuf0, fyi%sendcnts0, fyi%sdispls0, REAL_MPI, &
+                               yfbuf0, fyi%recvcnts0, fyi%rdispls0, REAL_MPI, __MPICOMM__, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+#endif
+#ifdef USE_GPU
+!$omp target data use_device_ptr(ycbuf1,yfbuf1)
+#endif
+            call MPI_Alltoallv(ycbuf1, fyi%sendcnts1, fyi%sdispls1, REAL_MPI, &
+                               yfbuf1, fyi%recvcnts1, fyi%rdispls1, REAL_MPI, __MPICOMM__, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
+#else
+#ifndef SINGLE_A2A
+            call A2A3D_execute(fxi%snp0, xcbuf0, fxi%rnp0, xfbuf0, fxi%handler0)
+            call A2A3D_execute(fxi%snp1, xcbuf1, fxi%rnp1, xfbuf1, fxi%handler1)
+            call A2A3D_execute(fyi%snp0, ycbuf0, fyi%rnp0, yfbuf0, fyi%handler0)
+            call A2A3D_execute(fyi%snp1, ycbuf1, fyi%rnp1, yfbuf1, fyi%handler1)
+#else
+            call A2A3D_execute(fxi%snp0+fxi%snp1+fyi%snp0+fyi%snp1, ycbuf1, &
+                               fxi%rnp0+fxi%rnp1+fyi%rnp0+fyi%rnp1, yfbuf1, fyi%handler1)
+#endif
+#endif
+TIMER_STOP('___if:reg03')
+            !*==============*
+            !*  buf2fine    * write to edges
+            !*==============*
+TIMER_START('___if:reg04')
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, fxi%rnp0
+               i = fxi%fndx0_l(k,1)
+               j = fxi%fndx0_l(k,2)
+#ifndef SINGLE_A2A
+               fxf(i,j) = xfbuf0(k)
+#else
+               fxf(i,j) = yfbuf1(fxi%rmap0(k))
+#endif
+            end do
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, fxi%rnp1
+               i = fxi%fndx1_l(k,1)
+               j = fxi%fndx1_l(k,2)
+#ifndef SINGLE_A2A
+               fxf(i,j) = fxf(i,j) + xfbuf1(k)
+#else
+               fxf(i,j) = fxf(i,j) + yfbuf1(fxi%rmap1(k))
+#endif
+            end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, fyi%rnp0
+               i = fyi%fndx0_l(k,1)
+               j = fyi%fndx0_l(k,2)
+#ifndef SINGLE_A2A
+               fyf(i,j) = yfbuf0(k)
+#else
+               fyf(i,j) = yfbuf1(fyi%rmap0(k))
+#endif
+            end do
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, fyi%rnp1
+               i = fyi%fndx1_l(k,1)
+               j = fyi%fndx1_l(k,2)
+#ifndef SINGLE_A2A
+               fyf(i,j) = fyf(i,j) + yfbuf1(k)
+#else
+               fyf(i,j) = fyf(i,j) + yfbuf1(fyi%rmap1(k))
+#endif
+            end do
+TIMER_STOP('___if:reg04')
+! === USE_MPI_ALLTOALLV ========================================================
+#endif
+! === DEBUG for wave height gap on nest boundary. 2012/10/30 ===================
+TIMER_START('___if:reg05')
+            lfac = 1.0d0/REAL_FUNC(fg%my%nr)
+
+            nx = fg%my%nx
+            ny = fg%my%ny
+            px = fg%my%px
+            py = fg%my%py
+            rx = fg%my%rx
+            ry = fg%my%ry
+            north_rank = (ry-1)*px+rx
+            south_rank = (ry+1)*px+rx
+            east_rank = ry*px+rx+1
+            west_rank = ry*px+rx-1
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) north_rank = MPI_PROC_NULL
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) south_rank = MPI_PROC_NULL
+            if(iand(fg%my%has_boundary, EAST_BOUND)  /= 0) east_rank  = MPI_PROC_NULL
+            if(iand(fg%my%has_boundary, WEST_BOUND)  /= 0) west_rank  = MPI_PROC_NULL
+
+            ! Num. of shift indices to first element has a value.
+            shift_st = mod(fg%my%nr-mod(fg%my%iy-1,fg%my%nr),fg%my%nr)
+! === Upwind3 ==================================================================
+            shift_st2 = mod(fg%my%nr-mod(fg%my%iy-1,fg%my%nr)+1,fg%my%nr)
+! ==============================================================================
+            ! Num. of shift indices to last element has a value.
+            shift_en = mod(fg%my%iyend-1,fg%my%nr)
+! === Upwind3 ==================================================================
+!        shift_en2 = mod(fg%my%iyend,fg%my%nr)
+            shift_en2 = mod(fg%my%iyend-2,fg%my%nr)
+! ==============================================================================
+
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+               jst = 1        + shift_st
+               jen = fg%my%ny - shift_en
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst = jst + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen = jen - 1
+! === Upwind3 ==================================================================
+               jst2 = 1        + shift_st2
+               jen2 = fg%my%ny - shift_en2
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst2 = jst2 + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
+! ==============================================================================
+! === Upwind3 ==================================================================
+               call MPI_Irecv(recv_from_n, 3, REAL_MPI, north_rank, 0, __MPICOMM__, ireq11(1), ierr)
+               call MPI_Irecv(recv_from_s, 3, REAL_MPI, south_rank, 0, __MPICOMM__, ireq21(1), ierr)
+#ifdef USE_GPU
+!$omp target
+#endif
+               send_to_n(1) = fxf(0, jst)
+               send_to_n(2) = fxf(-2,jst)
+               send_to_n(3) = fyf(-1,jst2)
+#ifdef USE_GPU
+!$omp end target
+#endif
+               call MPI_Isend(send_to_n, 3, REAL_MPI, north_rank, 0, __MPICOMM__, ireq11(2), ierr)
+#ifdef USE_GPU
+!$omp target
+#endif
+               send_to_s(1) = fxf(0, jen)
+               send_to_s(2) = fxf(-2,jen)
+               send_to_s(3) = fyf(-1,jen2)
+#ifdef USE_GPU
+!$omp end target
+#endif
+               call MPI_Isend(send_to_s, 3, REAL_MPI, south_rank, 0, __MPICOMM__, ireq21(2), ierr)
+! ==============================================================================
+            end if
+
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+               jst = 1        + shift_st
+               jen = fg%my%ny - shift_en
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst = jst + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen = jen - 1
+! === Upwind3 ==================================================================
+               jst2 = 1        + shift_st2
+               jen2 = fg%my%ny - shift_en2
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst2 = jst2 + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
+! ==============================================================================
+! === Upwind3 ==================================================================
+               call MPI_Irecv(recv_from_n, 2, REAL_MPI, north_rank, 1, __MPICOMM__, ireq12(1), ierr)
+               call MPI_Irecv(recv_from_s, 2, REAL_MPI, south_rank, 1, __MPICOMM__, ireq22(1), ierr)
+#ifdef USE_GPU
+!$omp target
+#endif
+               send_to_n(1) = fxf(fg%my%nx,  jst)
+               send_to_n(2) = fyf(fg%my%nx+1,jst2)
+#ifdef USE_GPU
+!$omp end target
+#endif
+               call MPI_Isend(send_to_n, 2, REAL_MPI, north_rank, 1, __MPICOMM__, ireq12(2), ierr)
+#ifdef USE_GPU
+!$omp target
+#endif
+               send_to_s(1) = fxf(fg%my%nx,  jen)
+               send_to_s(2) = fyf(fg%my%nx+1,jen2)
+#ifdef USE_GPU
+!$omp end target
+#endif
+               call MPI_Isend(send_to_s, 2, REAL_MPI, south_rank, 1, __MPICOMM__, ireq22(2), ierr)
+! ==============================================================================
+            end if
+            
+            ! Num. of shift indices to first element has a value.
+            shift_st = mod(fg%my%nr-mod(fg%my%ix-1,fg%my%nr),fg%my%nr)
+! === Upwind3 ==================================================================
+            shift_st2 = mod(fg%my%nr-mod(fg%my%ix-1,fg%my%nr)+1,fg%my%nr)
+! ==============================================================================
+            ! Num. of shift indices to last element has a value.
+            shift_en = mod(fg%my%ixend-1,fg%my%nr)
+! === Upwind3 ==================================================================
+!        shift_en2 = mod(fg%my%ixend,fg%my%nr)
+            shift_en2 = mod(fg%my%ixend-2,fg%my%nr)
+! ==============================================================================
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+               ist = 1        + shift_st
+               ien = fg%my%nx - shift_en
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist = ist + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien = ien - 1
+! === Upwind3 ==================================================================
+               ist2 = 1        + shift_st2
+               ien2 = fg%my%nx - shift_en2
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist2 = ist2 + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
+! ==============================================================================
+! === Upwind3 ==================================================================
+               call MPI_Irecv(recv_from_w, 3, REAL_MPI, west_rank, 2, __MPICOMM__, ireq13(1), ierr)
+               call MPI_Irecv(recv_from_e, 3, REAL_MPI, east_rank, 2, __MPICOMM__, ireq23(1), ierr)
+#ifdef USE_GPU
+!$omp target
+#endif
+               send_to_w(1) = fyf(ist, 0)
+               send_to_w(2) = fxf(ist2,-1)
+               send_to_w(3) = fyf(ist,-2)
+#ifdef USE_GPU
+!$omp end target
+#endif
+               call MPI_Isend(send_to_w, 3, REAL_MPI, west_rank, 2, __MPICOMM__, ireq13(2), ierr)
+#ifdef USE_GPU
+!$omp target
+#endif
+               send_to_e(1) = fyf(ien, 0)
+               send_to_e(2) = fxf(ien2,-1)
+               send_to_e(3) = fyf(ien,-2)
+#ifdef USE_GPU
+!$omp end target
+#endif
+               call MPI_Isend(send_to_e, 3, REAL_MPI, east_rank, 2, __MPICOMM__, ireq23(2), ierr)
+! ==============================================================================
+            end if
+
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+               ist = 1        + shift_st
+               ien = fg%my%nx - shift_en
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist = ist + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien = ien - 1
+! === Upwind3 ==================================================================
+               ist2 = 1        + shift_st2
+               ien2 = fg%my%nx - shift_en2
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist2 = ist2 + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
+! ==============================================================================
+! === Upwind3 ==================================================================
+               call MPI_Irecv(recv_from_w, 2, REAL_MPI, west_rank, 3, __MPICOMM__, ireq14(1), ierr)
+               call MPI_Irecv(recv_from_e, 2, REAL_MPI, east_rank, 3, __MPICOMM__, ireq24(1), ierr)
+#ifdef USE_GPU
+!$omp target
+#endif
+               send_to_w(1) = fyf(ist,  fg%my%ny)
+               send_to_w(2) = fxf(ist2,fg%my%ny+1)
+#ifdef USE_GPU
+!$omp end target
+#endif
+               call MPI_Isend(send_to_w, 2, REAL_MPI, west_rank, 3, __MPICOMM__, ireq14(2), ierr)
+#ifdef USE_GPU
+!$omp target
+#endif
+               send_to_e(1) = fyf(ien,  fg%my%ny)
+               send_to_e(2) = fxf(ien2,fg%my%ny+1)
+#ifdef USE_GPU
+!$omp end target
+#endif
+               call MPI_Isend(send_to_e, 2, REAL_MPI, east_rank, 3, __MPICOMM__, ireq24(2), ierr)
+! ==============================================================================
+            end if
+
+            ! Num. of shift indices to first element has a value.
+            shift_st = mod(fg%my%nr-mod(fg%my%iy-1,fg%my%nr),fg%my%nr)
+! === Upwind3 ==================================================================
+            shift_st2 = mod(fg%my%nr-mod(fg%my%iy-1,fg%my%nr)+1,fg%my%nr)
+! ==============================================================================
+            ! Num. of shift indices to last element has a value.
+            shift_en = mod(fg%my%iyend-1,fg%my%nr)
+! === Upwind3 ==================================================================
+!        shift_en2 = mod(fg%my%iyend,fg%my%nr)
+            shift_en2 = mod(fg%my%iyend-2,fg%my%nr)
+! ==============================================================================
+
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+               jst = 1        + shift_st
+               jen = fg%my%ny - shift_en
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst = jst + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen = jen - 1
+! === Upwind3 ==================================================================
+               jst2 = 1        + shift_st2
+               jen2 = fg%my%ny - shift_en2
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst2 = jst2 + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
+! ==============================================================================
+
+               ! Calc. others.
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+               do j = jst, jen-1
+                  iy = j + fg%my%ky - 1
+                  imod = mod(iy-1,fg%my%nr)
+                  ind0 = j - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+                  fxf(0,       j) = fxf(0,       ind0)*fac0 + fxf(0,       ind1)*fac1
+! === Upwind3 ==================================================================
+                  fxf(-2,      j) = fxf(-2,      ind0)*fac0 + fxf(-2,      ind1)*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+               do j = jst2, jen2-1
+                  iy = j + fg%my%ky - 1
+                  imod = mod(iy-2,fg%my%nr)
+                  ind0 = j - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+                  fyf(-1,      j) = fyf(-1,      ind0)*fac0 + fyf(-1,      ind1)*fac1
+               end do
+! ==============================================================================
+
+               ! Calc. north boundary elemnts.
+               call MPI_Waitall(2, ireq11, stat11, ierr)
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+               do j = jst-shift_st, jst-1
+                  iy = j + fg%my%ky - 1
+                  imod = mod(iy-1,fg%my%nr)
+                  ind0 = j - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+! === Upwind3 ==================================================================
+!              fxf(0,       j) = recv_from_n*fac0 + fxf(0,       ind1)*fac1
+                  fxf(0,       j) = recv_from_n(1)*fac0 + fxf(0,       ind1)*fac1
+                  fxf(-2,      j) = recv_from_n(2)*fac0 + fxf(-2,      ind1)*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) then
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+                  do j = jst2-shift_st2, jst2-1
+                     iy = j + fg%my%ky - 1
+                     imod = mod(iy-2,fg%my%nr)
+                     ind0 = j - imod
+                     ind1 = ind0 + fg%my%nr
+                     fac0 = 1.0d0 - imod*lfac
+                     fac1 = 1.0d0 - fac0
+                     fyf(-1,      j) = recv_from_n(3)*fac0 + fyf(-1,      ind1)*fac1
+                  end do
+               end if
+! ==============================================================================
+               ! Calc. south boundary elemnts.
+               call MPI_Waitall(2, ireq21, stat21, ierr)
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+               do j = jen+1, jen+shift_en
+                  iy = j + fg%my%ky - 1
+                  imod = mod(iy-1,fg%my%nr)
+                  ind0 = j - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+! === Upwind3 ==================================================================
+!              fxf(0,       j) = fxf(0,       ind0)*fac0 + recv_from_s*fac1
+                  fxf(0,       j) = fxf(0,       ind0)*fac0 + recv_from_s(1)*fac1
+                  fxf(-2,      j) = fxf(-2,      ind0)*fac0 + recv_from_s(2)*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) then
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+                  do j = jen2+1, jen2+shift_en2
+                     iy = j + fg%my%ky - 1
+                     imod = mod(iy-2,fg%my%nr)
+                     ind0 = j - imod
+                     ind1 = ind0 + fg%my%nr
+                     fac0 = 1.0d0 - imod*lfac
+                     fac1 = 1.0d0 - fac0
+                     fyf(-1,      j) = fyf(-1,      ind0)*fac0 + recv_from_s(3)*fac1
+                  end do
+               end if
+! ==============================================================================
+            end if
+
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+               jst = 1        + shift_st
+               jen = fg%my%ny - shift_en
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst = jst + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen = jen - 1
+! === Upwind3 ==================================================================
+               jst2 = 1        + shift_st2
+               jen2 = fg%my%ny - shift_en2
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) jst2 = jst2 + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
+! ==============================================================================
+
+               ! Calc. others.
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+               do j = jst, jen-1
+                  iy = j + fg%my%ky - 1
+                  imod = mod(iy-1,fg%my%nr)
+                  ind0 = j - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+                  fxf(fg%my%nx,j) = fxf(fg%my%nx,ind0)*fac0 + fxf(fg%my%nx,ind1)*fac1
+               end do
+! === Upwind3 ==================================================================
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+               do j = jst2, jen2-1
+                  iy = j + fg%my%ky - 1
+                  imod = mod(iy-2,fg%my%nr)
+                  ind0 = j - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+                  fyf(fg%my%nx+1,j) = fyf(fg%my%nx+1,ind0)*fac0 + fyf(fg%my%nx+1,ind1)*fac1
+               end do
+! ==============================================================================
+
+               ! Calc. north boundary elemnts.
+               call MPI_Waitall(2, ireq12, stat12, ierr)
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+               do j = jst-shift_st, jst-1
+                  iy = j + fg%my%ky - 1
+                  imod = mod(iy-1,fg%my%nr)
+                  ind0 = j - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+! === Upwind3 ==================================================================
+!              fxf(fg%my%nx,j) = recv_from_n*fac0 + fxf(fg%my%nx,ind1)*fac1
+                  fxf(fg%my%nx,  j) = recv_from_n(1)*fac0 + fxf(fg%my%nx,  ind1)*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+               if(iand(fg%my%has_boundary, NORTH_BOUND) == 0) then
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+                  do j = jst2-shift_st2, jst2-1
+                     iy = j + fg%my%ky - 1
+                     imod = mod(iy-2,fg%my%nr)
+                     ind0 = j - imod
+                     ind1 = ind0 + fg%my%nr
+                     fac0 = 1.0d0 - imod*lfac
+                     fac1 = 1.0d0 - fac0
+                     fyf(fg%my%nx+1,j) = recv_from_n(2)*fac0 + fyf(fg%my%nx+1,ind1)*fac1
+                  end do
+               end if
+! ==============================================================================
+               ! Calc. south boundary elemnts.
+               call MPI_Waitall(2, ireq22, stat22, ierr)
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+               do j = jen+1, jen+shift_en
+                  iy = j + fg%my%ky - 1
+                  imod = mod(iy-1,fg%my%nr)
+                  ind0 = j - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+! === Upwind3 ==================================================================
+!              fxf(fg%my%nx,j) = fxf(fg%my%nx,ind0)*fac0 + recv_from_s*fac1
+                  fxf(fg%my%nx,  j) = fxf(fg%my%nx,  ind0)*fac0 + recv_from_s(1)*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) then
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(iy,imod,ind0,ind1,fac0,fac1)
+#endif
+                  do j = jen2+1, jen2+shift_en2
+                     iy = j + fg%my%ky - 1
+                     imod = mod(iy-2,fg%my%nr)
+                     ind0 = j - imod
+                     ind1 = ind0 + fg%my%nr
+                     fac0 = 1.0d0 - imod*lfac
+                     fac1 = 1.0d0 - fac0
+                     fyf(fg%my%nx+1,j) = fyf(fg%my%nx+1,ind0)*fac0 + recv_from_s(2)*fac1
+                  end do
+               end if
+! ==============================================================================
+            end if
+            
+            ! Num. of shift indices to first element has a value.
+            shift_st = mod(fg%my%nr-mod(fg%my%ix-1,fg%my%nr),fg%my%nr)
+! === Upwind3 ==================================================================
+            shift_st2 = mod(fg%my%nr-mod(fg%my%ix-1,fg%my%nr)+1,fg%my%nr)
+! ==============================================================================
+            ! Num. of shift indices to last element has a value.
+            shift_en = mod(fg%my%ixend-1,fg%my%nr)
+! === Upwind3 ==================================================================
+!        shift_en2 = mod(fg%my%ixend,fg%my%nr)
+            shift_en2 = mod(fg%my%ixend-2,fg%my%nr)
+! ==============================================================================
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+               ist = 1        + shift_st
+               ien = fg%my%nx - shift_en
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist = ist + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien = ien - 1
+! === Upwind3 ==================================================================
+               ist2 = 1        + shift_st2
+               ien2 = fg%my%nx - shift_en2
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist2 = ist2 + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
+! ==============================================================================
+
+               ! Calc. others.
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+               do i = ist, ien-1
+                  ix = i + fg%my%kx - 1
+                  imod = mod(ix-1,fg%my%nr)
+                  ind0 = i - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+                  fyf(i,0)        = fyf(ind0,0       )*fac0 + fyf(ind1,0       )*fac1
+! === Upwind3 ==================================================================
+                  fyf(i,-2)       = fyf(ind0,-2      )*fac0 + fyf(ind1,-2      )*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+               do i = ist2, ien2-1
+                  ix = i + fg%my%kx - 1
+                  imod = mod(ix-2,fg%my%nr)
+                  ind0 = i - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+                  fxf(i,-1)       = fxf(ind0,-1      )*fac0 + fxf(ind1,-1      )*fac1
+               end do
+! ==============================================================================
+
+               ! Calc. west boundary elemnts.
+               call MPI_Waitall(2, ireq13, stat13, ierr)
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+               do i = ist-shift_st, ist-1
+                  ix = i + fg%my%kx - 1
+                  imod = mod(ix-1,fg%my%nr)
+                  ind0 = i - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+! === Upwind3 ==================================================================
+!              fyf(i,0)        = recv_from_w*fac0 + fyf(ind1,0       )*fac1
+                  fyf(i,0)        = recv_from_w(1)*fac0 + fyf(ind1,0       )*fac1
+                  fyf(i,-2)       = recv_from_w(3)*fac0 + fyf(ind1,-2      )*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) then
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+                  do i = ist2-shift_st2, ist2-1
+                     ix = i + fg%my%kx - 1
+                     imod = mod(ix-2,fg%my%nr)
+                     ind0 = i - imod
+                     ind1 = ind0 + fg%my%nr
+                     fac0 = 1.0d0 - imod*lfac
+                     fac1 = 1.0d0 - fac0
+                     fxf(i,-1)       = recv_from_w(2)*fac0 + fxf(ind1,-1      )*fac1
+                  end do
+               end if
+! ==============================================================================
+               ! Calc. east boundary elemnts.
+               call MPI_Waitall(2, ireq23, stat23, ierr)
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+               do i = ien+1, ien+shift_en
+                  ix = i + fg%my%kx - 1
+                  imod = mod(ix-1,fg%my%nr)
+                  ind0 = i - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+! === Upwind3 ==================================================================
+!              fyf(i,0)        = fyf(ind0,0       )*fac0 + recv_from_e*fac1
+                  fyf(i,0)        = fyf(ind0,0       )*fac0 + recv_from_e(1)*fac1
+                  fyf(i,-2)       = fyf(ind0,-2      )*fac0 + recv_from_e(3)*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) then
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+                  do i = ien2+1, ien2+shift_en2
+                     ix = i + fg%my%kx - 1
+                     imod = mod(ix-2,fg%my%nr)
+                     ind0 = i - imod
+                     ind1 = ind0 + fg%my%nr
+                     fac0 = 1.0d0 - imod*lfac
+                     fac1 = 1.0d0 - fac0
+                     fxf(i,-1)       = fxf(ind0,-1      )*fac0 + recv_from_e(2)*fac1
+                  end do
+               end if
+! ==============================================================================
+            end if
+
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+               ist = 1        + shift_st
+               ien = fg%my%nx - shift_en
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist = ist + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien = ien - 1
+! === Upwind3 ==================================================================
+               ist2 = 1        + shift_st2
+               ien2 = fg%my%nx - shift_en2
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) ist2 = ist2 + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
+! ==============================================================================
+
+               ! Calc. others.
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+               do i = ist, ien-1
+                  ix = i + fg%my%kx - 1
+                  imod = mod(ix-1,fg%my%nr)
+                  ind0 = i - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+                  fyf(i,fg%my%ny) = fyf(ind0,fg%my%ny)*fac0 + fyf(ind1,fg%my%ny)*fac1
+               end do
+! === Upwind3 ==================================================================
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+               do i = ist2, ien2-1
+                  ix = i + fg%my%kx - 1
+                  imod = mod(ix-2,fg%my%nr)
+                  ind0 = i - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+                  fxf(i,fg%my%ny+1) = fxf(ind0,fg%my%ny+1)*fac0 + fxf(ind1,fg%my%ny+1)*fac1
+               end do
+! ==============================================================================
+
+               ! Calc. west boundary elemnts.
+               call MPI_Waitall(2, ireq14, stat14, ierr)
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+               do i = ist-shift_st, ist-1
+                  ix = i + fg%my%kx - 1
+                  imod = mod(ix-1,fg%my%nr)
+                  ind0 = i - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+! === Upwind3 ==================================================================
+!              fyf(i,fg%my%ny) = recv_from_w*fac0 + fyf(ind1,fg%my%ny)*fac1
+                  fyf(i  ,fg%my%ny) = recv_from_w(1)*fac0 + fyf(  ind1,fg%my%ny)*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+               if(iand(fg%my%has_boundary, WEST_BOUND) == 0) then
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+                  do i = ist2-shift_st2, ist2-1
+                     ix = i + fg%my%kx - 1
+                     imod = mod(ix-2,fg%my%nr)
+                     ind0 = i - imod
+                     ind1 = ind0 + fg%my%nr
+                     fac0 = 1.0d0 - imod*lfac
+                     fac1 = 1.0d0 - fac0
+                     fxf(i,fg%my%ny+1) = recv_from_w(2)*fac0 + fxf(ind1,fg%my%ny+1)*fac1
+                  end do
+               end if
+! ==============================================================================
+               ! Calc. east boundary elemnts.
+               call MPI_Waitall(2, ireq24, stat24, ierr)
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+               do i = ien+1, ien+shift_en
+                  ix = i + fg%my%kx - 1
+                  imod = mod(ix-1,fg%my%nr)
+                  ind0 = i - imod
+                  ind1 = ind0 + fg%my%nr
+                  fac0 = 1.0d0 - imod*lfac
+                  fac1 = 1.0d0 - fac0
+! === Upwind3 ==================================================================
+!              fyf(i,fg%my%ny) = fyf(ind0,fg%my%ny)*fac0 + recv_from_e*fac1
+                  fyf(i,  fg%my%ny) = fyf(ind0,  fg%my%ny)*fac0 + recv_from_e(1)*fac1
+! ==============================================================================
+               end do
+! === Upwind3 ==================================================================
+               if(iand(fg%my%has_boundary, EAST_BOUND) == 0) then
+!$NEC ivdep
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(ix,imod,ind0,ind1,fac0,fac1)
+#endif
+                  do i = ien2+1, ien2+shift_en2
+                     ix = i + fg%my%kx - 1
+                     imod = mod(ix-2,fg%my%nr)
+                     ind0 = i - imod
+                     ind1 = ind0 + fg%my%nr
+                     fac0 = 1.0d0 - imod*lfac
+                     fac1 = 1.0d0 - fac0
+                     fxf(i,fg%my%ny+1) = fxf(ind0,fg%my%ny+1)*fac0 + recv_from_e(2)*fac1
+                  end do
+               end if
+! ==============================================================================
+            end if
+! ==============================================================================
+TIMER_STOP('___if:reg05')
+TIMER_START('___if:reg06')
+            t0 = 1.0d0/REAL_FUNC(fg%my%nr)
+            t1 = 1.0d0 - t0
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+               ist = 1
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = 0
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
+               do i = ist, fg%my%nx
+                  fxf(i,0) = fxf(i,0)*t0 + fxf(i,1)*t1
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+               jst = 1
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 0
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
+               do j = jst, fg%my%ny
+                  fyf(0,j) = fyf(0,j)*t0 + fyf(1,j)*t1
+               end do
+            end if
+! === Upwind3 ==================================================================
+            nx = fg%my%nx
+            ny = fg%my%ny
+
+            fac0 = lfac
+            fac1 = 1.0d0 - fac0
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target
+#endif
+                  fxf(1,  -1) = fxf(1, -1)*fac0 + fxf(2, -1)*fac1
+                  fyf(-1,  1) = fyf(-1, 1)*fac0 + fyf(-1, 2)*fac1
+#ifdef USE_GPU
+!$omp end target
+#endif
+               end if
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target
+#endif
+                  fxf(nx-1, -1) = fxf(nx-2, -1)*fac1 + fxf(nx,  -1)*fac0
+                  fxf(nx,   -1) = fxf(nx-2, -1)*fac0 + fxf(nx,  -1)*fac1
+                  fyf(nx+1,  1) = fyf(nx+1,  1)*fac0 + fyf(nx+1, 2)*fac1
+#ifdef USE_GPU
+!$omp end target
+#endif
+               end if
+            end if
+
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target
+#endif
+                  fxf(1,    ny+1) = fxf(1,   ny+1)*fac0 + fxf(2, ny+1)*fac1
+                  fyf(-1,   ny-1) = fyf(-1,  ny-2)*fac1 + fyf(-1,  ny)*fac0
+                  fyf(-1,     ny) = fyf(-1,  ny-2)*fac0 + fyf(-1,  ny)*fac1
+#ifdef USE_GPU
+!$omp end target
+#endif
+               end if
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target
+#endif
+                  fxf(nx-1, ny+1) = fxf(nx-2,ny+1)*fac1 + fxf(nx,ny+1)*fac0
+                  fxf(nx,   ny+1) = fxf(nx-2,ny+1)*fac0 + fxf(nx,ny+1)*fac1
+                  fyf(nx+1, ny-1) = fyf(nx+1,ny-2)*fac1 + fyf(nx+1,ny)*fac0
+                  fyf(nx+1,   ny) = fyf(nx+1,ny-2)*fac0 + fyf(nx+1,ny)*fac1
+#ifdef USE_GPU
+!$omp end target
+#endif
+               end if
+            end if
+TIMER_STOP('___if:reg06')
+! ==============================================================================
+            if(timenest == 1) then
+TIMER_START('___if:reg07')
+               ist = -1
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -2
+               ien = fg%my%nx + 1
+
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = -1, 1
+                     do i = ist, ien
+                        fxdiff(i,j) = fxf(i,j) - fxold(i,j)
+                        fxf(i,j) = fxold(i,j) + fxdiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = fg%my%ny, fg%my%ny+1
+                     do i = ist, ien
+                        fxdiff(i,j) = fxf(i,j) - fxold(i,j)
+                        fxf(i,j) = fxold(i,j) + fxdiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               jst = 0
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 2
+               jen = fg%my%ny + 1
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%ny-1
+
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = -1, 0
+                        fxdiff(i,j) = fxf(i,j) - fxold(i,j)
+                        fxf(i,j) = fxold(i,j) + fxdiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = fg%my%nx, fg%my%nx+1
+                        fxdiff(i,j) = fxf(i,j) - fxold(i,j)
+                        fxf(i,j) = fxold(i,j) + fxdiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               jst = -1
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = -2
+               jen = fg%my%ny + 1
+
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = -1, 1
+                        fydiff(i,j) = fyf(i,j) - fyold(i,j)
+                        fyf(i,j) = fyold(i,j) + fydiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = fg%my%nx, fg%my%nx+1
+                        fydiff(i,j) = fyf(i,j) - fyold(i,j)
+                        fyf(i,j) = fyold(i,j) + fydiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               ist = 0
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = 2
+               ien = fg%my%nx + 1
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ien = fg%my%nx - 1
+
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = -2, 0
+                     do i = ist, ien
+                        fydiff(i,j) = fyf(i,j) - fyold(i,j)
+                        fyf(i,j) = fyold(i,j) + fydiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = fg%my%ny, fg%my%ny+1
+                     do i = ist, ien
+                        fydiff(i,j) = fyf(i,j) - fyold(i,j)
+                        fyf(i,j) = fyold(i,j) + fydiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+TIMER_STOP('___if:reg07')
+            end if
+         else if(neststep == 1) then
+TIMER_START('___if:reg08')
+            ist = -1
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -2
+            ien = fg%my%nx + 1
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -1, 1
+                  do i = ist, ien
+                     fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+1
+                  do i = ist, ien
+                     fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            jst = 0
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 2
+            jen = fg%my%ny + 1
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%ny-1
+
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = -1, 0
+                     fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = fg%my%nx, fg%my%nx+1
+                     fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            jst = -1
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = -2
+            jen = fg%my%ny + 1
+
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = -1, 1
+                     fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = fg%my%nx, fg%my%nx+1
+                     fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            ist = 0
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = 2
+            ien = fg%my%nx + 1
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ien = fg%my%nx - 1
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -2, 0
+                  do i = ist, ien
+                     fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+1
+                  do i = ist, ien
+                     fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+TIMER_STOP('___if:reg08')
+         else if(neststep == 2) then
+TIMER_START('___if:reg09')
+            ist = -1
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -2
+            ien = fg%my%nx + 1
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -1, 1
+                  do i = ist, ien
+                     fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+1
+                  do i = ist, ien
+                     fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            jst = 0
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 2
+            jen = fg%my%ny + 1
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%ny-1
+
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = -1, 0
+                     fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = fg%my%nx, fg%my%nx+1
+                     fxf(i,j) = fxf(i,j) + fxdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            jst = -1
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = -2
+            jen = fg%my%ny + 1
+
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = -1, 1
+                     fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = fg%my%nx, fg%my%nx+1
+                     fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            ist = 0
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = 2
+            ien = fg%my%nx + 1
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ien = fg%my%nx - 1
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -2, 0
+                  do i = ist, ien
+                     fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+1
+                  do i = ist, ien
+                     fyf(i,j) = fyf(i,j) + fydiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+TIMER_STOP('___if:reg09')
+         end if
 #endif
       else if(mode == HGT) then
 #ifndef MPI
+         if(neststep == 0) then
+            if(timenest == 1) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -1, 1
+                  do i = -1, fg%my%nx+2
+                     hzold(i,j) = hzf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+2
+                  do i = -1, fg%my%nx+2
+                     hzold(i,j) = hzf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = 2, fg%my%ny-1
+                  do i = -1, 1
+                     hzold(i,j) = hzf(i,j)
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = 2, fg%my%ny-1
+                  do i = fg%my%nx, fg%my%nx+2
+                     hzold(i,j) = hzf(i,j)
+                  end do
+               end do
+            end if
+#ifndef USE_GPU
 !$omp parallel
 !$omp do
-         do k = 1, hzi%np
-#ifdef NONESTDEBUG
-            hzf(hzi%fndx(k,1),hzi%fndx(k,2)) = &
-               hzc(hzi%cndx0(k,1),hzi%cndx0(k,2))*hzi%wt0(k) + &
-               hzc(hzi%cndx1(k,1),hzi%cndx1(k,2))*hzi%wt1(k)
 #else
-            if((wodc(hzi%cndx0(k,1),hzi%cndx0(k,2)) == 1) .and. (wodc(hzi%cndx1(k,1),hzi%cndx1(k,2)) == 1)) then
+!$omp target teams distribute parallel do
+#endif
+            do k = 1, hzi%np
+#ifdef NONESTDEBUG
                hzf(hzi%fndx(k,1),hzi%fndx(k,2)) = &
                   hzc(hzi%cndx0(k,1),hzi%cndx0(k,2))*hzi%wt0(k) + &
                   hzc(hzi%cndx1(k,1),hzi%cndx1(k,2))*hzi%wt1(k)
-            endif
-#endif
-         end do
-!$omp end parallel
-         t0 = 1.0d0/REAL_FUNC(fg%my%nr)
-         t1 = 1.0d0 - t0
-         do i = 1, fg%my%nx
-! === Upwind3 ==================================================================
-            hzf(i,-1        ) = hzf(i,0         )*t1 + hzf(i,1       )*t0
-            hzf(i,fg%my%ny+2) = hzf(i,fg%my%ny+1)*t1 + hzf(i,fg%my%ny)*t0
-! ==============================================================================
-            hzf(i,0         ) = hzf(i,0         )*t0 + hzf(i,1       )*t1
-            hzf(i,fg%my%ny+1) = hzf(i,fg%my%ny+1)*t0 + hzf(i,fg%my%ny)*t1
-         end do
-         do j = 0, fg%my%ny+1
-! === Upwind3 ==================================================================
-            hzf(-1,        j) = hzf(0,         j)*t1 + hzf(1,       j)*t0
-            hzf(fg%my%nx+2,j) = hzf(fg%my%nx+1,j)*t1 + hzf(fg%my%nx,j)*t0
-! ==============================================================================
-            hzf(0,         j) = hzf(0,         j)*t0 + hzf(1,       j)*t1
-            hzf(fg%my%nx+1,j) = hzf(fg%my%nx+1,j)*t0 + hzf(fg%my%nx,j)*t1
-         end do
 #else
+               if((wodc(hzi%cndx0(k,1),hzi%cndx0(k,2)) == 1) .and. (wodc(hzi%cndx1(k,1),hzi%cndx1(k,2)) == 1)) then
+                  hzf(hzi%fndx(k,1),hzi%fndx(k,2)) = &
+                     hzc(hzi%cndx0(k,1),hzi%cndx0(k,2))*hzi%wt0(k) + &
+                     hzc(hzi%cndx1(k,1),hzi%cndx1(k,2))*hzi%wt1(k)
+               endif
+#endif
+            end do
+#ifndef USE_GPU
+!$omp end parallel
+#endif
+            t0 = 1.0d0/REAL_FUNC(fg%my%nr)
+            t1 = 1.0d0 - t0
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
+            do i = 1, fg%my%nx
+! === Upwind3 ==================================================================
+               hzf(i,-1        ) = hzf(i,0         )*t1 + hzf(i,1       )*t0
+               hzf(i,fg%my%ny+2) = hzf(i,fg%my%ny+1)*t1 + hzf(i,fg%my%ny)*t0
+! ==============================================================================
+               hzf(i,0         ) = hzf(i,0         )*t0 + hzf(i,1       )*t1
+               hzf(i,fg%my%ny+1) = hzf(i,fg%my%ny+1)*t0 + hzf(i,fg%my%ny)*t1
+            end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
+            do j = 0, fg%my%ny+1
+! === Upwind3 ==================================================================
+               hzf(-1,        j) = hzf(0,         j)*t1 + hzf(1,       j)*t0
+               hzf(fg%my%nx+2,j) = hzf(fg%my%nx+1,j)*t1 + hzf(fg%my%nx,j)*t0
+! ==============================================================================
+               hzf(0,         j) = hzf(0,         j)*t0 + hzf(1,       j)*t1
+               hzf(fg%my%nx+1,j) = hzf(fg%my%nx+1,j)*t0 + hzf(fg%my%nx,j)*t1
+            end do
+            if(timenest == 1) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -1, 1
+                  do i = -1, fg%my%nx+2
+                     hzdiff(i,j) = hzf(i,j) - hzold(i,j)
+                     hzf(i,j) = hzold(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+2
+                  do i = -1, fg%my%nx+2
+                     hzdiff(i,j) = hzf(i,j) - hzold(i,j)
+                     hzf(i,j) = hzold(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = 2, fg%my%ny-1
+                  do i = -1, 1
+                     hzdiff(i,j) = hzf(i,j) - hzold(i,j)
+                     hzf(i,j) = hzold(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = 2, fg%my%ny-1
+                  do i = fg%my%nx, fg%my%nx+2
+                     hzdiff(i,j) = hzf(i,j) - hzold(i,j)
+                     hzf(i,j) = hzold(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+         else if(neststep == 1) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -1, 1
+               do i = -1, fg%my%nx+2
+                  hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = fg%my%ny, fg%my%ny+2
+               do i = -1, fg%my%nx+2
+                  hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 2, fg%my%ny-1
+               do i = -1, 1
+                  hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 2, fg%my%ny-1
+               do i = fg%my%nx, fg%my%nx+2
+                  hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+               end do
+            end do
+         else if(neststep == 2) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = -1, 1
+               do i = -1, fg%my%nx+2
+                  hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = fg%my%ny, fg%my%ny+2
+               do i = -1, fg%my%nx+2
+                  hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 2, fg%my%ny-1
+               do i = -1, 1
+                  hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+               end do
+            end do
+
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = 2, fg%my%ny-1
+               do i = fg%my%nx, fg%my%nx+2
+                  hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+               end do
+            end do
+         end if
+#else
+         if(neststep == 0) then
+            if(timenest == 1) then
+TIMER_START('___if:reg10')
+               ist = 0
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -1
+               ien = fg%my%nx + 2
+
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = -1, 1
+                     do i = ist, ien
+                        hzold(i,j) = hzf(i,j)
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = fg%my%ny, fg%my%ny+2
+                     do i = ist, ien
+                        hzold(i,j) = hzf(i,j)
+                     end do
+                  end do
+               end if
+
+               jst = 0
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 2
+               jen = fg%my%ny + 2
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%ny-1
+
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = -1, 1
+                        hzold(i,j) = hzf(i,j)
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = fg%my%nx, fg%my%nx+2
+                        hzold(i,j) = hzf(i,j)
+                     end do
+                  end do
+               end if
+TIMER_STOP('___if:reg10')
+            end if
 #ifndef USE_ALLTOALLV
+#ifndef USE_GPU
 !$omp parallel
 !$omp single
-         zfbuf => hzi%fb
-         zcbuf => hzi%cb
+#endif
+            zfbuf => hzi%fb
+            zcbuf => hzi%cb
+#ifndef USE_GPU
 !$omp end single
 !$omp do
-         do k = 1, hzi%np
-            zfbuf(k) = 0.0d0
-            zcbuf(k) = 0.0d0
-         end do
-         !*==============*
-         !*  coarse2buf  * must not read from edges
-         !*==============*
+#endif
+#ifdef USE_GPU
+!$omp target teams distribute parallel do
+#endif
+            do k = 1, hzi%np
+               zfbuf(k) = 0.0d0
+               zcbuf(k) = 0.0d0
+            end do
+            !*==============*
+            !*  coarse2buf  * must not read from edges
+            !*==============*
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
-         do k = 1, hzi%np
-            ix = hzi%cndx0(k,1)
-            iy = hzi%cndx0(k,2)
-            if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
-               i = ix - cg%my%kx + 1
-               j = iy - cg%my%ky + 1
-#ifndef NONESTDEBUG
-               if(wodc(i,j) == 1) then
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
 #endif
-               zcbuf(k) = zcbuf(k) + hzc(i,j)*hzi%wt0(k)
+            do k = 1, hzi%np
+               ix = hzi%cndx0(k,1)
+               iy = hzi%cndx0(k,2)
+               if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
+                  i = ix - cg%my%kx + 1
+                  j = iy - cg%my%ky + 1
 #ifndef NONESTDEBUG
-               else
-                  zcbuf(k) = RUDEF
+                  if(wodc(i,j) == 1) then
+#endif
+                  zcbuf(k) = zcbuf(k) + hzc(i,j)*hzi%wt0(k)
+#ifndef NONESTDEBUG
+                  else
+                     zcbuf(k) = RUDEF
+                  end if
+#endif
                end if
-#endif
-            end if
-         end do
+            end do
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
-         do k = 1, hzi%np
-            ix = hzi%cndx1(k,1)
-            iy = hzi%cndx1(k,2)
-            if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
-               i = ix - cg%my%kx + 1 ! with edges
-               j = iy - cg%my%ky + 1 ! with edges
-#ifndef NONESTDEBUG
-               if((wodc(i,j) == 1) .and. (zcbuf(k) /= RUDEF)) then
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
 #endif
-               zcbuf(k) = zcbuf(k) + hzc(i,j)*hzi%wt1(k)
+            do k = 1, hzi%np
+               ix = hzi%cndx1(k,1)
+               iy = hzi%cndx1(k,2)
+               if(cg%my%ix <= ix .and. ix <= cg%my%ixend .and. cg%my%iy <= iy .and. iy <= cg%my%iyend) then
+                  i = ix - cg%my%kx + 1 ! with edges
+                  j = iy - cg%my%ky + 1 ! with edges
 #ifndef NONESTDEBUG
-               else
-                  zcbuf(k) = RUDEF
+                  if((wodc(i,j) == 1) .and. (zcbuf(k) /= RUDEF)) then
+#endif
+                  zcbuf(k) = zcbuf(k) + hzc(i,j)*hzi%wt1(k)
+#ifndef NONESTDEBUG
+                  else
+                     zcbuf(k) = RUDEF
+                  end if
+#endif
                end if
-#endif
-            end if
-         end do
-         !*==============*
-         !*  allreduce   *
-         !*==============*
+            end do
+            !*==============*
+            !*  allreduce   *
+            !*==============*
+#ifndef USE_GPU
 !$omp single
-         call MPI_Allreduce(zcbuf, zfbuf, hzi%np, REAL_MPI, MPI_SUM, __MPICOMM__, ierr)
-         if(ierr /= 0) then
-            select case (ierr)
-               case(MPI_ERR_BUFFER)
-                  write(0,'(a)') 'MPI Error : Invalid buffer pointer'
-               case(MPI_ERR_COUNT)
-                  write(0,'(a)') 'MPI Error : Invalid count argument'
-               case(MPI_ERR_TYPE)
-                  write(0,'(a)') 'MPI Error : Invalid datatype argument'
-               case(MPI_ERR_OP)
-                  write(0,'(a)') 'MPI Error : Invalid operation'
-               case(MPI_ERR_COMM)
-                  write(0,'(a)') 'MPI Error : Invalid communicator'
-               case default
-                  write(0,'(a)') 'MPI Error : Unknown error'
-            end select
-            call fatal_error(ierr)
-         end if
+#endif
+#ifdef USE_GPU
+!$omp target data use_device_ptr(zcbuf,zfbuf)
+#endif
+            call MPI_Allreduce(zcbuf, zfbuf, hzi%np, REAL_MPI, MPI_SUM, __MPICOMM__, ierr)
+            if(ierr /= 0) then
+               select case (ierr)
+                  case(MPI_ERR_BUFFER)
+                     write(0,'(a)') 'MPI Error : Invalid buffer pointer'
+                  case(MPI_ERR_COUNT)
+                     write(0,'(a)') 'MPI Error : Invalid count argument'
+                  case(MPI_ERR_TYPE)
+                     write(0,'(a)') 'MPI Error : Invalid datatype argument'
+                  case(MPI_ERR_OP)
+                     write(0,'(a)') 'MPI Error : Invalid operation'
+                  case(MPI_ERR_COMM)
+                     write(0,'(a)') 'MPI Error : Invalid communicator'
+                  case default
+                     write(0,'(a)') 'MPI Error : Unknown error'
+               end select
+               call fatal_error(ierr)
+            end if
+#ifdef USE_GPU
+!$omp end target data
+#endif
 
-         ist = fg%my%kx
+            ist = fg%my%kx
 ! === Upwind3 ==================================================================
 !        if(iand(fg%my%has_boundary, WEST_BOUND)  /= 0) ist = 0
-         if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -1
-         ien = fg%my%kxend+1
-         if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ien = fg%my%kxend+2
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -1
+            ien = fg%my%kxend+1
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) ien = fg%my%kxend+2
 ! ==============================================================================
-         jst = fg%my%ky
+            jst = fg%my%ky
 ! === Upwind3 ==================================================================
 !        if(iand(fg%my%has_boundary, NORTH_BOUND)  /= 0) jst = 0
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = -1
-         jen = fg%my%kyend+1
-         if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%kyend+2
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = -1
+            jen = fg%my%kyend+1
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%kyend+2
 ! ==============================================================================
+#ifndef USE_GPU
 !$omp end single
-         !*==============*
-         !*  buf2fine    * write to edges
-         !*==============*
+#endif
+            !*==============*
+            !*  buf2fine    * write to edges
+            !*==============*
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
-         do k = 1, hzi%np
-            ix = hzi%fndx(k,1)
-            iy = hzi%fndx(k,2)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
+            do k = 1, hzi%np
+               ix = hzi%fndx(k,1)
+               iy = hzi%fndx(k,2)
 #ifndef NONESTDEBUG
-            if(zfbuf(k) < RUDEF) then
+               if(zfbuf(k) < RUDEF) then
 #endif
 ! === Upwind3 ==================================================================
 !           if(ist <= ix .and. ix <= fg%my%kxend+1 .and. jst <= iy .and. iy <= fg%my%kyend+1) then
-            if(ist <= ix .and. ix <= ien .and. jst <= iy .and. iy <= jen) then
+               if(ist <= ix .and. ix <= ien .and. jst <= iy .and. iy <= jen) then
 ! ==============================================================================
-               i = ix - fg%my%kx + 1 ! with edges
-               j = iy - fg%my%ky + 1 ! with edges
-               hzf(i,j) = zfbuf(k)
-            end if
+                  i = ix - fg%my%kx + 1 ! with edges
+                  j = iy - fg%my%ky + 1 ! with edges
+                  hzf(i,j) = zfbuf(k)
+               end if
 #ifndef NONESTDEBUG
-            end if
+               end if
 #endif
-         end do
+            end do
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 #else
 ! === USE_MPI_ALLTOALLV ========================================================
 #ifndef SINGLE_A2A
-         zfbuf0 => hzi%fb0
-         zfbuf1 => hzi%fb1
-         zcbuf0 => hzi%cb0
-         zcbuf1 => hzi%cb1
+            zfbuf0 => hzi%fb0
+            zfbuf1 => hzi%fb1
+            zcbuf0 => hzi%cb0
+            zcbuf1 => hzi%cb1
 #else
-         zfbuf1 => hzi%fb1
-         zcbuf1 => hzi%cb1
+            zfbuf1 => hzi%fb1
+            zcbuf1 => hzi%cb1
 #endif
-         !*==============*
-         !*  coarse2buf  * must not read from edges
-         !*==============*
-         do k = 1, hzi%snp0
-            i = hzi%cndx0_l(k,1)
-            j = hzi%cndx0_l(k,2)
+            !*==============*
+            !*  coarse2buf  * must not read from edges
+            !*==============*
+TIMER_START('___if:reg11')
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, hzi%snp0
+               i = hzi%cndx0_l(k,1)
+               j = hzi%cndx0_l(k,2)
 #ifndef NONESTDEBUG
-            if(wodc(i,j) == 1) then
+               if(wodc(i,j) == 1) then
 #endif
 #ifndef SINGLE_A2A
-            zcbuf0(k) = hzc(i,j)*hzi%wt0_l(k)
+               zcbuf0(k) = hzc(i,j)*hzi%wt0_l(k)
 #else
-            zcbuf1(hzi%smap0(k)) = hzc(i,j)*hzi%wt0_l(k)
+               zcbuf1(hzi%smap0(k)) = hzc(i,j)*hzi%wt0_l(k)
 #endif
 #ifndef NONESTDEBUG
-            else
+               else
 #ifndef SINGLE_A2A
-               zcbuf0(k) = RUDEF
+                  zcbuf0(k) = RUDEF
 #else
-               zcbuf1(hzi%smap0(k)) = RUDEF
+                  zcbuf1(hzi%smap0(k)) = RUDEF
 #endif
-            end if
+               end if
 #endif
-         end do
-         do k = 1, hzi%snp1
-            i = hzi%cndx1_l(k,1)
-            j = hzi%cndx1_l(k,2)
+            end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, hzi%snp1
+               i = hzi%cndx1_l(k,1)
+               j = hzi%cndx1_l(k,2)
 #ifndef NONESTDEBUG
-            if(wodc(i,j) == 1) then
+               if(wodc(i,j) == 1) then
 #endif
 #ifndef SINGLE_A2A
-            zcbuf1(k) = hzc(i,j)*hzi%wt1_l(k)
+               zcbuf1(k) = hzc(i,j)*hzi%wt1_l(k)
 #else
-            zcbuf1(hzi%smap1(k)) = hzc(i,j)*hzi%wt1_l(k)
+               zcbuf1(hzi%smap1(k)) = hzc(i,j)*hzi%wt1_l(k)
 #endif
 #ifndef NONESTDEBUG
-            else
+               else
 #ifndef SINGLE_A2A
-               zcbuf1(k) = RUDEF
+                  zcbuf1(k) = RUDEF
 #else
-               zcbuf1(hzi%smap1(k)) = RUDEF
+                  zcbuf1(hzi%smap1(k)) = RUDEF
 #endif
-            end if
+               end if
 #endif
-         end do
-         !*==============*
-         !*  alltoallv   *
-         !*==============*
+            end do
+TIMER_STOP('___if:reg11')
+            !*==============*
+            !*  alltoallv   *
+            !*==============*
+#ifdef USE_TIMER
+         call MPI_Barrier(__MPICOMM__, ierr)
+#endif
+TIMER_START('___if:reg12')
 #ifndef A2A3D
-#ifndef SINGLE_A2A
-         call MPI_Alltoallv(zcbuf0, hzi%sendcnts0, hzi%sdispls0, REAL_MPI, &
-                            zfbuf0, hzi%recvcnts0, hzi%rdispls0, REAL_MPI, __MPICOMM__, ierr)
+#ifdef USE_GPU
+!$omp target data use_device_ptr(zcbuf0,zfbuf0,zcbuf1,zfbuf1)
 #endif
-         call MPI_Alltoallv(zcbuf1, hzi%sendcnts1, hzi%sdispls1, REAL_MPI, &
-                            zfbuf1, hzi%recvcnts1, hzi%rdispls1, REAL_MPI, __MPICOMM__, ierr)
+#ifndef SINGLE_A2A
+            call MPI_Alltoallv(zcbuf0, hzi%sendcnts0, hzi%sdispls0, REAL_MPI, &
+                               zfbuf0, hzi%recvcnts0, hzi%rdispls0, REAL_MPI, __MPICOMM__, ierr)
+#endif
+            call MPI_Alltoallv(zcbuf1, hzi%sendcnts1, hzi%sdispls1, REAL_MPI, &
+                               zfbuf1, hzi%recvcnts1, hzi%rdispls1, REAL_MPI, __MPICOMM__, ierr)
+#ifdef USE_GPU
+!$omp end target data
+#endif
 #else
 #ifndef SINGLE_A2A
-         call A2A3D_execute(hzi%snp0, zcbuf0, hzi%rnp0, zfbuf0, hzi%handler0)
-         call A2A3D_execute(hzi%snp1, zcbuf1, hzi%rnp1, zfbuf1, hzi%handler1)
+            call A2A3D_execute(hzi%snp0, zcbuf0, hzi%rnp0, zfbuf0, hzi%handler0)
+            call A2A3D_execute(hzi%snp1, zcbuf1, hzi%rnp1, zfbuf1, hzi%handler1)
 #else
-         call A2A3D_execute(hzi%snp0+hzi%snp1, zcbuf1, hzi%rnp0+hzi%rnp1, zfbuf1, hzi%handler1)
+            call A2A3D_execute(hzi%snp0+hzi%snp1, zcbuf1, hzi%rnp0+hzi%rnp1, zfbuf1, hzi%handler1)
 #endif
 #endif
-         !*==============*
-         !*  buf2fine    * write to edges
-         !*==============*
+TIMER_STOP('___if:reg12')
+            !*==============*
+            !*  buf2fine    * write to edges
+            !*==============*
+TIMER_START('___if:reg13')
 #ifndef NONESTDEBUG
-         noi2f = 0
+#ifndef USE_GPU
+!$omp parallel do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+            do j = lbound(noi2f,2), ubound(noi2f,2)
+               do i = lbound(noi2f,1), ubound(noi2f,1)
+                  noi2f(i,j) = 0
+               end do
+            end do
 
-         do k = 1, hzi%rnp0
-            i = hzi%fndx0_l(k,1)
-            j = hzi%fndx0_l(k,2)
-#ifndef SINGLE_A2A
-            if(zfbuf0(k) == RUDEF) noi2f(i,j) = 1
-#else
-            if(zfbuf1(hzi%rmap0(k)) == RUDEF) noi2f(i,j) = 1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
 #endif
-         end do
+            do k = 1, hzi%rnp0
+               i = hzi%fndx0_l(k,1)
+               j = hzi%fndx0_l(k,2)
+#ifndef SINGLE_A2A
+               if(zfbuf0(k) == RUDEF) noi2f(i,j) = 1
+#else
+               if(zfbuf1(hzi%rmap0(k)) == RUDEF) noi2f(i,j) = 1
+#endif
+            end do
 
-         do k = 1, hzi%rnp1
-            i = hzi%fndx1_l(k,1)
-            j = hzi%fndx1_l(k,2)
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, hzi%rnp1
+               i = hzi%fndx1_l(k,1)
+               j = hzi%fndx1_l(k,2)
 #ifndef SINGLE_A2A
-            if(zfbuf1(k) == RUDEF) noi2f(i,j) = 1
+               if(zfbuf1(k) == RUDEF) noi2f(i,j) = 1
 #else
-            if(zfbuf1(hzi%rmap1(k)) == RUDEF) noi2f(i,j) = 1
+               if(zfbuf1(hzi%rmap1(k)) == RUDEF) noi2f(i,j) = 1
 #endif
-         end do
+            end do
 #endif
-         do k = 1, hzi%rnp0
-            i = hzi%fndx0_l(k,1)
-            j = hzi%fndx0_l(k,2)
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, hzi%rnp0
+               i = hzi%fndx0_l(k,1)
+               j = hzi%fndx0_l(k,2)
 #ifndef NONESTDEBUG
-            if(noi2f(i,j) == 0) then
+               if(noi2f(i,j) == 0) then
 #endif
 #ifndef SINGLE_A2A
-            hzf(i,j) = zfbuf0(k)
+               hzf(i,j) = zfbuf0(k)
 #else
-            hzf(i,j) = zfbuf1(hzi%rmap0(k))
+               hzf(i,j) = zfbuf1(hzi%rmap0(k))
 #endif
 #ifndef NONESTDEBUG
-            end if
+               end if
 #endif
-         end do
+            end do
 !$NEC ivdep
-         do k = 1, hzi%rnp1
-            i = hzi%fndx1_l(k,1)
-            j = hzi%fndx1_l(k,2)
+#ifdef USE_GPU
+!$omp target teams distribute parallel do private(i,j)
+#endif
+            do k = 1, hzi%rnp1
+               i = hzi%fndx1_l(k,1)
+               j = hzi%fndx1_l(k,2)
 #ifndef NONESTDEBUG
-            if(noi2f(i,j) == 0) then
+               if(noi2f(i,j) == 0) then
 #endif
 #ifndef SINGLE_A2A
-            hzf(i,j) = hzf(i,j) + zfbuf1(k)
+               hzf(i,j) = hzf(i,j) + zfbuf1(k)
 #else
-            hzf(i,j) = hzf(i,j) + zfbuf1(hzi%rmap1(k))
+               hzf(i,j) = hzf(i,j) + zfbuf1(hzi%rmap1(k))
 #endif
 #ifndef NONESTDEBUG
-            end if
+               end if
 #endif
-         end do
+            end do
 ! === USE_MPI_ALLTOALLV ========================================================
 #endif
 
-      t0 = 1.0d0/REAL_FUNC(fg%my%nr)
-      t1 = 1.0d0 - t0
+            t0 = 1.0d0/REAL_FUNC(fg%my%nr)
+            t1 = 1.0d0 - t0
 
-      if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifndef USE_GPU
 !$omp single
-         ist = 1
+#endif
+               ist = 1
+#ifndef USE_GPU
 !$omp end single
 !$omp do
-         do i = ist, fg%my%nx
+#else
+!$omp target teams distribute parallel do
+#endif
+               do i = ist, fg%my%nx
 ! === Upwind3 ==================================================================
-            hzf(i,-1) = hzf(i,0)*t1 + hzf(i,1)*t0
+                  hzf(i,-1) = hzf(i,0)*t1 + hzf(i,1)*t0
 ! ==============================================================================
-            hzf(i,0) = hzf(i,0)*t0 + hzf(i,1)*t1
-         end do
-      end if
+                  hzf(i,0) = hzf(i,0)*t0 + hzf(i,1)*t1
+               end do
+            end if
 
-      if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifndef USE_GPU
 !$omp single
-         ist = 1
+#endif
+               ist = 1
+#ifndef USE_GPU
 !$omp end single
 !$omp do
-         do i = ist, fg%my%nx
+#else
+!$omp target teams distribute parallel do
+#endif
+               do i = ist, fg%my%nx
 ! === Upwind3 ==================================================================
-            hzf(i,fg%my%ny+2) = hzf(i,fg%my%ny+1)*t1 + hzf(i,fg%my%ny)*t0
+                  hzf(i,fg%my%ny+2) = hzf(i,fg%my%ny+1)*t1 + hzf(i,fg%my%ny)*t0
 ! ==============================================================================
-            hzf(i,fg%my%ny+1) = hzf(i,fg%my%ny+1)*t0 + hzf(i,fg%my%ny)*t1
-         end do
-      end if
+                  hzf(i,fg%my%ny+1) = hzf(i,fg%my%ny+1)*t0 + hzf(i,fg%my%ny)*t1
+               end do
+            end if
 
-      if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifndef USE_GPU
 !$omp single
-         jst = 1
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 0
+#endif
+               jst = 1
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 0
+#ifndef USE_GPU
 !$omp end single
 !$omp do
-         do j = jst, fg%my%ny+1
+#else
+!$omp target teams distribute parallel do
+#endif
+               do j = jst, fg%my%ny+1
 ! === Upwind3 ==================================================================
-            hzf(-1,j) = hzf(0,j)*t1 + hzf(1,j)*t0
+                  hzf(-1,j) = hzf(0,j)*t1 + hzf(1,j)*t0
 ! ==============================================================================
-            hzf(0,j) = hzf(0,j)*t0 + hzf(1,j)*t1
-         end do
-      end if
+                  hzf(0,j) = hzf(0,j)*t0 + hzf(1,j)*t1
+               end do
+            end if
 
-      if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifndef USE_GPU
 !$omp single
-         jst = 1
-         if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 0
+#endif
+               jst = 1
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 0
+#ifndef USE_GPU
 !$omp end single
 !$omp do
-         do j = jst, fg%my%ny+1
+#else
+!$omp target teams distribute parallel do
+#endif
+               do j = jst, fg%my%ny+1
 ! === Upwind3 ==================================================================
-            hzf(fg%my%nx+2,j) = hzf(fg%my%nx+1,j)*t1 + hzf(fg%my%nx,j)*t0
+                  hzf(fg%my%nx+2,j) = hzf(fg%my%nx+1,j)*t1 + hzf(fg%my%nx,j)*t0
 ! ==============================================================================
-            hzf(fg%my%nx+1,j) = hzf(fg%my%nx+1,j)*t0 + hzf(fg%my%nx,j)*t1
-         end do
-      end if
+                  hzf(fg%my%nx+1,j) = hzf(fg%my%nx+1,j)*t0 + hzf(fg%my%nx,j)*t1
+               end do
+            end if
+TIMER_STOP('___if:reg13')
+            if(timenest == 1) then
+TIMER_START('___if:reg14')
+               ist = 0
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -1
+               ien = fg%my%nx + 2
+
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = -1, 1
+                     do i = ist, ien
+                        hzdiff(i,j) = hzf(i,j) - hzold(i,j)
+                        hzf(i,j) = hzold(i,j) + hzdiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = fg%my%ny, fg%my%ny+2
+                     do i = ist, ien
+                        hzdiff(i,j) = hzf(i,j) - hzold(i,j)
+                        hzf(i,j) = hzold(i,j) + hzdiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               jst = 0
+               if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 2
+               jen = fg%my%ny + 2
+               if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%ny-1
+
+               if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = -1, 1
+                        hzdiff(i,j) = hzf(i,j) - hzold(i,j)
+                        hzf(i,j) = hzold(i,j) + hzdiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+
+               if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+                  do j = jst, jen
+                     do i = fg%my%nx, fg%my%nx+2
+                        hzdiff(i,j) = hzf(i,j) - hzold(i,j)
+                        hzf(i,j) = hzold(i,j) + hzdiff(i,j)/3.0d0
+                     end do
+                  end do
+               end if
+TIMER_STOP('___if:reg14')
+            end if
+         else if(neststep == 1) then
+TIMER_START('___if:reg15')
+            ist = 0
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -1
+            ien = fg%my%nx + 2
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -1, 1
+                  do i = ist, ien
+                     hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+2
+                  do i = ist, ien
+                     hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            jst = 0
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 2
+            jen = fg%my%ny + 2
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%ny-1
+
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = -1, 1
+                     hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = fg%my%nx, fg%my%nx+2
+                     hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+TIMER_STOP('___if:reg15')
+         else if(neststep == 2) then
+TIMER_START('___if:reg16')
+            ist = 0
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) ist = -1
+            ien = fg%my%nx + 2
+
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = -1, 1
+                  do i = ist, ien
+                     hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = fg%my%ny, fg%my%ny+2
+                  do i = ist, ien
+                     hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            jst = 0
+            if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 2
+            jen = fg%my%ny + 2
+            if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%ny-1
+
+            if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = -1, 1
+                     hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+
+            if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
+               do j = jst, jen
+                  do i = fg%my%nx, fg%my%nx+2
+                     hzf(i,j) = hzf(i,j) + hzdiff(i,j)/3.0d0
+                  end do
+               end do
+            end if
+TIMER_STOP('___if:reg16')
+         end if
 #endif
       end if
 
@@ -4230,20 +5979,32 @@ contains
       dzi => fg%dzi
 
 #ifndef MPI
+#ifndef USE_GPU
 !$omp parallel
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
       do k = 1, dzi%np
          dzf(dzi%fndx(k,1),dzi%fndx(k,2)) = &
             dzc(dzi%cndx0(k,1),dzi%cndx0(k,2))*dzi%wt0(k) + &
             dzc(dzi%cndx1(k,1),dzi%cndx1(k,2))*dzi%wt1(k)
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       t0 = 1.0d0/REAL_FUNC(fg%my%nr)
       t1 = 1.0d0 - t0
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifndef __NEC__
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
       do i = 1, fg%my%nx
 #else
 !$omp do private(i)
@@ -4261,7 +6022,11 @@ contains
 #endif
       end do
 #ifndef __NEC__
+#ifndef USE_GPU
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
       do j = 0, fg%my%ny+1
 #else
 !$omp do private(j)
@@ -4278,14 +6043,22 @@ contains
          end do
 #endif
       end do
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 #else
+#ifndef USE_GPU
 !$omp parallel
 !$omp single
+#endif
       zfbuf => dzi%fb
       zcbuf => dzi%cb
+#ifndef USE_GPU
 !$omp end single
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
       do k = 1, dzi%np
          zfbuf(k) = 0.0d0
          zcbuf(k) = 0.0d0
@@ -4293,7 +6066,11 @@ contains
       !*==============*
       !*  coarse2buf  * must not read from edges
       !*==============*
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
       do k = 1, dzi%np
          ix = dzi%cndx0(k,1)
          iy = dzi%cndx0(k,2)
@@ -4303,7 +6080,11 @@ contains
             zcbuf(k) = zcbuf(k) + dzc(i,j)*dzi%wt0(k)
          end if
       end do
+#ifndef USE_GPU
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
       do k = 1, dzi%np
          ix = dzi%cndx1(k,1)
          iy = dzi%cndx1(k,2)
@@ -4316,7 +6097,12 @@ contains
       !*==============*
       !*  allreduce   *
       !*==============*
+#ifndef USE_GPU
 !$omp single
+#endif
+#ifdef USE_GPU
+!$omp target data use_device_ptr(zcbuf,zfbuf)
+#endif
       call MPI_Allreduce(zcbuf, zfbuf, dzi%np, REAL_MPI, MPI_SUM, __MPICOMM__, ierr)
       if(ierr /= 0) then
          select case (ierr)
@@ -4335,6 +6121,9 @@ contains
          end select
          call fatal_error(ierr)
       end if
+#ifdef USE_GPU
+!$omp end target data
+#endif
       !*==============*
       !*  buf2fine    * write to edges
       !*==============*
@@ -4352,8 +6141,12 @@ contains
       jen = fg%my%kyend+1
       if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) jen = fg%my%kyend+2
 ! ==============================================================================
+#ifndef USE_GPU
 !$omp end single
 !$omp do private(ix, iy, i, j)
+#else
+!$omp target teams distribute parallel do private(ix,iy,i,j)
+#endif
       do k = 1, dzi%np
          ix = dzi%fndx(k,1)
          iy = dzi%fndx(k,2)
@@ -4366,16 +6159,26 @@ contains
             dzf(i,j) = zfbuf(k)
          end if
       end do
+#ifndef USE_GPU
 !$omp single
+#endif
       t0 = 1.0d0/REAL_FUNC(fg%my%nr)
       t1 = 1.0d0 - t0
+#ifndef USE_GPU
 !$omp end single
+#endif
 
       if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) then
+#ifndef USE_GPU
 !$omp single
+#endif
          ist = 1
+#ifndef USE_GPU
 !$omp end single
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do i = ist, fg%my%nx
 ! === Upwind3 ==================================================================
             dzf(i,-1) = dzf(i,0)*t1 + dzf(i,1)*t0
@@ -4385,10 +6188,16 @@ contains
       end if
 
       if(iand(fg%my%has_boundary, SOUTH_BOUND) /= 0) then
+#ifndef USE_GPU
 !$omp single
+#endif
          ist = 1
+#ifndef USE_GPU
 !$omp end single
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do i = ist, fg%my%nx
 ! === Upwind3 ==================================================================
             dzf(i,fg%my%ny+2) = dzf(i,fg%my%ny+1)*t1 + dzf(i,fg%my%ny)*t0
@@ -4398,11 +6207,17 @@ contains
       end if
 
       if(iand(fg%my%has_boundary, WEST_BOUND) /= 0) then
+#ifndef USE_GPU
 !$omp single
+#endif
          jst = 1
          if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 0
+#ifndef USE_GPU
 !$omp end single
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do j = jst, fg%my%ny+1
 ! === Upwind3 ==================================================================
             dzf(-1,j) = dzf(0,j)*t1 + dzf(1,j)*t0
@@ -4412,11 +6227,17 @@ contains
       end if
 
       if(iand(fg%my%has_boundary, EAST_BOUND) /= 0) then
+#ifndef USE_GPU
 !$omp single
+#endif
          jst = 1
          if(iand(fg%my%has_boundary, NORTH_BOUND) /= 0) jst = 0
+#ifndef USE_GPU
 !$omp end single
 !$omp do
+#else
+!$omp target teams distribute parallel do
+#endif
          do j = jst, fg%my%ny+1
 ! === Upwind3 ==================================================================
             dzf(fg%my%nx+2,j) = dzf(fg%my%nx+1,j)*t1 + dzf(fg%my%nx,j)*t0
@@ -4424,7 +6245,9 @@ contains
             dzf(fg%my%nx+1,j) = dzf(fg%my%nx+1,j)*t0 + dzf(fg%my%nx,j)*t1
          end do
       end if
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 #endif
 
       return

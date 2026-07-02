@@ -17,6 +17,7 @@ use mod_multi, only : MPI_MEMBER_WORLD
 #ifdef NORMALMODE
 use mod_params, only : m_rho
 #endif
+use mod_params, only : timenest
 implicit none
 integer(kind=4), private :: Nrec
 real(kind=8), private, allocatable, dimension(:) :: Dist, Val
@@ -146,10 +147,12 @@ contains
    end subroutine loading_getval
 
    subroutine loading_initialize(dg)
+#ifndef USE_GPU
 #ifndef __NEC__
       include 'fftw3.f'
 #else
       include 'aslfftw3.f'
+#endif
 #endif
       type(data_grids), target, intent(inout) :: dg 
       
@@ -373,7 +376,11 @@ contains
 #endif
 ! === OpenMP ===================================================================
 #ifdef _OPENMP
+#ifndef USE_GPU
       nthreads = omp_get_max_threads()
+#else
+      nthreads = 1
+#endif
 #else
       nthreads = 1
 #endif
@@ -449,15 +456,29 @@ contains
 #endif
 
       maxi = 0.0d0
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #ifndef FASTER
 #ifndef MPI
+#ifndef USE_GPU
 !$omp do private(ix, xval, yval, xvalm, yvalm, res, Delta, r, sum, num, xval_t, yval_t, &
 !$omp            Delta_t, val_, iradius) reduction(max:maxi)
+#else
+!$omp target teams distribute parallel do collapse(2) &
+!$omp private(ix,xval,yval,xvalm,yvalm,res,Delta,r,sum,num,xval_t,yval_t, &
+!$omp Delta_t,val_,iradius) reduction(max:maxi)
+#endif
       do iy = 1, N_Y
 #else
+#ifndef USE_GPU
 !$omp do private(ix, xval, yval, xvalm, yvalm, res, Delta, r, sum, num, xval_t, yval_t, &
 !$omp            Delta_t, val_, iradius) reduction(max:maxi)
+#else
+!$omp target teams distribute parallel do collapse(2) &
+!$omp private(ix,xval,yval,xvalm,yvalm,res,Delta,r,sum,num,xval_t,yval_t, &
+!$omp Delta_t,val_,iradius) reduction(max:maxi)
+#endif
       do iy = yst, yen
 #endif
          do ix = 1, N_X
@@ -483,8 +504,14 @@ contains
                yvalm = (      iy - 1)*m_dy
             end if
 #else
+#ifndef USE_GPU
 !$omp do private(ix, xval, yval, xvalm, yvalm, res, Delta, r, sum, num, xval_t, yval_t, &
 !$omp            Delta_t, val_, iradius) reduction(max:maxi)
+#else
+!$omp target teams distribute parallel do collapse(2) &
+!$omp private(ix,xval,yval,xvalm,yvalm,res,Delta,r,sum,num,xval_t,yval_t, &
+!$omp Delta_t,val_,iradius) reduction(max:maxi)
+#endif
       do iy = 1, N_Y/2+1
          do ix = 1, N_X/2+1
             xval  = (ix - 1)*m_dx_d
@@ -526,9 +553,11 @@ contains
                res = 0.0d0
             end if
 
+#ifndef USE_GPU
             if(res > 1.0d0) then
                write(6,'(a,e15.6,a,e15.6)') '[loading] UNBUG ', Delta, ' ', res
             end if
+#endif
 
 #ifndef MPI
             greenZZ(ix, iy) = res
@@ -541,29 +570,45 @@ contains
             end if
          end do
       end do
+#ifndef USE_GPU
 !$omp single
+#endif
 #ifdef MPI
       call MPI_Allreduce(MPI_IN_PLACE, maxi, 1, MPI_DOUBLE_PRECISION, MPI_MAX, __MPICOMM__, ierr)
 #endif
 
       write(6,'(a,e15.6,a,e15.6,a,e15.6,a)') '[loading] MAX GREEN ', maxi, ' (', m_dx, ', ', m_dy, ')'
+#ifndef USE_GPU
 !$omp end single
+#endif
 #ifdef FASTER
+#ifndef USE_GPU
 !$omp do private(ix)
+#else
+!$omp target teams distribute parallel do collapse(2) private(ix)
+#endif
       do iy = 1, N_Y/2+1
          do ix = 1, N_X/2-1
             greenZZ(N_X/2+ix+1,         iy) = greenZZ(N_X/2-ix+1,         iy)
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(ix)
+#else
+!$omp target teams distribute parallel do collapse(2) private(ix)
+#endif
       do iy = 1, N_Y/2-1
          do ix = 1, N_X/2+1
             greenZZ(        ix, N_Y/2+iy+1) = greenZZ(        ix, N_Y/2-iy+1)
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(ix)
+#else
+!$omp target teams distribute parallel do collapse(2) private(ix)
+#endif
       do iy = 1, N_Y/2-1
          do ix = 1, N_X/2-1
             greenZZ(N_X/2+ix+1, N_Y/2+iy+1) = greenZZ(N_X/2-ix+1, N_Y/2-iy+1)
@@ -571,8 +616,13 @@ contains
       end do
 #endif
 
+#ifndef USE_GPU
 !$omp do private(iy, ix)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(ix)
+#endif
          do iy = jtsg(it), jteg(it)
             do ix = 1, N_X
                greenZdouble(ix,iy) = greenZZ(ix,iy)
@@ -580,7 +630,9 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
 #ifndef MPI
       allocate(green_in_Z(N_X/2+1,N_Y))
       allocate(dg%loading%green_out_Z(N_Y,N_X/2+1))
@@ -590,39 +642,65 @@ contains
 #endif
 
       green_out_Z => dg%loading%green_out_Z
+#ifndef USE_GPU
 !$omp end single
 
 !$omp single
+#endif
       allocate(xgreen_planZ(0:nthreads-1))
       allocate(ygreen_planZ(0:nthreads-1))
 
       ! dfftw_plan* is NOT thread-safe!
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(jtng(it) /= 0) &
          call dfftw_plan_many_dft_r2c(xgreen_planZ(it), 1, N_X, jtng(it),      &
                                       greenZdouble(1,jtsg(it)), 0, 1, N_X,     &
                                       green_in_Z(1,jtsg(it)),   0, 1, N_X/2+1, &
                                       FFTW_ESTIMATE)
+#else
+         if(jtng(it) /= 0) &
+         call make_plan_d2z(xgreen_planZ(it), N_X, jtng(it))
+#endif
 
+#ifndef USE_GPU
          if(itn2(it) /= 0) &
          call dfftw_plan_many_dft(ygreen_planZ(it), 1, N_Y, itn2(it), &
                                   green_out_Z(1,its2(it)), 0, 1, N_Y, &
                                   green_out_Z(1,its2(it)), 0, 1, N_Y, &
                                   FFTW_FORWARD, FFTW_ESTIMATE)
+#else
+         if(itn2(it) /= 0) &
+         call make_plan_z2z(ygreen_planZ(it), N_Y, itn2(it))
+#endif
       end do
+#ifndef USE_GPU
 !$omp end single
+#endif
 
       ! Forward FFT on X-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(jtng(it) /= 0) &
          call dfftw_execute_dft_r2c(xgreen_planZ(it),greenZdouble(1,jtsg(it)),green_in_Z(1,jtsg(it)))
+#else
+         if(jtng(it) /= 0) &
+         call exec_d2z(xgreen_planZ(it),greenZdouble(1,jtsg(it)),green_in_Z(1,jtsg(it)))
+#endif
       end do
 
 #ifndef MPI
       ! Transposiion: (N_X,N_Y) -> (N_Y,N_X)
+#ifndef USE_GPU
 !$omp do private(i, j)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j)
+#endif
          do i = its2(it), ite2(it)
             do j = 1, N_Y
                green_out_Z(j,i) = green_in_Z(i,j)
@@ -631,11 +709,16 @@ contains
       end do
 #else
       ! Transposiion: (N_X,nyg) -> (N_Y,nx2)
+#ifndef USE_GPU
 !$omp single
+#endif
       ind = 0
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j,ind)
+#endif
       do i = 1, N_X/2+1
          do j = 1, nyg
-            ind = ind + 1
+            ind = j + (i-1)*nyg
             sendbufg(ind) = green_in_Z(i,j)
          end do
       end do
@@ -644,6 +727,9 @@ contains
       yst = 0
       do p = 0, nprocs-1
          ylen = recvcountsg(p)/nx2
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j,ind,j_)
+#endif
          do i = 1, nx2
             do j = 1, ylen
                ind = rdisplsg(p) + (i-1)*ylen + j
@@ -653,22 +739,40 @@ contains
          end do
          yst = yst + ylen
       end do
+#ifndef USE_GPU
 !$omp end single
+#endif
 #endif
 
       ! Forward FFT on Y-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(itn2(it) /= 0) &
          call dfftw_execute(ygreen_planZ(it))
+#else
+         if(itn2(it) /= 0) &
+         call exec_z2z_forward(ygreen_planZ(it),green_out_Z(1,its2(it)),green_out_Z(1,its2(it)))
+#endif
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(jtng(it) /= 0) &
          call dfftw_destroy_plan(xgreen_planZ(it))
          if(itn2(it) /= 0) &
          call dfftw_destroy_plan(ygreen_planZ(it))
+#else
+         if(jtng(it) /= 0) &
+         call destroy_plan(xgreen_planZ(it))
+         if(itn2(it) /= 0) &
+         call destroy_plan(ygreen_planZ(it))
+#endif
       end do
 
       deallocate(jtsg)
@@ -699,21 +803,34 @@ contains
       realbuf => dg%loading%realbuf
       xfftbuf => dg%loading%xfftbuf
       yfftbuf => dg%loading%yfftbuf
+#ifndef USE_GPU
 !$omp end single
+#endif
 
       ! First touch!
+#ifndef USE_GPU
 !$omp do private(i, j)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = jts1(it), jte1(it)
             do i = 1, N_X
                realbuf(i,j) = 0.0d0
             end do
          end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = jts1(it), jte1(it)
             do i = 1, N_X/2+1
                xfftbuf(i,j) = dcmplx(0.0d0,0.0d0)
             end do
          end do
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j)
+#endif
          do i = its2(it), ite2(it)
             do j = 1, N_Y
                yfftbuf(j,i) = dcmplx(0.0d0,0.0d0)
@@ -721,9 +838,12 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       ! dfftw_plan* is NOT thread-safe!
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(jtn1(it) /= 0) &
          call dfftw_plan_many_dft_r2c(xplan_forward(it), 1, N_X, jtn1(it), &
                                       realbuf(1,jts1(it)), 0, 1, N_X,      &
@@ -747,6 +867,16 @@ contains
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,       &
                                   yfftbuf(1,its2(it)), 0, 1, N_Y,       &
                                   FFTW_BACKWARD, FFTW_MEASURE)
+#else
+         if(jtn1(it) /= 0) &
+         call make_plan_d2z(xplan_forward(it), N_X, jtn1(it))
+         if(itn2(it) /= 0) &
+         call make_plan_z2z(yplan_forward(it), N_Y, itn2(it))
+         if(jtn1(it) /= 0) &
+         call make_plan_z2d(xplan_backward(it), N_X, jtn1(it))
+         if(itn2(it) /= 0) &
+         call make_plan_z2z(yplan_backward(it), N_Y, itn2(it))
+#endif
       end do
 
       deallocate(greenZZ)
@@ -762,32 +892,55 @@ contains
       defZmap1 => dg%loading%defZmap1
 ! === Elastic loading with interpolation =======================================
       allocate(dg%loading%delta(dg%my%nx,dg%my%ny))
+#ifndef USE_GPU
       dg%loading%delta = 0.0d0
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+      do j = 1, dg%my%ny
+         do i = 1, dg%my%nx
+            dg%loading%delta(i,j) = 0.0d0
+         end do
+      end do
+#endif
 ! ==============================================================================
+#ifndef USE_GPU
 !$omp end single
+#endif
 
 #ifndef MPI
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, m_nyg
          do i = 1, m_nxg
 #else
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, ny0
          do i = 1, nx0
 #endif
             defZmap1(i,j) = 0.0d0
          end do
       end do
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 
       return
    end subroutine loading_initialize
 
    subroutine loading_finalize(dg)
+#ifndef USE_GPU
 #ifndef __NEC__
       include 'fftw3.f'
 #else
       include 'aslfftw3.f'
+#endif
 #endif
       type(data_grids), target, intent(inout) :: dg 
 ! === OpenMP ===================================================================
@@ -797,7 +950,11 @@ contains
       itn2 => dg%loading%itn2
       jtn1 => dg%loading%jtn1
 #ifdef _OPENMP
+#ifndef USE_GPU
       nthreads = omp_get_max_threads()
+#else
+      nthreads = 1
+#endif
 #else
       nthreads = 1
 #endif
@@ -806,6 +963,7 @@ contains
       deallocate(dg%loading%green_out_Z)
 
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(jtn1(it) /= 0) &
          call dfftw_destroy_plan(dg%loading%xplan_forward(it))
          if(itn2(it) /= 0) &
@@ -814,6 +972,16 @@ contains
          call dfftw_destroy_plan(dg%loading%xplan_backward(it))
          if(itn2(it) /= 0) &
          call dfftw_destroy_plan(dg%loading%yplan_backward(it))
+#else
+         if(jtn1(it) /= 0) &
+         call destroy_plan(dg%loading%xplan_forward(it))
+         if(itn2(it) /= 0) &
+         call destroy_plan(dg%loading%yplan_forward(it))
+         if(jtn1(it) /= 0) &
+         call destroy_plan(dg%loading%xplan_backward(it))
+         if(itn2(it) /= 0) &
+         call destroy_plan(dg%loading%yplan_backward(it))
+#endif
       end do
 
       deallocate(dg%loading%xplan_forward)
@@ -859,10 +1027,12 @@ contains
    end subroutine loading_finalize
 
    subroutine loading_run(dg)
+#ifndef USE_GPU
 #ifndef __NEC__
       include 'fftw3.f'
 #else
       include 'aslfftw3.f'
+#endif
 #endif
       type(data_grids), target, intent(inout) :: dg 
 
@@ -945,7 +1115,11 @@ contains
 
       coef_norm = 1.0d0/(dble(N_X)*dble(N_Y))
 
-      hz => dg%wave_field%hz
+      if(timenest /= 1) then
+         hz => dg%wave_field%hz
+      else
+         hz => dg%wave_field%hz_b
+      end if
       ifz => dg%wod_flags
 
       xplan_forward  => dg%loading%xplan_forward
@@ -974,14 +1148,25 @@ contains
 #endif
 
 #ifdef _OPENMP
+#ifndef USE_GPU
       nthreads = omp_get_max_threads()
 #else
       nthreads = 1
 #endif
+#else
+      nthreads = 1
+#endif
+#ifndef USE_GPU
 !$omp parallel
+#endif
 #ifndef MPI
+#ifndef USE_GPU
 !$omp do private(j, i)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = jts1(it), jte1(it)
             do i = 1, N_X
                realbuf(i,j) = 0.0d0
@@ -989,7 +1174,11 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             if(ifz(i,j) == 1) then
@@ -1003,15 +1192,27 @@ contains
       end do
 
       ! Forward FFT on X-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(jtn1(it) /= 0) &
          call dfftw_execute_dft_r2c(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
+#else
+         if(jtn1(it) /= 0) &
+         call exec_d2z(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
+#endif
       end do
 
       ! Transposiion: (N_X,N_Y) -> (N_Y,N_X)
+#ifndef USE_GPU
 !$omp do private(i, j)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do i = its2(it), ite2(it)
             do j = 1, N_Y
                yfftbuf(j,i) = xfftbuf(i,j)
@@ -1020,14 +1221,26 @@ contains
       end do
 
       ! Forward FFT on Y-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(itn2(it) /= 0) &
          call dfftw_execute(yplan_forward(it))
+#else
+         if(itn2(it) /= 0) &
+         call exec_z2z_forward(yplan_forward(it),yfftbuf(1,its2(it)),yfftbuf(1,its2(it)))
+#endif
       end do
 
+#ifndef USE_GPU
 !$omp do private(i, j)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j)
+#endif
          do i = its2(it), ite2(it)
             do j = 1, N_Y
                yfftbuf(j,i) = yfftbuf(j,i)*green_out_Z(j,i)*coef_norm
@@ -1036,15 +1249,27 @@ contains
       end do
 
       ! Backward FFT on Y-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(itn2(it) /= 0) &
          call dfftw_execute(yplan_backward(it))
+#else
+         if(itn2(it) /= 0) &
+         call exec_z2z_backward(yplan_backward(it),yfftbuf(1,its2(it)),yfftbuf(1,its2(it)))
+#endif
       end do
 
       ! Transposiion: (N_Y,N_X) -> (N_X,N_Y)
+#ifndef USE_GPU
 !$omp do private(j, i)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
          do j = jts1(it), jte1(it)
             do i = 1, N_X/2+1
                xfftbuf(i,j) = yfftbuf(j,i)
@@ -1053,20 +1278,35 @@ contains
       end do
 
       ! Backward FFT on X-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(jtn1(it) /= 0) &
          call dfftw_execute_dft_c2r(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
+#else
+         if(jtn1(it) /= 0) &
+         call exec_z2d(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
+#endif
       end do
 
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             defZmap(i,j) = realbuf(i,j)
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, nlat
          do i = 1, nlon
             if(ifz(i,j) == 1) then
@@ -1080,7 +1320,11 @@ contains
       end do
 #else
       ! Transposiion: (nx0,ny0) -> (N_X,ny1)
+#ifndef USE_GPU
 !$omp do private(i, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,ind)
+#endif
       do j = 1, ny0
          do i = 1, nx0
             ind = (j-1)*nx0 + i
@@ -1088,10 +1332,19 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(j_, i, i_, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,j_,i_,ind)
+#endif
       do j = 1, ny0
-         j_ = jbias + j
+#ifdef USE_GPU
          do i = 1, nx0
+#endif
+         j_ = jbias + j
+#ifndef USE_GPU
+         do i = 1, nx0
+#endif
             i_ = ibias + i
             ind = (j-1)*nx0 + i
             if(ifz(i_,j_) == 1) then
@@ -1104,22 +1357,33 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       call MPI_Alltoallv(sendbuf1, sendcounts1, sdispls1, MPI_DOUBLE_PRECISION, &
                          recvbuf1, recvcounts1, rdispls1, MPI_DOUBLE_PRECISION, MPI_X_WORLD, ierr)
+#ifndef USE_GPU
 !$omp end single
 
 !$omp do private(i)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i)
+#endif
       do j = 1, ny1
          do i = 1, N_X
             realbuf(i,j) = 0.0d0
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(xst, xlen, j, i, ind, i_)
+#endif
       do p = 0, npx-1
          xst = rdispls1(p)/ny1
          xlen = recvcounts1(p)/ny1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,ind,i_)
+#endif
          do j = 1, ny1
             do i = 1, xlen
                ind = rdispls1(p) + (j-1)*xlen + i
@@ -1130,14 +1394,25 @@ contains
       end do
 
       ! Forward FFT on X-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(jtn1(it) /= 0) &
          call dfftw_execute_dft_r2c(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
+#else
+         if(jtn1(it) /= 0) &
+         call exec_d2z(xplan_forward(it),realbuf(1,jts1(it)),xfftbuf(1,jts1(it)))
+#endif
       end do
 
       ! Transposiion: (N_X,ny1) -> (N_Y,nx2)
+#ifndef USE_GPU
 !$omp do private(j, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(j,ind)
+#endif
       do i = 1, N_X/2+1
          do j = 1, ny1
             ind = ny1*(i-1) + j
@@ -1145,22 +1420,33 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       call MPI_Alltoallv(sendbuf2, sendcounts2, sdispls2, MPI_DOUBLE_COMPLEX, &
                          recvbuf2, recvcounts2, rdispls2, MPI_DOUBLE_COMPLEX, __MPICOMM__, ierr)
+#ifndef USE_GPU
 !$omp end single
 
 !$omp do private(j)
+#else
+!$omp target teams distribute parallel do collapse(2) private(j)
+#endif
       do i = 1, nx2
          do j = 1, N_Y
             yfftbuf(j,i) = dcmplx(0.0d0,0.0d0)
          end do
       end do
 
+#ifndef USE_GPU
 !$omp do private(yst, ylen, i, j, ind, j_)
+#endif
       do p = 0, nprocs-1
          yst = rdispls2(p)/nx2
          ylen = recvcounts2(p)/nx2
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j,ind,j_)
+#endif
          do i = 1, nx2
             do j = 1, ylen
                ind = rdispls2(p) + (i-1)*ylen + j
@@ -1171,15 +1457,27 @@ contains
       end do
 
       ! Forward FFT on Y-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(itn2(it) /= 0) &
          call dfftw_execute(yplan_forward(it))
+#else
+         if(itn2(it) /= 0) &
+         call exec_z2z_forward(yplan_forward(it),yfftbuf(1,its2(it)),yfftbuf(1,its2(it)))
+#endif
       end do
 
       ! Calc. F(hz)*F(g)
+#ifndef USE_GPU
 !$omp do private(i, j)
+#endif
       do it = 0, nthreads-1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j)
+#endif
          do i = its2(it), ite2(it)
             do j = 1, N_Y
                yfftbuf(j,i) = yfftbuf(j,i)*green_out_Z(j,i)*coef_norm
@@ -1188,17 +1486,29 @@ contains
       end do
 
       ! Backward FFT on Y-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(itn2(it) /= 0) &
          call dfftw_execute(yplan_backward(it))
+#else
+         if(itn2(it) /= 0) &
+         call exec_z2z_backward(yplan_backward(it),yfftbuf(1,its2(it)),yfftbuf(1,its2(it)))
+#endif
       end do
 
       ! Transposiion: (N_Y,nx2) -> (N_X,ny1)
+#ifndef USE_GPU
 !$omp do private(yst, ylen, i, j, ind, j_)
+#endif
       do p = 0, nprocs-1
          yst = rdispls2(p)/nx2
          ylen = recvcounts2(p)/nx2
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(j,ind,j_)
+#endif
          do i = 1, nx2
             do j = 1, ylen
                ind = rdispls2(p) + (i-1)*ylen + j
@@ -1208,12 +1518,18 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       call MPI_Alltoallv(recvbuf2, recvcounts2, rdispls2, MPI_DOUBLE_COMPLEX, &
                          sendbuf2, sendcounts2, sdispls2, MPI_DOUBLE_COMPLEX, __MPICOMM__, ierr)
+#ifndef USE_GPU
 !$omp end single
 
 !$omp do private(i, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,ind)
+#endif
       do j = 1, ny1
          do i = 1, N_X/2+1
             ind = ny1*(i-1) + j
@@ -1222,17 +1538,29 @@ contains
       end do
 
       ! Backward FFT on X-direction
+#ifndef USE_GPU
 !$omp do
+#endif
       do it = 0, nthreads-1
+#ifndef USE_GPU
          if(jtn1(it) /= 0) &
          call dfftw_execute_dft_c2r(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
+#else
+         if(jtn1(it) /= 0) &
+         call exec_z2d(xplan_backward(it),xfftbuf(1,jts1(it)),realbuf(1,jts1(it)))
+#endif
       end do
 
       ! Transposiion: (N_X,ny1) -> (nx0,ny0)
+#ifndef USE_GPU
 !$omp do private(xst, xlen, j, i, ind, i_)
+#endif
       do p = 0, npx-1
          xst = rdispls1(p)/ny1
          xlen = recvcounts1(p)/ny1
+#ifdef USE_GPU
+!$omp target teams distribute parallel do collapse(2) private(i,ind,i_)
+#endif
          do j = 1, ny1
             do i = 1, xlen
                ind = rdispls1(p) + (j-1)*xlen + i
@@ -1242,12 +1570,20 @@ contains
          end do
       end do
 
+#ifndef USE_GPU
 !$omp single
+#endif
       call MPI_Alltoallv(recvbuf1, recvcounts1, rdispls1, MPI_DOUBLE_PRECISION, &
                          sendbuf1, sendcounts1, sdispls1, MPI_DOUBLE_PRECISION, MPI_X_WORLD, ierr)
+#ifndef USE_GPU
 !$omp end single
+#endif
 
+#ifndef USE_GPU
 !$omp do private(i, ind)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,ind)
+#endif
       do j = 1, ny0
          do i = 1, nx0
             ind = (j-1)*nx0 + i
@@ -1256,10 +1592,19 @@ contains
       end do
 
       ! Update hz and defZmap1
+#ifndef USE_GPU
 !$omp do private(j_, i, i_)
+#else
+!$omp target teams distribute parallel do collapse(2) private(i,j_,i_)
+#endif
       do j = 1, ny0
-         j_ = jbias + j
+#ifdef USE_GPU
          do i = 1, nx0
+#endif
+         j_ = jbias + j
+#ifndef USE_GPU
+         do i = 1, nx0
+#endif
             i_ = ibias + i
             if(ifz(i_,j_) == 1) then
                hz(i_,j_) = hz(i_,j_) - (defZmap(i,j)-defZmap1(i,j))
@@ -1271,7 +1616,9 @@ contains
          end do
       end do
 #endif
+#ifndef USE_GPU
 !$omp end parallel
+#endif
 
       return
    end subroutine loading_run
