@@ -18,7 +18,7 @@ type ncdio_info
    integer(kind=4), dimension(3) :: start, count
    integer(kind=4) :: ncid, idid, mhid, mvid, hzid, vxid, vyid, speedid
 ! === Arrival time =============================================================
-   integer(kind=4) :: atid
+   integer(kind=4) :: atid, tttid
 ! ==============================================================================
 #ifdef HZMINOUT
    integer(kind=4) :: minhid
