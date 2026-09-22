@@ -2240,9 +2240,23 @@ TIMER_STOP('___cc:reg07')
 !     real(kind=REAL_BYTE) :: send_to_w, send_to_e, recv_from_w, recv_from_e
 !     real(kind=REAL_BYTE) :: send_to_n, send_to_s, recv_from_n, recv_from_s
 !     integer(kind=4) :: nx, ny, px, py, rx, ry, north_rank, south_rank, east_rank, west_rank
-      real(kind=REAL_BYTE), dimension(3) :: send_to_w, send_to_e, recv_from_w, recv_from_e
-      real(kind=REAL_BYTE), dimension(3) :: send_to_n, send_to_s, recv_from_n, recv_from_s
       integer(kind=4) :: px, py, rx, ry, north_rank, south_rank, east_rank, west_rank
+      real(kind=REAL_BYTE), dimension(3) :: recv_from_e_north
+      real(kind=REAL_BYTE), dimension(3) :: recv_from_e_south
+      real(kind=REAL_BYTE), dimension(3) :: recv_from_n_east
+      real(kind=REAL_BYTE), dimension(3) :: recv_from_n_west
+      real(kind=REAL_BYTE), dimension(3) :: recv_from_s_east
+      real(kind=REAL_BYTE), dimension(3) :: recv_from_s_west
+      real(kind=REAL_BYTE), dimension(3) :: recv_from_w_north
+      real(kind=REAL_BYTE), dimension(3) :: recv_from_w_south
+      real(kind=REAL_BYTE), dimension(3) :: send_to_e_north
+      real(kind=REAL_BYTE), dimension(3) :: send_to_e_south
+      real(kind=REAL_BYTE), dimension(3) :: send_to_n_east
+      real(kind=REAL_BYTE), dimension(3) :: send_to_n_west
+      real(kind=REAL_BYTE), dimension(3) :: send_to_s_east
+      real(kind=REAL_BYTE), dimension(3) :: send_to_s_west
+      real(kind=REAL_BYTE), dimension(3) :: send_to_w_north
+      real(kind=REAL_BYTE), dimension(3) :: send_to_w_south
       integer(kind=4) :: ist2, ien2, jst2, jen2, shift_st2, shift_en2
 ! ==============================================================================
       integer(kind=4), dimension(MPI_STATUS_SIZE,2) :: stat11, stat12, stat13, stat14
@@ -3258,28 +3272,28 @@ TIMER_START('___if:reg05')
                if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
 ! ==============================================================================
 ! === Upwind3 ==================================================================
-               call MPI_Irecv(recv_from_n, 3, REAL_MPI, north_rank, 0, __MPICOMM__, ireq11(1), ierr)
-               call MPI_Irecv(recv_from_s, 3, REAL_MPI, south_rank, 0, __MPICOMM__, ireq21(1), ierr)
+               call MPI_Irecv(recv_from_n_west, 3, REAL_MPI, north_rank, 0, __MPICOMM__, ireq11(1), ierr)
+               call MPI_Irecv(recv_from_s_west, 3, REAL_MPI, south_rank, 0, __MPICOMM__, ireq21(1), ierr)
 #ifdef USE_GPU
 !$omp target
 #endif
-               send_to_n(1) = fxf(0, jst)
-               send_to_n(2) = fxf(-2,jst)
-               send_to_n(3) = fyf(-1,jst2)
+               send_to_n_west(1) = fxf(0, jst)
+               send_to_n_west(2) = fxf(-2,jst)
+               send_to_n_west(3) = fyf(-1,jst2)
 #ifdef USE_GPU
 !$omp end target
 #endif
-               call MPI_Isend(send_to_n, 3, REAL_MPI, north_rank, 0, __MPICOMM__, ireq11(2), ierr)
+               call MPI_Isend(send_to_n_west, 3, REAL_MPI, north_rank, 0, __MPICOMM__, ireq11(2), ierr)
 #ifdef USE_GPU
 !$omp target
 #endif
-               send_to_s(1) = fxf(0, jen)
-               send_to_s(2) = fxf(-2,jen)
-               send_to_s(3) = fyf(-1,jen2)
+               send_to_s_west(1) = fxf(0, jen)
+               send_to_s_west(2) = fxf(-2,jen)
+               send_to_s_west(3) = fyf(-1,jen2)
 #ifdef USE_GPU
 !$omp end target
 #endif
-               call MPI_Isend(send_to_s, 3, REAL_MPI, south_rank, 0, __MPICOMM__, ireq21(2), ierr)
+               call MPI_Isend(send_to_s_west, 3, REAL_MPI, south_rank, 0, __MPICOMM__, ireq21(2), ierr)
 ! ==============================================================================
             end if
 
@@ -3295,26 +3309,26 @@ TIMER_START('___if:reg05')
                if(iand(fg%my%has_boundary, SOUTH_BOUND) == 0) jen2 = jen2 - 1
 ! ==============================================================================
 ! === Upwind3 ==================================================================
-               call MPI_Irecv(recv_from_n, 2, REAL_MPI, north_rank, 1, __MPICOMM__, ireq12(1), ierr)
-               call MPI_Irecv(recv_from_s, 2, REAL_MPI, south_rank, 1, __MPICOMM__, ireq22(1), ierr)
+               call MPI_Irecv(recv_from_n_east, 2, REAL_MPI, north_rank, 1, __MPICOMM__, ireq12(1), ierr)
+               call MPI_Irecv(recv_from_s_east, 2, REAL_MPI, south_rank, 1, __MPICOMM__, ireq22(1), ierr)
 #ifdef USE_GPU
 !$omp target
 #endif
-               send_to_n(1) = fxf(fg%my%nx,  jst)
-               send_to_n(2) = fyf(fg%my%nx+1,jst2)
+               send_to_n_east(1) = fxf(fg%my%nx,  jst)
+               send_to_n_east(2) = fyf(fg%my%nx+1,jst2)
 #ifdef USE_GPU
 !$omp end target
 #endif
-               call MPI_Isend(send_to_n, 2, REAL_MPI, north_rank, 1, __MPICOMM__, ireq12(2), ierr)
+               call MPI_Isend(send_to_n_east, 2, REAL_MPI, north_rank, 1, __MPICOMM__, ireq12(2), ierr)
 #ifdef USE_GPU
 !$omp target
 #endif
-               send_to_s(1) = fxf(fg%my%nx,  jen)
-               send_to_s(2) = fyf(fg%my%nx+1,jen2)
+               send_to_s_east(1) = fxf(fg%my%nx,  jen)
+               send_to_s_east(2) = fyf(fg%my%nx+1,jen2)
 #ifdef USE_GPU
 !$omp end target
 #endif
-               call MPI_Isend(send_to_s, 2, REAL_MPI, south_rank, 1, __MPICOMM__, ireq22(2), ierr)
+               call MPI_Isend(send_to_s_east, 2, REAL_MPI, south_rank, 1, __MPICOMM__, ireq22(2), ierr)
 ! ==============================================================================
             end if
             
@@ -3342,28 +3356,28 @@ TIMER_START('___if:reg05')
                if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
 ! ==============================================================================
 ! === Upwind3 ==================================================================
-               call MPI_Irecv(recv_from_w, 3, REAL_MPI, west_rank, 2, __MPICOMM__, ireq13(1), ierr)
-               call MPI_Irecv(recv_from_e, 3, REAL_MPI, east_rank, 2, __MPICOMM__, ireq23(1), ierr)
+               call MPI_Irecv(recv_from_w_north, 3, REAL_MPI, west_rank, 2, __MPICOMM__, ireq13(1), ierr)
+               call MPI_Irecv(recv_from_e_north, 3, REAL_MPI, east_rank, 2, __MPICOMM__, ireq23(1), ierr)
 #ifdef USE_GPU
 !$omp target
 #endif
-               send_to_w(1) = fyf(ist, 0)
-               send_to_w(2) = fxf(ist2,-1)
-               send_to_w(3) = fyf(ist,-2)
+               send_to_w_north(1) = fyf(ist, 0)
+               send_to_w_north(2) = fxf(ist2,-1)
+               send_to_w_north(3) = fyf(ist,-2)
 #ifdef USE_GPU
 !$omp end target
 #endif
-               call MPI_Isend(send_to_w, 3, REAL_MPI, west_rank, 2, __MPICOMM__, ireq13(2), ierr)
+               call MPI_Isend(send_to_w_north, 3, REAL_MPI, west_rank, 2, __MPICOMM__, ireq13(2), ierr)
 #ifdef USE_GPU
 !$omp target
 #endif
-               send_to_e(1) = fyf(ien, 0)
-               send_to_e(2) = fxf(ien2,-1)
-               send_to_e(3) = fyf(ien,-2)
+               send_to_e_north(1) = fyf(ien, 0)
+               send_to_e_north(2) = fxf(ien2,-1)
+               send_to_e_north(3) = fyf(ien,-2)
 #ifdef USE_GPU
 !$omp end target
 #endif
-               call MPI_Isend(send_to_e, 3, REAL_MPI, east_rank, 2, __MPICOMM__, ireq23(2), ierr)
+               call MPI_Isend(send_to_e_north, 3, REAL_MPI, east_rank, 2, __MPICOMM__, ireq23(2), ierr)
 ! ==============================================================================
             end if
 
@@ -3379,26 +3393,26 @@ TIMER_START('___if:reg05')
                if(iand(fg%my%has_boundary, EAST_BOUND) == 0) ien2 = ien2 - 1
 ! ==============================================================================
 ! === Upwind3 ==================================================================
-               call MPI_Irecv(recv_from_w, 2, REAL_MPI, west_rank, 3, __MPICOMM__, ireq14(1), ierr)
-               call MPI_Irecv(recv_from_e, 2, REAL_MPI, east_rank, 3, __MPICOMM__, ireq24(1), ierr)
+               call MPI_Irecv(recv_from_w_south, 2, REAL_MPI, west_rank, 3, __MPICOMM__, ireq14(1), ierr)
+               call MPI_Irecv(recv_from_e_south, 2, REAL_MPI, east_rank, 3, __MPICOMM__, ireq24(1), ierr)
 #ifdef USE_GPU
 !$omp target
 #endif
-               send_to_w(1) = fyf(ist,  fg%my%ny)
-               send_to_w(2) = fxf(ist2,fg%my%ny+1)
+               send_to_w_south(1) = fyf(ist,  fg%my%ny)
+               send_to_w_south(2) = fxf(ist2,fg%my%ny+1)
 #ifdef USE_GPU
 !$omp end target
 #endif
-               call MPI_Isend(send_to_w, 2, REAL_MPI, west_rank, 3, __MPICOMM__, ireq14(2), ierr)
+               call MPI_Isend(send_to_w_south, 2, REAL_MPI, west_rank, 3, __MPICOMM__, ireq14(2), ierr)
 #ifdef USE_GPU
 !$omp target
 #endif
-               send_to_e(1) = fyf(ien,  fg%my%ny)
-               send_to_e(2) = fxf(ien2,fg%my%ny+1)
+               send_to_e_south(1) = fyf(ien,  fg%my%ny)
+               send_to_e_south(2) = fxf(ien2,fg%my%ny+1)
 #ifdef USE_GPU
 !$omp end target
 #endif
-               call MPI_Isend(send_to_e, 2, REAL_MPI, east_rank, 3, __MPICOMM__, ireq24(2), ierr)
+               call MPI_Isend(send_to_e_south, 2, REAL_MPI, east_rank, 3, __MPICOMM__, ireq24(2), ierr)
 ! ==============================================================================
             end if
 
@@ -3474,8 +3488,8 @@ TIMER_START('___if:reg05')
                   fac1 = 1.0d0 - fac0
 ! === Upwind3 ==================================================================
 !              fxf(0,       j) = recv_from_n*fac0 + fxf(0,       ind1)*fac1
-                  fxf(0,       j) = recv_from_n(1)*fac0 + fxf(0,       ind1)*fac1
-                  fxf(-2,      j) = recv_from_n(2)*fac0 + fxf(-2,      ind1)*fac1
+                  fxf(0,       j) = recv_from_n_west(1)*fac0 + fxf(0,       ind1)*fac1
+                  fxf(-2,      j) = recv_from_n_west(2)*fac0 + fxf(-2,      ind1)*fac1
 ! ==============================================================================
                end do
 ! === Upwind3 ==================================================================
@@ -3491,7 +3505,7 @@ TIMER_START('___if:reg05')
                      ind1 = ind0 + fg%my%nr
                      fac0 = 1.0d0 - imod*lfac
                      fac1 = 1.0d0 - fac0
-                     fyf(-1,      j) = recv_from_n(3)*fac0 + fyf(-1,      ind1)*fac1
+                     fyf(-1,      j) = recv_from_n_west(3)*fac0 + fyf(-1,      ind1)*fac1
                   end do
                end if
 ! ==============================================================================
@@ -3510,8 +3524,8 @@ TIMER_START('___if:reg05')
                   fac1 = 1.0d0 - fac0
 ! === Upwind3 ==================================================================
 !              fxf(0,       j) = fxf(0,       ind0)*fac0 + recv_from_s*fac1
-                  fxf(0,       j) = fxf(0,       ind0)*fac0 + recv_from_s(1)*fac1
-                  fxf(-2,      j) = fxf(-2,      ind0)*fac0 + recv_from_s(2)*fac1
+                  fxf(0,       j) = fxf(0,       ind0)*fac0 + recv_from_s_west(1)*fac1
+                  fxf(-2,      j) = fxf(-2,      ind0)*fac0 + recv_from_s_west(2)*fac1
 ! ==============================================================================
                end do
 ! === Upwind3 ==================================================================
@@ -3527,7 +3541,7 @@ TIMER_START('___if:reg05')
                      ind1 = ind0 + fg%my%nr
                      fac0 = 1.0d0 - imod*lfac
                      fac1 = 1.0d0 - fac0
-                     fyf(-1,      j) = fyf(-1,      ind0)*fac0 + recv_from_s(3)*fac1
+                     fyf(-1,      j) = fyf(-1,      ind0)*fac0 + recv_from_s_west(3)*fac1
                   end do
                end if
 ! ==============================================================================
@@ -3590,7 +3604,7 @@ TIMER_START('___if:reg05')
                   fac1 = 1.0d0 - fac0
 ! === Upwind3 ==================================================================
 !              fxf(fg%my%nx,j) = recv_from_n*fac0 + fxf(fg%my%nx,ind1)*fac1
-                  fxf(fg%my%nx,  j) = recv_from_n(1)*fac0 + fxf(fg%my%nx,  ind1)*fac1
+                  fxf(fg%my%nx,  j) = recv_from_n_east(1)*fac0 + fxf(fg%my%nx,  ind1)*fac1
 ! ==============================================================================
                end do
 ! === Upwind3 ==================================================================
@@ -3606,7 +3620,7 @@ TIMER_START('___if:reg05')
                      ind1 = ind0 + fg%my%nr
                      fac0 = 1.0d0 - imod*lfac
                      fac1 = 1.0d0 - fac0
-                     fyf(fg%my%nx+1,j) = recv_from_n(2)*fac0 + fyf(fg%my%nx+1,ind1)*fac1
+                     fyf(fg%my%nx+1,j) = recv_from_n_east(2)*fac0 + fyf(fg%my%nx+1,ind1)*fac1
                   end do
                end if
 ! ==============================================================================
@@ -3625,7 +3639,7 @@ TIMER_START('___if:reg05')
                   fac1 = 1.0d0 - fac0
 ! === Upwind3 ==================================================================
 !              fxf(fg%my%nx,j) = fxf(fg%my%nx,ind0)*fac0 + recv_from_s*fac1
-                  fxf(fg%my%nx,  j) = fxf(fg%my%nx,  ind0)*fac0 + recv_from_s(1)*fac1
+                  fxf(fg%my%nx,  j) = fxf(fg%my%nx,  ind0)*fac0 + recv_from_s_east(1)*fac1
 ! ==============================================================================
                end do
 ! === Upwind3 ==================================================================
@@ -3641,7 +3655,7 @@ TIMER_START('___if:reg05')
                      ind1 = ind0 + fg%my%nr
                      fac0 = 1.0d0 - imod*lfac
                      fac1 = 1.0d0 - fac0
-                     fyf(fg%my%nx+1,j) = fyf(fg%my%nx+1,ind0)*fac0 + recv_from_s(2)*fac1
+                     fyf(fg%my%nx+1,j) = fyf(fg%my%nx+1,ind0)*fac0 + recv_from_s_east(2)*fac1
                   end do
                end if
 ! ==============================================================================
@@ -3719,8 +3733,8 @@ TIMER_START('___if:reg05')
                   fac1 = 1.0d0 - fac0
 ! === Upwind3 ==================================================================
 !              fyf(i,0)        = recv_from_w*fac0 + fyf(ind1,0       )*fac1
-                  fyf(i,0)        = recv_from_w(1)*fac0 + fyf(ind1,0       )*fac1
-                  fyf(i,-2)       = recv_from_w(3)*fac0 + fyf(ind1,-2      )*fac1
+                  fyf(i,0)        = recv_from_w_north(1)*fac0 + fyf(ind1,0       )*fac1
+                  fyf(i,-2)       = recv_from_w_north(3)*fac0 + fyf(ind1,-2      )*fac1
 ! ==============================================================================
                end do
 ! === Upwind3 ==================================================================
@@ -3736,7 +3750,7 @@ TIMER_START('___if:reg05')
                      ind1 = ind0 + fg%my%nr
                      fac0 = 1.0d0 - imod*lfac
                      fac1 = 1.0d0 - fac0
-                     fxf(i,-1)       = recv_from_w(2)*fac0 + fxf(ind1,-1      )*fac1
+                     fxf(i,-1)       = recv_from_w_north(2)*fac0 + fxf(ind1,-1      )*fac1
                   end do
                end if
 ! ==============================================================================
@@ -3755,8 +3769,8 @@ TIMER_START('___if:reg05')
                   fac1 = 1.0d0 - fac0
 ! === Upwind3 ==================================================================
 !              fyf(i,0)        = fyf(ind0,0       )*fac0 + recv_from_e*fac1
-                  fyf(i,0)        = fyf(ind0,0       )*fac0 + recv_from_e(1)*fac1
-                  fyf(i,-2)       = fyf(ind0,-2      )*fac0 + recv_from_e(3)*fac1
+                  fyf(i,0)        = fyf(ind0,0       )*fac0 + recv_from_e_north(1)*fac1
+                  fyf(i,-2)       = fyf(ind0,-2      )*fac0 + recv_from_e_north(3)*fac1
 ! ==============================================================================
                end do
 ! === Upwind3 ==================================================================
@@ -3772,7 +3786,7 @@ TIMER_START('___if:reg05')
                      ind1 = ind0 + fg%my%nr
                      fac0 = 1.0d0 - imod*lfac
                      fac1 = 1.0d0 - fac0
-                     fxf(i,-1)       = fxf(ind0,-1      )*fac0 + recv_from_e(2)*fac1
+                     fxf(i,-1)       = fxf(ind0,-1      )*fac0 + recv_from_e_north(2)*fac1
                   end do
                end if
 ! ==============================================================================
@@ -3835,7 +3849,7 @@ TIMER_START('___if:reg05')
                   fac1 = 1.0d0 - fac0
 ! === Upwind3 ==================================================================
 !              fyf(i,fg%my%ny) = recv_from_w*fac0 + fyf(ind1,fg%my%ny)*fac1
-                  fyf(i  ,fg%my%ny) = recv_from_w(1)*fac0 + fyf(  ind1,fg%my%ny)*fac1
+                  fyf(i  ,fg%my%ny) = recv_from_w_south(1)*fac0 + fyf(  ind1,fg%my%ny)*fac1
 ! ==============================================================================
                end do
 ! === Upwind3 ==================================================================
@@ -3851,7 +3865,7 @@ TIMER_START('___if:reg05')
                      ind1 = ind0 + fg%my%nr
                      fac0 = 1.0d0 - imod*lfac
                      fac1 = 1.0d0 - fac0
-                     fxf(i,fg%my%ny+1) = recv_from_w(2)*fac0 + fxf(ind1,fg%my%ny+1)*fac1
+                     fxf(i,fg%my%ny+1) = recv_from_w_south(2)*fac0 + fxf(ind1,fg%my%ny+1)*fac1
                   end do
                end if
 ! ==============================================================================
@@ -3870,7 +3884,7 @@ TIMER_START('___if:reg05')
                   fac1 = 1.0d0 - fac0
 ! === Upwind3 ==================================================================
 !              fyf(i,fg%my%ny) = fyf(ind0,fg%my%ny)*fac0 + recv_from_e*fac1
-                  fyf(i,  fg%my%ny) = fyf(ind0,  fg%my%ny)*fac0 + recv_from_e(1)*fac1
+                  fyf(i,  fg%my%ny) = fyf(ind0,  fg%my%ny)*fac0 + recv_from_e_south(1)*fac1
 ! ==============================================================================
                end do
 ! === Upwind3 ==================================================================
@@ -3886,7 +3900,7 @@ TIMER_START('___if:reg05')
                      ind1 = ind0 + fg%my%nr
                      fac0 = 1.0d0 - imod*lfac
                      fac1 = 1.0d0 - fac0
-                     fxf(i,fg%my%ny+1) = fxf(ind0,fg%my%ny+1)*fac0 + recv_from_e(2)*fac1
+                     fxf(i,fg%my%ny+1) = fxf(ind0,fg%my%ny+1)*fac0 + recv_from_e_south(2)*fac1
                   end do
                end if
 ! ==============================================================================

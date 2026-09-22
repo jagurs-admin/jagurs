@@ -533,11 +533,13 @@ contains
                      if(Delta_t < 1.0d-5) Delta_t = 1.0d-5
                      Delta_t = Delta_t*180.0d0/M_PI
                      val_ = 0.0d0
-                     if(Delta_t < Dist(1)) then
+                     if(Delta_t <= Dist(1)) then
                         val_ = Val(1)
+                     else if(Delta_t >= Dist(Nrec)) then
+                        val_ = Val(Nrec)
                      else
-                        do iradius = 1, Nrec
-                           if(Dist(iradius) < Delta_t .and. Dist(iradius + 1) > Delta_t) exit
+                        do iradius = 1, Nrec-1
+                           if(Dist(iradius) <= Delta_t .and. Dist(iradius + 1) >= Delta_t) exit
                         end do
                         val_ = LinearInterpolate(Val(iradius), Val(iradius + 1), &
                            (Delta_t - Dist(iradius))/(Dist(iradius + 1) - Dist(iradius)))

@@ -294,7 +294,7 @@ $(EXEC): $(OBJS)
 	$(CC) -c $(CFLAGS) $^
 
 wrapper.o: wrapper.cu
-	$(NVCC) -c $(NVCCCFLAGS) $^
+	$(NVCC) -c $(NVCCFLAGS) $^
 
 clean:
 	rm -f *.o *.mod $(EXEC)

@@ -253,7 +253,7 @@ contains
       real(kind=8) :: cd, sd, ct, st, dep
 #endif
 #ifndef __NEC__
-      real(kind=8) :: x, y, u1, u2, u3, dumm
+      real(kind=8) :: x, y, u1, u2, u3, dumm(6)
 #else
       real(kind=8) :: x, y, u1, u2, u3
 #endif
@@ -598,7 +598,7 @@ contains
                   y = -(xy(i,j,1)-xref(n))/1000.0d0*ct + (xy(i,j,2)-yref(n))/1000.0d0*st + width(n)*cd
 #ifndef __NEC__
                   call srectf(ALP, x, y, dep, length(n), width(n), sd, cd, us(n), ud(n), ut(n), &
-                     u1, u2, u3, dumm, dumm, dumm, dumm, dumm, dumm)
+                     u1, u2, u3, dumm(1), dumm(2), dumm(3), dumm(4), dumm(5), dumm(6))
 #else
                   call srectf(ALP, x, y, dep, length(n), width(n), sd, cd, us(n), ud(n), ut(n), &
                      u1, u2, u3)

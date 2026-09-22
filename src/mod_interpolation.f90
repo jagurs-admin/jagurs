@@ -1543,7 +1543,6 @@ TIMER_STOP('___ip:tri_many08')
       real(kind=REAL_BYTE), intent(inout), dimension(n,howmany) :: b
       real(kind=REAL_BYTE), intent(inout), dimension(n) :: d
       integer(kind=4) :: i, k
-!$omp target teams distribute parallel do
       do i = 1, n-1
          d(i+1) = d(i+1) - 1.0d0/d(i)
       end do

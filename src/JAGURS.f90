@@ -2953,16 +2953,20 @@ program JAGURS
 !                              dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str)
 #if !defined(MPI) || !defined(ONEFILE)
 #ifndef PIXELOUT
-                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.)
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dgrid(ig)%my%formatid, &
+                               str,.true.)
 #else
-                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true., &
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dgrid(ig)%my%formatid, &
+                               str,.true., &
                                dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg)
 #endif
 #else
 #ifndef PIXELOUT
-                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.,dgrid(ig),myrank)
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dgrid(ig)%my%formatid, &
+                               str,.true.,dgrid(ig),myrank)
 #else
-                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,str,.true.,dgrid(ig),myrank, &
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dgrid(ig)%my%formatid, &
+                               str,.true.,dgrid(ig),myrank, &
                                dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg)
 #endif
 #endif
@@ -2977,16 +2981,20 @@ program JAGURS
 !                              dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str)
 #if !defined(MPI) || !defined(ONEFILE)
 #ifndef PIXELOUT
-                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.)
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dgrid(ig)%my%formatid, &
+                               dirname,str,.true.)
 #else
-                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true., &
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dgrid(ig)%my%formatid, &
+                               dirname,str,.true., &
                                dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg)
 #endif
 #else
 #ifndef PIXELOUT
-                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.,dgrid(ig),myrank)
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dgrid(ig)%my%formatid, &
+                               dirname,str,.true.,dgrid(ig),myrank)
 #else
-                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dirname,str,.true.,dgrid(ig),myrank, &
+                               dgrid(ig)%my%mlon0,dgrid(ig)%my%mlat0,dgrid(ig)%my%dh,dgrid(ig)%my%formatid, &
+                               dirname,str,.true.,dgrid(ig),myrank, &
                                dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg)
 #endif
 #endif

@@ -665,4 +665,9 @@ If you want the old version to work, specify "-DNONESTDEBUG" on Makefile and mak
 - Other bugs have been fixed.
 
 --------------------------------------------------------------------------------
+2026.09.15 V0703
+
+- Debug.
+
+--------------------------------------------------------------------------------
 

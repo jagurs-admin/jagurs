@@ -1039,7 +1039,7 @@ contains
 #ifndef DIROUT
 ! === For negative min. height =================================================
 !  subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,fname)
-   subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,fname, &
+   subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,formatid,fname, &
 #if !defined(MPI) || !defined(ONEFILE)
 #ifndef PIXELOUT
                                flag_missing_value)
@@ -1057,7 +1057,7 @@ contains
 #else
 ! === For negative min. height =================================================
 !  subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname)
-   subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,dirname,fname, &
+   subroutine mingrd_write_gmt(hzmin,nlon,nlat,mlon0,mlat0,dxdy,formatid,dirname,fname, &
 #if !defined(MPI) || !defined(ONEFILE)
 #ifndef PIXELOUT
                                flag_missing_value)
@@ -1074,7 +1074,7 @@ contains
 ! ==============================================================================
 #endif
       real(kind=REAL_BYTE), dimension(nlon,nlat), intent(inout) :: hzmin
-      integer(kind=4), intent(in) :: nlon, nlat
+      integer(kind=4), intent(in) :: nlon, nlat, formatid
       real(kind=REAL_BYTE), intent(in) :: mlon0, mlat0, dxdy
       character(len=512), intent(in) :: fname
 ! === For negative min. height =================================================
@@ -1187,12 +1187,12 @@ contains
 #ifndef DIROUT
 ! === For negative min. height =================================================
 !                        dx, dy, zmin, zmax, nlon, nlat, fname)
-                         dx, dy, zmin, zmax, nlon, nlat, fname, dg%my%formatid, flag_missing_value)
+                         dx, dy, zmin, zmax, nlon, nlat, fname, formatid, flag_missing_value)
 ! ==============================================================================
 #else
 ! === For negative min. height =================================================
 !                        dx, dy, zmin, zmax, nlon, nlat, fname_dir)
-                         dx, dy, zmin, zmax, nlon, nlat, fname_dir, dg%my%formatid, flag_missing_value)
+                         dx, dy, zmin, zmax, nlon, nlat, fname_dir, formatid, flag_missing_value)
 ! ==============================================================================
 #endif
 #else
@@ -1228,9 +1228,9 @@ contains
 #ifndef PIXELOUT
       call mygmt_grdio_d(hzmin_all, lon_west, lon_east, lat_south, lat_north, &
 #ifndef DIROUT
-                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname, dg%my%formatid, flag_missing_value)
+                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname, formatid, flag_missing_value)
 #else
-                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir, dg%my%formatid, flag_missing_value)
+                         dx, dy, zmin, zmax, dg%my%totalNx, dg%my%totalNy, fname_dir, formatid, flag_missing_value)
 #endif
 #else
       allocate(hzminorg(0:nxorg-1,0:nyorg-1))
@@ -2392,7 +2392,7 @@ contains
 #endif
 
          ! check for wet-or-dry
-#ifdef USE_GUP
+#ifdef USE_GPU
 !$omp target teams distribute parallel do collapse(2) private(i)
 #endif
          do j = 1, nlat

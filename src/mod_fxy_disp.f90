@@ -1110,7 +1110,7 @@ contains
 !$omp         dvdx, dvdy, advc, tmp0, tmp1, tmp2, tmp3)
 #else
 !$omp target teams distribute parallel do collapse(2) &
-!$omp private(theta,sint,invst,gdtdss,crls,i,fybar,dvdx,dvdy,advc,tmp0,tmp1,tmp2.tmp3)
+!$omp private(theta,sint,invst,gdtdss,crls,i,fybar,dvdx,dvdy,advc,tmp0,tmp1,tmp2,tmp3)
 #endif
 #endif
          do j = jst, jnd

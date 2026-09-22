@@ -1765,7 +1765,7 @@ contains
          end do
 #else
 !$omp target teams distribute parallel do collapse(2) private(i) &
-!$omp reduciton(min:vmin,max:vmax)
+!$omp reduction(min:vmin) reduction(max:vmax)
          do j = 1, ny
             do i = 1, nx
                if(a(i,j) /= missing_value) then
@@ -1802,7 +1802,7 @@ contains
       end do
 #else
 !$omp target teams distribute parallel do collapse(2) private(i) &
-!$omp reduciton(min:vmin,max:vmax)
+!$omp reduction(min:vmin) reduction(max:vmax)
          do j = 1, ny
             do i = 1, nx
                vmin = min(vmin, a(i,j))
