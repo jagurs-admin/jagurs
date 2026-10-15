@@ -665,9 +665,36 @@ If you want the old version to work, specify "-DNONESTDEBUG" on Makefile and mak
 - Other bugs have been fixed.
 
 --------------------------------------------------------------------------------
-2026.09.15 V0703
+2026.07.10 V0701
 
-- Debug.
+- A minor bug related to TTT has been fixed.
+
+--------------------------------------------------------------------------------
+2026.09.15 V0702
+
+- DEBUG for MPI communication on nesting.
+
+- DEBUG for GPU computing.
+
+- DEBUG for Green-function interpolation of elastic loading.
+
+- DEBUG for HZMINOUT in non-MPI and non-ONEFILE cases.
+
+- Typos in source files and Makefile.NVIDIAGPU have been corrected.
+
+- Okada subroutines have been converted to free-form Fortran 90.
+
+--------------------------------------------------------------------------------
+2026.10.13 V0703
+
+- DEBUG for "UPWIND3=ON", "PREC=Other", "PIXELIN=ON", "PIXELOUT=ON",
+  "SINGLE_A2A=ON" and "NORMALMODE=ON".
+
+- DEBUG for "PIXELIN=OFF" and "PIXELOUT=ON".
+
+- DEBUG for NVIDIA GPUs.
+
+- Adopt approach proposed in GitHub issue #26.
 
 --------------------------------------------------------------------------------
 

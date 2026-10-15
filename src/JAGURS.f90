@@ -639,9 +639,20 @@ program JAGURS
       dgrid(ig)%my%dh = dxdy
       dgrid(ig)%my%mlon0 = mlon0
       dgrid(ig)%my%mlat0 = mlat0
+#if defined(PIXELIN) || defined(PIXELOUT)
 #ifdef PIXELIN
       dgrid(ig)%my%nxorg = nxorg
       dgrid(ig)%my%nyorg = nyorg
+#else
+! Pixel output adds a zero border around the computational grid.
+#if defined(MPI) && defined(ONEFILE)
+      dgrid(ig)%my%nxorg = totalNx + 2
+      dgrid(ig)%my%nyorg = totalNy + 2
+#else
+      dgrid(ig)%my%nxorg = niz + 2
+      dgrid(ig)%my%nyorg = njz + 2
+#endif
+#endif
 #endif
       dgrid(ig)%my%formatid = formatid
  
@@ -1092,7 +1103,7 @@ program JAGURS
       displacement_file_name => dgrid(ig)%my%disp_file
       niz                    =  dgrid(ig)%my%nx
       njz                    =  dgrid(ig)%my%ny
-#ifdef PIXELIN
+#if defined(PIXELIN) || defined(PIXELOUT)
       nxorg                  =  dgrid(ig)%my%nxorg
       nyorg                  =  dgrid(ig)%my%nyorg
 #endif
@@ -1527,7 +1538,7 @@ program JAGURS
                          dgrid(ig)%my%nx,dgrid(ig)%my%ny,dgrid(ig)%wod_file,dgrid(ig)%wod_field,dgrid(ig)%my%formatid)
 #else
                          dgrid(ig)%my%nx,dgrid(ig)%my%ny,dgrid(ig)%wod_file,dgrid(ig)%wod_field, &
-                         dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg)
+                         dgrid(ig)%my%nxorg,dgrid(ig)%my%nyorg,dgrid(ig)%my%formatid)
 #endif
 #else
                          dgrid(ig)%my%nx,dgrid(ig)%my%ny,dgrid(ig)%wod_file,dgrid(ig)%wod_field, &
@@ -1806,7 +1817,7 @@ program JAGURS
       njz               =  dgrid(ig)%my%ny
       linear_flag       =  dgrid(ig)%my%linear_flag
       wod_flags         => dgrid(ig)%wod_flags
-#ifdef PIXELIN
+#if defined(PIXELIN) || defined(PIXELOUT)
       nxorg             =  dgrid(ig)%my%nxorg
       nyorg             =  dgrid(ig)%my%nyorg
 #endif
@@ -1907,6 +1918,13 @@ program JAGURS
 #endif
       end if
    end do
+
+#ifdef USE_GPU
+   ! dgrid (grid sizes and array descriptors) is read by the host to set loop
+   ! bounds and by the device inside kernels. With managed memory its pages
+   ! otherwise migrate back and forth on every kernel launch.
+   call advise_readmostly(dgrid, int(size(dgrid),8)*int(storage_size(dgrid(1))/8,8))
+#endif
 
    do istep = istart, nstep
       do ig = 1, ngrid
@@ -2293,7 +2311,7 @@ program JAGURS
                ts_field               => dgrid(ig)%ts_field
                niz                    =  dgrid(ig)%my%nx
                njz                    =  dgrid(ig)%my%ny
-#ifdef PIXELIN
+#if defined(PIXELIN) || defined(PIXELOUT)
                nxorg                  =  dgrid(ig)%my%nxorg
                nyorg                  =  dgrid(ig)%my%nyorg
 #endif
@@ -2432,7 +2450,7 @@ program JAGURS
          displacement_file_name => dgrid(ig)%my%disp_file
          niz                    =  dgrid(ig)%my%nx
          njz                    =  dgrid(ig)%my%ny
-#ifdef PIXELIN
+#if defined(PIXELIN) || defined(PIXELOUT)
          nxorg                  =  dgrid(ig)%my%nxorg
          nyorg                  =  dgrid(ig)%my%nyorg
 #endif
@@ -2544,7 +2562,7 @@ program JAGURS
          displacement_file_name => dgrid(ig)%my%disp_file
          niz                    =  dgrid(ig)%my%nx
          njz                    =  dgrid(ig)%my%ny
-#ifdef PIXELIN
+#if defined(PIXELIN) || defined(PIXELOUT)
          nxorg                  =  dgrid(ig)%my%nxorg
          nyorg                  =  dgrid(ig)%my%nyorg
 #endif

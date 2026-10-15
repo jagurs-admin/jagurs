@@ -1877,7 +1877,11 @@ TIMER_STOP('___cc:reg02')
 TIMER_START('___cc:reg03')
 #ifndef A2A3D
 #ifdef USE_GPU
+#ifndef SINGLE_A2A
 !$omp target data use_device_ptr(xfbuf,xcbuf,yfbuf,ycbuf)
+#else
+!$omp target data use_device_ptr(yfbuf,ycbuf)
+#endif
 #endif
 #ifndef SINGLE_A2A
          call MPI_Alltoallv(xfbuf, fxo%sendcnts0, fxo%sdispls0, REAL_MPI, &
@@ -4798,7 +4802,11 @@ TIMER_STOP('___if:reg11')
 TIMER_START('___if:reg12')
 #ifndef A2A3D
 #ifdef USE_GPU
+#ifndef SINGLE_A2A
 !$omp target data use_device_ptr(zcbuf0,zfbuf0,zcbuf1,zfbuf1)
+#else
+!$omp target data use_device_ptr(zcbuf1,zfbuf1)
+#endif
 #endif
 #ifndef SINGLE_A2A
             call MPI_Alltoallv(zcbuf0, hzi%sendcnts0, hzi%sdispls0, REAL_MPI, &

@@ -59,3 +59,7 @@ extern "C" void cudevicesynchronize_(){
    hipDeviceSynchronize();
 }
 
+extern "C" void advise_readmostly_(void* p, long long* nbytes){
+   hipMemAdvise(p, (size_t)(*nbytes), hipMemAdviseSetReadMostly, 0);
+}
+

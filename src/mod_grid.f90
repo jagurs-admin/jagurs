@@ -40,7 +40,7 @@ type grid_info
    real(kind=REAL_BYTE) :: dth
    integer(kind=4) :: nx
    integer(kind=4) :: ny
-#ifdef PIXELIN
+#if defined(PIXELIN) || defined(PIXELOUT)
    integer(kind=4) :: nxorg
    integer(kind=4) :: nyorg
 #endif

@@ -290,7 +290,9 @@ contains
    end subroutine mygmt_grdio_d
 
    subroutine read_gmt_grd_hdr(infilename, nx, ny, dx, dy, west, east, south, north, zmin, zmax, nxorg, nyorg, formatid, read_header)
+#ifdef PIXELIN
       use mod_params, only : RUDEF, IUDEF
+#endif
 #ifndef __GFORTRAN__
       character(len=256), intent(in) :: infilename
 #else

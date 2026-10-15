@@ -1590,11 +1590,11 @@ TIMER_STOP('___ip:tri_many08')
 ! ==============================================================================
       use mod_params, only : use_linear
       type(data_grids), target, intent(inout) :: cg, fg
-      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: buf0, buf1, buf2
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: buf0, buf1, buf2, buf3
       integer(kind=4) :: bigNX, bigNY, zeroIX, zeroIY, nx, ny
       integer(kind=4) :: i, j
 #ifdef MPI
-      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: buf3, tmp2d
+      real(kind=REAL_BYTE), allocatable, dimension(:,:) :: tmp2d
       real(kind=REAL_BYTE), allocatable, dimension(:) :: tmp1d
       integer(kind=4), allocatable, dimension(:) :: sendcounts0, sdispls0 ! MPI_Scatterv
       integer(kind=4), allocatable, dimension(:) :: sendcounts1, sdispls1 ! MPI_Alltoallv (1)
@@ -1701,6 +1701,9 @@ TIMER_START('___ip:reg01')
       allocate(buf0(bigNY,bigNX))
       allocate(buf1(ny,   bigNX))
       allocate(buf2(bigNX,ny))
+#ifndef REAL_DBLE
+      allocate(buf3(nx,ny))
+#endif
 TIMER_STOP('___ip:reg01')
 TIMER_START('___ip:reg02')
 #ifndef USE_GPU
@@ -1764,7 +1767,11 @@ TIMER_STOP('___ip:reg04')
          do j = 1, ny
 ! === Elastic loading with interpolation =======================================
 !           call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
+#ifdef REAL_DBLE
             call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%loading%delta(1,j))
+#else
+            call linear_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, buf3(1,j))
+#endif
 ! ==============================================================================
          end do
       else
@@ -1773,12 +1780,20 @@ TIMER_STOP('___ip:reg04')
          do j = 1, ny
 ! === Elastic loading with interpolation =======================================
 !           call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%zz(1,j))
+#ifdef REAL_DBLE
             call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, fg%loading%delta(1,j))
+#else
+            call spline_interpolation(fg%my%nr, bigNX, buf2(1,j), nx, buf3(1,j))
+#endif
 ! ==============================================================================
          end do
 #else
 TIMER_START('___ip:reg05')
+#ifdef REAL_DBLE
          call spline_interpolation_many(fg%my%nr, bigNX, buf2, nx, fg%loading%delta, ny)
+#else
+         call spline_interpolation_many(fg%my%nr, bigNX, buf2, nx, buf3, ny)
+#endif
 TIMER_STOP('___ip:reg05')
 #endif
       end if
@@ -1792,6 +1807,9 @@ TIMER_START('___ip:reg06')
 #endif
       do j = 1, ny
          do i = 1, nx
+#ifndef REAL_DBLE
+            fg%loading%delta(i,j) = buf3(i,j)
+#endif
             fg%wave_field%hz(i,j) = fg%wave_field%hz(i,j) + fg%loading%delta(i,j)
          end do
       end do
@@ -1804,6 +1822,9 @@ TIMER_START('___ip:reg07')
       deallocate(buf0)
       deallocate(buf1)
       deallocate(buf2)
+#ifndef REAL_DBLE
+      deallocate(buf3)
+#endif
 TIMER_STOP('___ip:reg07')
 #ifndef USE_GPU
 !$omp end single

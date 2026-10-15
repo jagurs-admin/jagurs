@@ -59,3 +59,19 @@ extern "C" void cudevicesynchronize_(){
    cudaDeviceSynchronize();
 }
 
+// Mark a managed-memory range as read-mostly so that the host and the device
+// each keep a read-only copy instead of migrating the pages on every access.
+extern "C" void advise_readmostly_(void* p, long long* nbytes){
+   int dev;
+   cudaGetDevice(&dev);
+#if CUDART_VERSION >= 13000
+   cudaMemLocation loc;
+   loc.type = cudaMemLocationTypeDevice;
+   loc.id = dev;
+   cudaError_t e = cudaMemAdvise(p, (size_t)(*nbytes), cudaMemAdviseSetReadMostly, loc);
+#else
+   cudaError_t e = cudaMemAdvise(p, (size_t)(*nbytes), cudaMemAdviseSetReadMostly, dev);
+#endif
+   if(e != cudaSuccess) printf("advise_readmostly: %s\n", cudaGetErrorString(e));
+}
+

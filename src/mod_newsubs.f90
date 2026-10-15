@@ -863,6 +863,9 @@ contains
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzmax_all
 #endif
 #ifdef PIXELOUT
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzmaxorg
 #endif
 #ifdef DIROUT
@@ -1015,7 +1018,7 @@ contains
 
 !$omp target teams distribute parallel do collapse(2) private(i)
       do j = 1, dg%my%totalNy
-         do i = 1, dg%my%totalNy
+         do i = 1, dg%my%totalNx
             hzmaxorg(i,j) = hzmax_all(i,j)
          end do
       end do
@@ -1095,6 +1098,9 @@ contains
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzmin_all
 #endif
 #ifdef PIXELOUT
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: hzminorg
 #endif
 #ifdef DIROUT
@@ -1247,7 +1253,7 @@ contains
 
 !$omp target teams distribute parallel do collapse(2) private(i)
       do j = 1, dg%my%totalNy
-         do i = 1, dg%my%totalNy
+         do i = 1, dg%my%totalNx
             hzminorg(i,j) = hzmin_all(i,j)
          end do
       end do
@@ -1317,6 +1323,9 @@ contains
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: vmax_all
 #endif
 #ifdef PIXELOUT
+#ifdef USE_GPU
+      integer(kind=4) :: i, j
+#endif
       real(kind=REAL_BYTE), allocatable, dimension(:,:) :: vmaxorg
 #endif
 #ifdef DIROUT
@@ -1454,7 +1463,7 @@ contains
 
 !$omp target teams distribute parallel do collapse(2) private(i)
       do j = 1, dg%my%totalNy
-         do i = 1, dg%my%totalNy
+         do i = 1, dg%my%totalNx
             vmaxorg(i,j) = vmax_all(i,j)
          end do
       end do
@@ -1523,7 +1532,11 @@ contains
 #endif
 ! ==============================================================================
 #ifdef PIXELOUT
+#if defined(MPI) && !defined(ONEFILE)
+      integer(kind=4) :: nxorg, nyorg
+#else
       integer(kind=4), intent(in) :: nxorg, nyorg
+#endif
 #endif
       integer(kind=4), intent(in) :: linear_flag
 
@@ -1556,6 +1569,12 @@ contains
 #endif
 #ifdef DIROUT
       character(len=128) :: dirname = '', command = ''
+#endif
+#if defined(PIXELOUT) && defined(MPI) && !defined(ONEFILE)
+      nxorg = nlon + 2
+      nyorg = nlat + 2
+#endif
+#ifdef DIROUT
 #ifndef PIXELOUT
       write(dirname,'(i8.8,a)') istep, '.grd'
 #else
@@ -1774,7 +1793,7 @@ contains
 
 !$omp target teams distribute parallel do collapse(2) private(i)
       do j = 1, dg%my%totalNy
-         do i = 1, dg%my%totalNy
+         do i = 1, dg%my%totalNx
             tporg(i,j) = tp_all(i,j)
          end do
       end do
@@ -1960,7 +1979,7 @@ contains
 
 !$omp target teams distribute parallel do collapse(2) private(i)
          do j = 1, dg%my%totalNy
-            do i = 1, dg%my%totalNy
+            do i = 1, dg%my%totalNx
                tporg(i,j) = tp_all(i,j)
             end do
          end do
@@ -2481,7 +2500,7 @@ contains
 
 !$omp target teams distribute parallel do collapse(2) private(i)
          do j = 1, dg%my%totalNy
-            do i = 1, dg%my%totalNy
+            do i = 1, dg%my%totalNx
                tporg(i,j) = tp_all(i,j)
             end do
          end do

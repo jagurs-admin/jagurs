@@ -1702,9 +1702,15 @@ contains
 
       real(kind=REAL_BYTE), pointer, dimension(:,:) :: dz
 #ifdef QUAD
-      real(kind=16) :: h0q
+! NVIDIA Fortran has no REAL(16); QUAD accumulation uses double precision there.
+#if defined(__NVCOMPILER) || defined(__PGI)
+      integer, parameter :: loading_sum_kind = kind(0.0d0)
+#else
+      integer, parameter :: loading_sum_kind = selected_real_kind(33)
+#endif
+      real(kind=loading_sum_kind) :: h0q
 #ifdef MPI
-      real(kind=16), allocatable, dimension(:) :: qbuf
+      real(kind=loading_sum_kind), allocatable, dimension(:) :: qbuf
 #endif
 #endif
 ! === get-large-area.f90 2015/06/19 ============================================
@@ -1883,7 +1889,7 @@ contains
 #ifndef QUAD
       h0 = 0.0d0
 #else
-      h0q = 0.0q0
+      h0q = 0.0_loading_sum_kind
 #endif
       num = 0
 #ifndef USE_GPU
@@ -1925,11 +1931,15 @@ contains
 #ifndef QUAD
       call MPI_Allreduce(MPI_IN_PLACE, h0, 1, MPI_DOUBLE_PRECISION, MPI_SUM, __MPICOMM__, ierr)
 #else
+#if defined(__NVCOMPILER) || defined(__PGI)
+      call MPI_Allgather(h0q, 1, MPI_DOUBLE_PRECISION, qbuf, 1, MPI_DOUBLE_PRECISION, __MPICOMM__, ierr)
+#else
       call MPI_Allgather(h0q, 1, MPI_REAL16, qbuf, 1, MPI_REAL16, __MPICOMM__, ierr)
+#endif
 #endif
       call MPI_Allreduce(MPI_IN_PLACE, num, 1, MPI_INTEGER, MPI_SUM, __MPICOMM__, ierr)
 #ifdef QUAD
-      h0q = 0.0q0
+      h0q = 0.0_loading_sum_kind
       do i = 0, nprocs-1
          h0q = h0q + qbuf(i)
       end do

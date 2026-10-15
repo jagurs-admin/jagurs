@@ -56,7 +56,7 @@ contains
    subroutine wallclock(t)
       real(kind=8), intent(out) :: t
 #ifndef __FUJITSU
-#ifndef NO_SYSTEM_CLOCK
+#if !defined(NO_SYSTEM_CLOCK) || defined(__NVCOMPILER) || defined(__PGI)
       integer(kind=8) :: c, c_rate
 #else
 ! === This should be wall-clock time. Not user time. ===========================
@@ -65,7 +65,7 @@ contains
 ! ==============================================================================
 #endif
 
-#ifndef NO_SYSTEM_CLOCK
+#if !defined(NO_SYSTEM_CLOCK) || defined(__NVCOMPILER) || defined(__PGI)
       call system_clock(c, c_rate)
 
       t = dble(c)/dble(c_rate)

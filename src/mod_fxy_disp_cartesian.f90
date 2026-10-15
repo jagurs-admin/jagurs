@@ -2952,9 +2952,8 @@ contains
                if(iand(bflag, NORTH_BOUND) /= 0) jst = 4
                if(iand(bflag, SOUTH_BOUND) /= 0) jnd = nlat - 3
 #ifndef USE_GPU
-!$omp single
-#endif
 !$omp end single
+#endif
 #ifdef OLD_SCHEME
 #ifndef USE_GPU
 !$omp do
