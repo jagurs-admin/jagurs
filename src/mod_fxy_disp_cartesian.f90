@@ -275,7 +275,7 @@ contains
 #endif
          do j = jst, jnd
             do i = ist, ind
-               if(dz(i,j) > min_depth) then
+               if(dz(i,j) > min_depth .and. dz(i+1,j) > min_depth) then
                   cu(i,j) = ((1.0d0/dxdy)**2/3.0d0)*(0.5d0*(dz(i+1,j)+dz(i,j)))**2
                   fx(i,j) = fx(i,j) - cu(i,j)*( &
                   ! U_n
@@ -283,6 +283,8 @@ contains
                   ! V_n
                   & + fy_old(i+1,j  )-fy_old(i,  j  )-fy_old(i+1,j-1)+fy_old(i,  j-1) &
                   & )
+               end if
+               if(dz(i,j) > min_depth .and. dz(i,j+1) > min_depth) then
                   cv(i,j) = ((1.0d0/dxdy)**2/3.0d0)*(0.5d0*(dz(i,j+1)+dz(i,j)))**2
                   fy(i,j) = fy(i,j)  - cv(i,j)*( &
                   ! V_n
