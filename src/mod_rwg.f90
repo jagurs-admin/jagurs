@@ -1043,7 +1043,7 @@ contains
          hz => wfld%hz_b
       end if
 
-      if(tau > 0.0d0) then
+      if(tau > dt) then
          dev = dt/tau
       else
          dev = 1.0d0

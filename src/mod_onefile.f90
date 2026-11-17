@@ -247,7 +247,7 @@ contains
       buf_l     => dg%my%buf_l_ncdio
 
 #ifdef USE_GPU
-!$omp target teams distribute parallel do collapse(2) private(i)
+!$omp target teams distribute parallel do collapse(2) private(i) map(to:nx,ny)
 #endif
       do j = 1, ny
          do i = 1, nx
@@ -259,7 +259,7 @@ contains
 
       if(myrank == 0) then
 #ifdef USE_GPU
-!$omp target teams distribute parallel do collapse(3) private(j,i,ind)
+!$omp target teams distribute parallel do private(j,i,ind) map(to:srcount,srcount_x,totalNy,nprocs)
 #endif
          do p = 0, nprocs - 1
             do j = iy_all(p), iyend_all(p)
